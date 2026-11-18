@@ -1,4 +1,4 @@
-.PHONY: help infra-up infra-down infra-init tb-start tb-stop tb-init tb-reset tb-clean backend-core backend-bff frontend-dev frontend-install test-e2e clean pki
+.PHONY: help infra-up infra-down infra-init tb-start tb-stop tb-init tb-reset tb-clean backend-core backend-bff frontend-dev frontend-install test-e2e clean pki docs-refresh docs-check docs-hook
 
 help:
 	@echo "FSP Phase-0 — available commands"
@@ -13,6 +13,9 @@ help:
 	@echo "  make frontend-dev  — run React SPA dev server (bun)"
 	@echo "  make frontend-install — install frontend deps (bun)"
 	@echo "  make test-e2e      — run Playwright E2E tests"
+	@echo "  make docs-refresh  — regenerate architecture doc artifacts (docs/generated)"
+	@echo "  make docs-check    — fail if architecture artifacts are stale (CI gate)"
+	@echo "  make docs-hook     — install pre-commit hook that regenerates docs on every commit"
 	@echo "  make clean         — tear down containers and volumes"
 
 infra-up:
@@ -53,6 +56,16 @@ tb-reset: tb-stop
 	@mkdir -p $(TB_DATA)
 	@$(TB_BIN) format --cluster=0 --replica=0 --replica-count=1 $(TB_DATA)/0_0.tigerbeetle
 	@echo "TigerBeetle data reset; run 'make tb-start'"
+
+docs-refresh:
+	@node docs/gen/refresh.cjs
+
+docs-check:
+	@node docs/gen/refresh.cjs --check
+
+docs-hook:
+	@git config core.hooksPath .githooks
+	@echo "pre-commit hook installed: docs/generated/* regenerate and stage on every commit"
 
 tb-clean: tb-reset
 

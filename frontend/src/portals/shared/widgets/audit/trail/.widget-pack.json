@@ -1,0 +1,7 @@
+{
+  "id": "audit.trail",
+  "label": "Audit trail",
+  "summary": "Who did what to which record and when, newest first, with paging.",
+  "sha": "265ad0064ed6d47ea4407f42941f99c150ff5692dbc0025c9af00548c4546a8e",
+  "stagedAt": "2026-11-18T11:59:51.411Z"
+}

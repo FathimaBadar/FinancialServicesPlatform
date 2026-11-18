@@ -1,0 +1,333 @@
+{
+  "digest": "bad5e163be3cf35e7f7a7dfaa513699748dd6e150ae14327f098f0eb5ed761d1",
+  "endpoints": [
+    {
+      "id": "approval.queue.read",
+      "method": "GET",
+      "path": "/api/approvals",
+      "permission": "",
+      "risk": "READ",
+      "title": "View approval queue"
+    },
+    {
+      "id": "approval.resolve.approve",
+      "method": "POST",
+      "path": "/api/approvals/{id}/approve",
+      "permission": "",
+      "risk": "FOUR_EYES",
+      "title": "Approve request (four-eyes)"
+    },
+    {
+      "id": "approval.resolve.reject",
+      "method": "POST",
+      "path": "/api/approvals/{id}/reject",
+      "permission": "",
+      "risk": "FOUR_EYES",
+      "title": "Reject request (four-eyes)"
+    },
+    {
+      "id": "rbac.permission.me",
+      "method": "GET",
+      "path": "/api/me/permissions",
+      "permission": "",
+      "risk": "READ",
+      "title": "My effective permissions"
+    },
+    {
+      "id": "rbac.permission.catalog",
+      "method": "GET",
+      "path": "/api/permissions",
+      "permission": "",
+      "risk": "READ",
+      "title": "List permission definitions"
+    },
+    {
+      "id": "plugin.installation.effective",
+      "method": "GET",
+      "path": "/api/plugins/{pluginCode}/installations/effective",
+      "permission": "plugin.manage",
+      "risk": "READ",
+      "title": "Resolve effective plugin installation for a tenant"
+    },
+    {
+      "id": "plugin.installation.manage",
+      "method": "PATCH",
+      "path": "/api/plugins/installations/{installationId}/status",
+      "permission": "plugin.manage",
+      "risk": "FOUR_EYES",
+      "title": "Suspend/deactivate a plugin installation (four-eyes)"
+    },
+    {
+      "id": "kyc.case.list",
+      "method": "GET",
+      "path": "/api/plugins/kyc/cases",
+      "permission": "kyc.review",
+      "risk": "READ",
+      "title": "kyc plugin: kyc.case.list"
+    },
+    {
+      "id": "kyc.case.create",
+      "method": "POST",
+      "path": "/api/plugins/kyc/cases",
+      "permission": "org.onboard_child",
+      "risk": "WRITE",
+      "title": "kyc plugin: kyc.case.create"
+    },
+    {
+      "id": "kyc.case.get",
+      "method": "GET",
+      "path": "/api/plugins/kyc/cases/{caseId}",
+      "permission": "kyc.review",
+      "risk": "READ",
+      "title": "kyc plugin: kyc.case.get"
+    },
+    {
+      "id": "kyc.case.update",
+      "method": "PATCH",
+      "path": "/api/plugins/kyc/cases/{caseId}",
+      "permission": "org.onboard_child",
+      "risk": "WRITE",
+      "title": "kyc plugin: kyc.case.update"
+    },
+    {
+      "id": "kyc.case.decide",
+      "method": "POST",
+      "path": "/api/plugins/kyc/cases/{caseId}/decisions",
+      "permission": "kyc.approve",
+      "risk": "WRITE",
+      "title": "kyc plugin: kyc.case.decide"
+    },
+    {
+      "id": "kyc.case.history",
+      "method": "GET",
+      "path": "/api/plugins/kyc/cases/{caseId}/history",
+      "permission": "kyc.review",
+      "risk": "READ",
+      "title": "kyc plugin: kyc.case.history"
+    },
+    {
+      "id": "kyc.case.submit",
+      "method": "POST",
+      "path": "/api/plugins/kyc/cases/{caseId}/submit",
+      "permission": "org.onboard_child",
+      "risk": "WRITE",
+      "title": "kyc plugin: kyc.case.submit"
+    },
+    {
+      "id": "kyc.master.list",
+      "method": "GET",
+      "path": "/api/plugins/kyc/master-values",
+      "permission": "kyc.review",
+      "risk": "READ",
+      "title": "kyc plugin: kyc.master.list"
+    },
+    {
+      "id": "kyc.org.list",
+      "method": "GET",
+      "path": "/api/plugins/kyc/organizations",
+      "permission": "kyc.review",
+      "risk": "READ",
+      "title": "kyc plugin: kyc.org.list"
+    },
+    {
+      "id": "kyc.org.get",
+      "method": "GET",
+      "path": "/api/plugins/kyc/organizations/{tenantId}",
+      "permission": "kyc.review",
+      "risk": "READ",
+      "title": "kyc plugin: kyc.org.get"
+    },
+    {
+      "id": "tenant.subtree.read",
+      "method": "GET",
+      "path": "/api/tenants/{id}/subtree",
+      "permission": "kyc.review",
+      "risk": "READ",
+      "title": "List tenant subtree (organizations API)"
+    },
+    {
+      "id": "audit.list",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/audit",
+      "permission": "audit.view",
+      "risk": "READ",
+      "title": "View audit trail"
+    },
+    {
+      "id": "ledger.book.list",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/books",
+      "permission": "gl.account.view",
+      "risk": "READ",
+      "title": "List books"
+    },
+    {
+      "id": "ledger.gl_account.list",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/books/{bookId}/gl-accounts",
+      "permission": "gl.account.view",
+      "risk": "READ",
+      "title": "List GL accounts"
+    },
+    {
+      "id": "ledger.gl_account.get",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/books/{bookId}/gl-accounts/{glAccountId}",
+      "permission": "gl.account.view",
+      "risk": "READ",
+      "title": "GL account detail"
+    },
+    {
+      "id": "ledger.gl_account.balance",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/books/{bookId}/gl-accounts/{glAccountId}/balance",
+      "permission": "gl.account.view",
+      "risk": "READ",
+      "title": "Live GL balance from TigerBeetle"
+    },
+    {
+      "id": "ledger.period.list",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/books/{bookId}/periods",
+      "permission": "gl.account.view",
+      "risk": "READ",
+      "title": "List accounting periods"
+    },
+    {
+      "id": "ledger.coa.provision",
+      "method": "POST",
+      "path": "/api/tenants/{tenantId}/books/{bookId}/provision-default-coa",
+      "permission": "gl.account.create",
+      "risk": "WRITE",
+      "title": "Provision default chart of accounts"
+    },
+    {
+      "id": "journal.entry.search",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/journal-entries",
+      "permission": "je.view",
+      "risk": "READ",
+      "title": "Search journal entries"
+    },
+    {
+      "id": "journal.entry.create",
+      "method": "POST",
+      "path": "/api/tenants/{tenantId}/journal-entries",
+      "permission": "je.create",
+      "risk": "WRITE",
+      "title": "Create journal entry draft"
+    },
+    {
+      "id": "journal.entry.get",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/journal-entries/{entryId}",
+      "permission": "je.view",
+      "risk": "READ",
+      "title": "Journal entry detail"
+    },
+    {
+      "id": "journal.entry.approve",
+      "method": "POST",
+      "path": "/api/tenants/{tenantId}/journal-entries/{entryId}/approve",
+      "permission": "je.approve",
+      "risk": "FOUR_EYES",
+      "title": "Approve and post JE"
+    },
+    {
+      "id": "journal.entry.check_status",
+      "method": "POST",
+      "path": "/api/tenants/{tenantId}/journal-entries/{entryId}/check-status",
+      "permission": "je.approve",
+      "risk": "FOUR_EYES",
+      "title": "Resolve uncertain commit"
+    },
+    {
+      "id": "journal.entry.submit",
+      "method": "POST",
+      "path": "/api/tenants/{tenantId}/journal-entries/{entryId}/submit-for-approval",
+      "permission": "je.create",
+      "risk": "WRITE",
+      "title": "Submit JE for approval"
+    },
+    {
+      "id": "journal.entry.uncertain",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/journal-entries/uncertain",
+      "permission": "je.view",
+      "risk": "READ",
+      "title": "Uncertain postings queue"
+    },
+    {
+      "id": "plugin.install",
+      "method": "POST",
+      "path": "/api/tenants/{tenantId}/plugins",
+      "permission": "plugin.install",
+      "risk": "FOUR_EYES",
+      "title": "Install a plugin on a tenant (four-eyes)"
+    },
+    {
+      "id": "user.role.options",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/user-roles",
+      "permission": "user.manage",
+      "risk": "READ",
+      "title": "Roles assignable to organization users"
+    },
+    {
+      "id": "user.list",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/users",
+      "permission": "user.manage",
+      "risk": "READ",
+      "title": "List organization users"
+    },
+    {
+      "id": "user.create",
+      "method": "POST",
+      "path": "/api/tenants/{tenantId}/users",
+      "permission": "user.manage",
+      "risk": "WRITE",
+      "title": "Add organization user"
+    },
+    {
+      "id": "user.remove",
+      "method": "DELETE",
+      "path": "/api/tenants/{tenantId}/users/{personId}",
+      "permission": "user.manage",
+      "risk": "WRITE",
+      "title": "Remove organization user"
+    },
+    {
+      "id": "user.get",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/users/{personId}",
+      "permission": "user.manage",
+      "risk": "READ",
+      "title": "View organization user"
+    },
+    {
+      "id": "user.update",
+      "method": "PATCH",
+      "path": "/api/tenants/{tenantId}/users/{personId}",
+      "permission": "user.manage",
+      "risk": "WRITE",
+      "title": "Modify organization user"
+    },
+    {
+      "id": "user.activate",
+      "method": "POST",
+      "path": "/api/tenants/{tenantId}/users/{personId}/activate",
+      "permission": "user.manage",
+      "risk": "WRITE",
+      "title": "Activate organization user"
+    },
+    {
+      "id": "user.deactivate",
+      "method": "POST",
+      "path": "/api/tenants/{tenantId}/users/{personId}/deactivate",
+      "permission": "user.manage",
+      "risk": "WRITE",
+      "title": "Deactivate organization user"
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { apiGet, apiPut, readProblem } from '../portals/shared/web-core/api';
+import type { WidgetDef } from '../portals/shared/widgets/core/manifest';
+import { WIDGETS } from '../portals/shared/widgets/registry';
+import { useConnection } from './connection';
+import { registration, requiresText, spansText } from './model';
+
+/** core UiDtos.WidgetView */
+interface ServerWidget {
+  id: string;
+  version: string;
+  label: string;
+  category: string | null;
+  bundle: string;
+  portals: string[];
+  requires: string[];
+  bundleSha256: string | null;
+  status: string;
+  updatedAt: string;
+}
+
+const SERVER_KEY = ['ui', 'widgets', 'server'] as const;
+
+/**
+ * What the portal builder can discover (SME registry-page): the widgets this build
+ * registers, and what core's registry holds (GET /api/ui/widgets). Registering is the
+ * `ui.widget.register` operation; core re-checks the permission on every call.
+ */
+export function RegistryPage() {
+  const conn = useConnection();
+  const qc = useQueryClient();
+  const connected = conn.status === 'connected';
+
+  const server = useQuery({
+    queryKey: SERVER_KEY,
+    queryFn: () => apiGet<ServerWidget[]>('/api/ui/widgets'),
+    enabled: connected,
+  });
+  const register = useMutation({
+    mutationFn: (def: WidgetDef) => apiPut<ServerWidget>('/api/ui/widgets', registration(def)),
+    onSettled: () => qc.invalidateQueries({ queryKey: SERVER_KEY }),
+  });
+
+  const onServer = new Map((server.data ?? []).map((w) => [w.id, w]));
+  const local = new Map(WIDGETS.map((w) => [w.id, w.version]));
+  const serverProblem = server.error ? readProblem(server.error) : null;
+
+  return (
+    <>
+      <h1>Widget registry</h1>
+      <p className="dim">
+        This build: {WIDGETS.length} widget(s), discovered from <span className="mono">shared/widgets/*/*/index.tsx</span>.
+        Readiness per widget: <span className="mono">bun run widgets:check</span>.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Widget</th><th>Category</th><th>Portals</th><th>Shows with</th><th>Actions</th><th>Reads / writes</th>
+            <th>Span xs · sm · md · lg</th><th>Registry server</th>
+          </tr>
+        </thead>
+        <tbody>
+          {WIDGETS.map((w) => {
+            const s = onServer.get(w.id);
+            const current = s && s.version === w.version;
+            return (
+              <tr key={w.id}>
+                <td>
+                  <Link className="lnk" to={`/w/${w.id}`}>{w.label}</Link>
+                  <div className="mono dim small">{w.id}@{w.version}</div>
+                </td>
+                <td>{w.category ?? '—'}</td>
+                <td className="small">{w.contexts.join(', ')}</td>
+                <td className="mono small">{requiresText(w)}</td>
+                <td className="small">
+                  {(w.actions ?? []).map((a) => (
+                    <div key={a.id}>{a.label} <span className="mono dim">{a.cell}</span></div>
+                  ))}
+                </td>
+                <td className="mono small">{w.sources?.length ?? 0} sources · {w.commands?.length ?? 0} commands</td>
+                <td className="mono small">{spansText(w)}</td>
+                <td className="small">
+                  {!connected ? (
+                    <span className="dim">sign in to compare</span>
+                  ) : current ? (
+                    <span className="ok">registered</span>
+                  ) : (
+                    <>
+                      <span className="warn">{s ? `server has ${s.version}` : 'not registered'}</span>{' '}
+                      <button
+                        type="button"
+                        className="lnk"
+                        disabled={!conn.canBuild || register.isPending}
+                        title={conn.canBuild ? undefined : 'Needs ui.widget.register'}
+                        onClick={() => register.mutate(w)}
+                      >
+                        Register {w.version}
+                      </button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {register.error && <p className="bad small">Register failed: {readProblem(register.error).detail}</p>}
+
+      <h2>Registry server</h2>
+      <p className="dim">
+        What core holds (<span className="mono">GET /v1/ui/widgets</span>, operation{' '}
+        <span className="mono">ui.widget.list</span>). The builder&apos;s palette is this build; the server list is what
+        published layouts may reference.
+      </p>
+      {!connected && <p className="warn small">Sign in (bar above) to read the registry server.</p>}
+      {connected && (
+        <div className="row-b">
+          <button type="button" className="btn" onClick={() => void server.refetch()} disabled={server.isFetching}>
+            {server.isFetching ? 'Asking…' : 'Ask the registry server again'}
+          </button>
+        </div>
+      )}
+      {serverProblem && (
+        <p className="bad">
+          {serverProblem.status === 403 ? `Signed in, but not allowed: ${serverProblem.detail}` : serverProblem.detail}
+        </p>
+      )}
+      {server.data && (
+        <table>
+          <thead>
+            <tr><th>Widget</th><th>Version</th><th>Bundle</th><th>Portals</th><th>Requires</th><th>Updated</th><th>In this build?</th></tr>
+          </thead>
+          <tbody>
+            {server.data.map((s) => (
+              <tr key={s.id}>
+                <td>{s.label} <span className="mono dim small">{s.id}</span></td>
+                <td className="mono">{s.version}</td>
+                <td className="mono small">{s.bundle}</td>
+                <td className="small">{s.portals.join(', ')}</td>
+                <td className="mono small">{s.requires.join(', ')}</td>
+                <td className="small">{new Date(s.updatedAt).toLocaleString()}</td>
+                <td>{local.has(s.id) ? `yes (${local.get(s.id)})` : <span className="warn">no</span>}</td>
+              </tr>
+            ))}
+            {server.data.length === 0 && (
+              <tr><td colSpan={7} className="dim">Nothing registered yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      )}
+    </>
+  );
+}

@@ -1,0 +1,29 @@
+# TLS/transport profile for the BFF (AGENTS.md §7): HTTPS edge + Secure cookie +
+# outbound mTLS identity to core (workload client cert via spring.ssl bundle).
+server:
+  port: 8444
+  ssl:
+    enabled: true
+    key-store: "file:${FSP_TLS_DIR:../infrastructure/pki/dev}/bff.p12"
+    key-store-password: ${FSP_TLS_PASSWORD:fsp-dev}
+    key-store-type: PKCS12
+  servlet:
+    session:
+      cookie:
+        secure: true
+
+spring:
+  ssl:
+    bundle:
+      jks:
+        bff-mtls:
+          keystore:
+            location: "file:${FSP_TLS_DIR:../infrastructure/pki/dev}/bff-workload.p12"
+            password: ${FSP_TLS_PASSWORD:fsp-dev}
+          truststore:
+            location: "file:${FSP_TLS_DIR:../infrastructure/pki/dev}/ca-trust.p12"
+            password: ${FSP_TLS_PASSWORD:fsp-dev}
+
+fsp:
+  core:
+    base-url: ${FSP_CORE_URL:https://localhost:8443}

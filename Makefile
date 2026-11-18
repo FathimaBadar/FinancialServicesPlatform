@@ -1,0 +1,99 @@
+.PHONY: help infra-up infra-down infra-init tb-start tb-stop tb-init tb-reset tb-clean backend-core backend-bff frontend-dev frontend-install test-e2e clean pki
+
+help:
+	@echo "FSP Phase-0 — available commands"
+	@echo "  make infra-up      — start PostgreSQL (TigerBeetle runs on host)"
+	@echo "  make infra-down    — stop PostgreSQL"
+	@echo "  make tb-init       — format TigerBeetle data file"
+	@echo "  make tb-start      — start TigerBeetle server (host binary)"
+	@echo "  make tb-stop       — stop TigerBeetle server"
+	@echo "  make tb-reset      — reset TigerBeetle data"
+	@echo "  make backend-core  — run core service"
+	@echo "  make backend-bff   — run BFF service"
+	@echo "  make frontend-dev  — run React SPA dev server (bun)"
+	@echo "  make frontend-install — install frontend deps (bun)"
+	@echo "  make test-e2e      — run Playwright E2E tests"
+	@echo "  make clean         — tear down containers and volumes"
+
+infra-up:
+	@docker compose -f infrastructure/docker-compose.yml up -d
+	@echo "Waiting for services..."
+	@sleep 3
+	@docker compose -f infrastructure/docker-compose.yml ps
+
+infra-down:
+	@docker compose -f infrastructure/docker-compose.yml down
+
+TB_BIN := infrastructure/bin/tigerbeetle
+TB_DATA := infrastructure/tigerbeetle-data
+
+$(TB_DATA):
+	@mkdir -p $(TB_DATA)
+
+infra-init: $(TB_DATA)
+
+# --- TigerBeetle (runs as a host binary; avoids Docker seccomp/io_uring issues) ---
+
+tb-init: $(TB_DATA)
+	@$(TB_BIN) format --cluster=0 --replica=0 --replica-count=1 \
+		$(TB_DATA)/0_0.tigerbeetle 2>/dev/null || echo "already formatted"
+
+tb-start: tb-init
+	@echo "Starting TigerBeetle on :3000 ..."
+	@nohup $(TB_BIN) start --addresses=127.0.0.1:3000 $(TB_DATA)/0_0.tigerbeetle \
+		> $(TB_DATA)/server.log 2>&1 & \
+		echo "TigerBeetle pid $$!; log: infrastructure/tigerbeetle-data/server.log"
+
+tb-stop:
+	@pkill -f "tigerbeetle start" || true
+	@echo "TigerBeetle stopped"
+
+tb-reset: tb-stop
+	@rm -rf $(TB_DATA)
+	@mkdir -p $(TB_DATA)
+	@$(TB_BIN) format --cluster=0 --replica=0 --replica-count=1 $(TB_DATA)/0_0.tigerbeetle
+	@echo "TigerBeetle data reset; run 'make tb-start'"
+
+tb-clean: tb-reset
+
+backend-core:
+	@cd backend/core && ../gradlew bootRun
+
+
+backend-idp:
+	@cd backend/idp && ../gradlew bootRun
+
+backend-gateway:
+	@cd backend/gateway && ../gradlew bootRun
+
+backend-bff:
+	@cd backend/bff && ../gradlew bootRun
+
+backend-plugin-kyc:
+	@cd backend/plugins/kyc && ../../gradlew bootRun
+
+frontend-dev:
+	@cd frontend && bun run dev
+
+test-e2e:
+	@cd frontend && bunx --bun playwright test
+
+frontend-install:
+	@cd frontend && bun install
+
+clean:
+	@docker compose -f infrastructure/docker-compose.yml down -v
+	@-make tb-stop
+
+stop-all: tb-stop infra-down
+	@echo "All services stopped"
+
+pki:
+	@bash infrastructure/pki/dev-pki.sh
+	@echo "dev PKI regenerated in infrastructure/pki/dev (gitignored)"
+
+stack-up:
+	docker compose -f infrastructure/docker-compose.yml --profile stack up -d --build core idp gateway bff
+
+stack-down:
+	docker compose -f infrastructure/docker-compose.yml --profile stack down

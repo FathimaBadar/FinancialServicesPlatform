@@ -1,0 +1,115 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: fsp-postgres
+    environment:
+      POSTGRES_USER: fsp
+      POSTGRES_PASSWORD: fsp
+      POSTGRES_DB: fsp
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    security_opt:
+      - seccomp=unconfined
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fsp -d fsp"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- backend service stack (make stack-up) — all Java 25, built from source ---
+  core:
+    profiles: ["stack"]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.core
+    image: fsp/core:latest
+    container_name: fsp-core
+    environment:
+      FSP_DB_URL: jdbc:postgresql://postgres:5432/fsp
+      FSP_DB_USER: fsp
+      FSP_DB_PASSWORD: fsp
+      FSP_BOOTSTRAP_PASSWORD: ${FSP_BOOTSTRAP_PASSWORD:-fsp-admin}
+      FSP_INTERNAL_CREDENTIAL: ${FSP_INTERNAL_CREDENTIAL:-dev-internal-credential}
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  idp:
+    profiles: ["stack"]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.idp
+    image: fsp/idp:latest
+    container_name: fsp-idp
+    environment:
+      FSP_DB_URL: jdbc:postgresql://postgres:5432/fsp
+      FSP_DB_USER: fsp
+      FSP_DB_PASSWORD: fsp
+      FSP_IDP_ISSUER: ${FSP_IDP_ISSUER:-https://idp.fsp.local}
+      FSP_IDP_SIGNING_KEY: /opt/fsp/pki/idp-signing.pem
+      FSP_INTERNAL_CREDENTIAL: ${FSP_INTERNAL_CREDENTIAL:-dev-internal-credential}
+    volumes:
+      # IdP token-signing key — never baked into the image
+      - ../infrastructure/pki/dev:/opt/fsp/pki:ro
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    profiles: ["stack"]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.gateway
+    image: fsp/gateway:latest
+    container_name: fsp-gateway
+    environment:
+      FSP_CORE_URL: http://core:8081
+      FSP_IDP_URL: http://idp:8082
+      FSP_IDP_ISSUER: ${FSP_IDP_ISSUER:-https://idp.fsp.local}
+      FSP_INTERNAL_CREDENTIAL: ${FSP_INTERNAL_CREDENTIAL:-dev-internal-credential}
+    ports:
+      - "8090:8090"
+    depends_on:
+      - core
+      - idp
+
+  bff:
+    profiles: ["stack"]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.bff
+    image: fsp/bff:latest
+    container_name: fsp-bff
+    environment:
+      FSP_GATEWAY_URL: http://gateway:8090
+    ports:
+      - "8080:8080"
+    depends_on:
+      - gateway
+
+  plugin-kyc:
+    profiles: ["stack"]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.plugin-kyc
+    image: fsp/plugin-kyc:latest
+    container_name: fsp-plugin-kyc
+    environment:
+      FSP_PLUGIN_KYC_DB_URL: jdbc:postgresql://postgres:5432/fsp_plugin_kyc
+      FSP_PLUGIN_KYC_DB_USER: fsp_plugin_kyc
+      FSP_PLUGIN_KYC_DB_PASSWORD: fsp_plugin_kyc
+      SERVER_PORT: 8083
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

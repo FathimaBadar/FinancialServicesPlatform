@@ -1,0 +1,11 @@
+
+# Demo profile — appends the demo seed location. System seed always runs first
+# (locations are ordered; Flyway tracks applied migrations by filename location).
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed/system,classpath:db/seed/demo
+    out-of-order: true   # demo seed (V3) can apply after later migrations on existing DBs
+
+logging:
+  level:
+    com.fsp: DEBUG

@@ -1,0 +1,14 @@
+# TLS/transport profile (AGENTS.md §7). Dev PKI from infrastructure/pki/dev-pki.sh.
+# Client-auth 'need' enables workload mTLS (guide §2 internal hop); keep 'none' until the
+# BFF presents bff-workload certs, so dev can still boot plaintext-calls-TLS core.
+server:
+  port: 8443
+  ssl:
+    enabled: true
+    key-store: "file:${FSP_TLS_DIR:../infrastructure/pki/dev}/core.p12"
+    key-store-password: ${FSP_TLS_PASSWORD:fsp-dev}
+    key-store-type: PKCS12
+    trust-store: "file:${FSP_TLS_DIR:../infrastructure/pki/dev}/ca-trust.p12"
+    trust-store-password: ${FSP_TLS_PASSWORD:fsp-dev}
+    trust-store-type: PKCS12
+    client-auth: ${FSP_TLS_CLIENT_AUTH:none}

@@ -1,0 +1,116 @@
+{
+  "code": "kyc",
+  "version": "1.0.0",
+  "name": "KYC",
+  "description": "Know-your-customer onboarding: cases, screening, four-eyes decisions, organizations with KYC status.",
+  "operations": [
+    {
+      "id": "kyc.case.list",
+      "method": "GET",
+      "path": "/v1/plugins/kyc/cases",
+      "permission": "kyc.review"
+    },
+    {
+      "id": "kyc.case.get",
+      "method": "GET",
+      "path": "/v1/plugins/kyc/cases/{caseId}",
+      "permission": "kyc.review"
+    },
+    {
+      "id": "kyc.case.history",
+      "method": "GET",
+      "path": "/v1/plugins/kyc/cases/{caseId}/history",
+      "permission": "kyc.review"
+    },
+    {
+      "id": "kyc.case.create",
+      "method": "POST",
+      "path": "/v1/plugins/kyc/cases",
+      "permission": "org.onboard_child"
+    },
+    {
+      "id": "kyc.case.update",
+      "method": "PATCH",
+      "path": "/v1/plugins/kyc/cases/{caseId}",
+      "permission": "org.onboard_child"
+    },
+    {
+      "id": "kyc.case.submit",
+      "method": "POST",
+      "path": "/v1/plugins/kyc/cases/{caseId}/submit",
+      "permission": "org.onboard_child"
+    },
+    {
+      "id": "kyc.case.decide",
+      "method": "POST",
+      "path": "/v1/plugins/kyc/cases/{caseId}/decisions",
+      "permission": "kyc.approve"
+    },
+    {
+      "id": "kyc.org.list",
+      "method": "GET",
+      "path": "/v1/plugins/kyc/organizations",
+      "permission": "kyc.review"
+    },
+    {
+      "id": "kyc.org.get",
+      "method": "GET",
+      "path": "/v1/plugins/kyc/organizations/{tenantId}",
+      "permission": "kyc.review"
+    },
+    {
+      "id": "kyc.master.list",
+      "method": "GET",
+      "path": "/v1/plugins/kyc/master-values",
+      "permission": "kyc.review"
+    }
+  ],
+  "approvals": [
+    {
+      "action": "CASE_DECISION",
+      "makerPermission": "org.onboard_child",
+      "checkerPermission": "kyc.approve"
+    }
+  ],
+  "client": {
+    "jwks": {
+      "keys": [
+        {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "xiM-F80ZCh3lnvMP_47GrauPguuhu0z6MOA77jYvNFA",
+          "y": "C_OhYu9K5Q4QHJrZmHM4Lj_03jtnD_VD4M9GQepDZIw",
+          "use": "sig",
+          "alg": "ES256",
+          "kid": "qFureNkZUDmCC8GzHWgMcLxPSxa7Gk5D0VR5uvmue6Y"
+        }
+      ]
+    },
+    "grants": [
+      {
+        "permission": "org.create",
+        "kind": "ON_BEHALF"
+      },
+      {
+        "permission": "org.onboard_child",
+        "kind": "ON_BEHALF"
+      },
+      {
+        "permission": "kyc.review",
+        "kind": "ON_BEHALF"
+      },
+      {
+        "permission": "kyc.approve",
+        "kind": "ON_BEHALF"
+      },
+      {
+        "permission": "kyc.reject",
+        "kind": "ON_BEHALF"
+      },
+      {
+        "permission": "plugin.manage",
+        "kind": "MACHINE"
+      }
+    ]
+  }
+}

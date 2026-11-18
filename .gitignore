@@ -1,0 +1,48 @@
+# Gradle
+backend/.gradle/
+backend/**/build/
+backend/**/out/
+!backend/gradle/wrapper/gradle-wrapper.jar
+!backend/gradle/wrapper/gradle-wrapper.properties
+
+# Node / Bun
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/storybook-static/
+frontend/.cache/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Infrastructure data
+infrastructure/postgres-data/
+infrastructure/tigerbeetle-data/
+
+# TigerBeetle host binary (downloaded, regenerable — never ship it)
+infrastructure/bin/tigerbeetle
+
+# Root-level artifacts
+/node_modules/
+/~/
+/.playwright-cli/
+**/tsconfig.tsbuildinfo
+
+# dev PKI material (regenerate with make pki)
+infrastructure/pki/dev/

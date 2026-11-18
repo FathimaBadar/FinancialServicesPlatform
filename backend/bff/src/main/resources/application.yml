@@ -1,0 +1,38 @@
+
+spring:
+  application:
+    name: fsp-bff
+  session:
+    store-type: jdbc
+    jdbc:
+      initialize-schema: always
+  datasource:
+    url: jdbc:postgresql://localhost:5432/fsp
+    username: fsp
+    password: fsp
+    driver-class-name: org.postgresql.Driver
+
+server:
+  port: 8080
+  servlet:
+    session:
+      cookie:
+        name: FSPSESSION
+        http-only: true
+        secure: false # set true in production with HTTPS
+        same-site: lax
+        path: /
+        max-age: 8h
+
+fsp:
+  gateway:
+    base-url: ${FSP_GATEWAY_URL:http://localhost:8090}
+  proxy:
+    max-body-bytes: ${FSP_PROXY_MAX_BODY:65536}
+  session:
+    idle-timeout-minutes: 30
+    absolute-timeout-minutes: 480
+
+logging:
+  level:
+    com.fsp: DEBUG

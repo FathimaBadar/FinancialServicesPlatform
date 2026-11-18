@@ -1,0 +1,387 @@
+package com.fsp.idp;
+
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.view.RedirectView;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+/**
+ * IdP surface: token issuance (public, credential-authenticated), JWKS (public), introspection
+ * (public), tenant IdP policy (internal hop via gateway). The native IdP is the DEFAULT provider;
+ * tenant admins flip to THIRD_PARTY here.
+ * FAPI 2.0 endpoints: PAR (/par), Authorization (/authorize), Token (/token with auth_code).
+ */
+@RestController
+@RequestMapping("/idp")
+public class IdpController {
+
+    private static final Logger log = LoggerFactory.getLogger(IdpController.class);
+
+    /** Closed set of reasons the hosted error page will render; anything else shows as unknown_error. */
+    private static final java.util.Set<String> ERROR_CODES = java.util.Set.of(
+        "request_uri_invalid", "authentication_failed", "account_inactive", "tenant_inactive",
+        "federation_pending", "server_error", "unknown_error");
+
+    private final IdpTokenService tokenService;
+    private final ParService parService;
+    private final IdpProperties props;
+    private final JdbcTemplate jdbc;
+
+    public IdpController(IdpTokenService tokenService, ParService parService,
+                         IdpProperties props, JdbcTemplate jdbc) {
+        this.tokenService = tokenService;
+        this.parService = parService;
+        this.jdbc = jdbc;
+        this.props = props;
+    }
+
+    // ========== FAPI 2.0: Pushed Authorization Request (PAR) ==========
+
+    @PostMapping(value = "/par", consumes = MediaType.APPLICATION_JSON_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE)
+    public IdpDtos.ParResponse pushedAuthzRequest(@RequestBody Map<String, String> body,
+                                                   @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // Snake_case wire params (RFC 9126 §2.1); client_assertion sent as Bearer (private_key_jwt)
+        String clientAssertion = null;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            clientAssertion = authHeader.substring(7).trim();
+        }
+        IdpDtos.ParRequest request = new IdpDtos.ParRequest(
+            body.get("grant_type"), body.get("code_challenge"), body.get("code_challenge_method"),
+            body.get("redirect_uri"), body.get("response_type"), body.get("scope"),
+            body.get("authorization_details"), body.get("resource"),
+            body.get("client_assertion"), body.get("client_assertion_type"), body.get("state"));
+        if (clientAssertion == null) {
+            clientAssertion = body.get("client_assertion");
+        }
+        return parService.createParRequest(request, clientAssertion);
+    }
+
+    /** Simulated error surface for the hosted (Phase-0) sign-in flows. */
+    @GetMapping(value = "/error", produces = MediaType.TEXT_HTML_VALUE)
+    @org.springframework.web.bind.annotation.ResponseBody
+    public String errorPage(@RequestParam(value = "code", required = false) String code) {
+        // Only allow-listed codes are rendered: the query string is attacker-controlled
+        String safe = code != null && ERROR_CODES.contains(code) ? code : "unknown_error";
+        return """
+            <!doctype html><html lang="en"><head><meta charset="utf-8">
+            <title>FSP Identity Provider &middot; Error</title>
+            <style>body { font-family: system-ui, sans-serif; background: #101418; color: #e8edf2;
+                   display: grid; place-items: center; min-height: 100dvh; margin: 0; }</style>
+            </head><body><div style="text-align:center">
+            <p style="font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:#f0a10e">FSP Identity Provider</p>
+            <h1 style="font-weight:600">Sign-in could not continue</h1>
+            <p style="color:#9fb0c0">Reason: %s &mdash; restart sign-in from your portal.</p>
+            </div></body></html>
+            """.formatted(safe);
+    }
+
+    // ========== FAPI 2.0: Authorization Endpoint ==========
+
+    @GetMapping(value = "/authorize")
+    public RedirectView authorize(@RequestParam("client_id") String clientId,
+                                   @RequestParam("request_uri") String requestUri) {
+        // 1. Peek PAR request (validates expiry; consumed at callback completion)
+        ParService.ParRequestData parData = parService.peekParRequest(requestUri);
+        if (parData == null) {
+            // Invalid/expired/used request_uri - redirect to error page
+            return new RedirectView("/idp/error?code=request_uri_invalid");
+        }
+
+        // 2. Store PAR data in session or pass via request attribute for the login page
+        // In a real implementation, this would render a hosted sign-in page
+        // For now, we simulate by redirecting to a login page with the PAR data encoded
+        // The login page would authenticate the user and then call back to /authorize/callback
+        
+        // Build the login page URL with PAR context
+        String loginUrl = "/idp/login?request_uri=" + java.net.URLEncoder.encode(requestUri, java.nio.charset.StandardCharsets.UTF_8)
+            + "&client_id=" + java.net.URLEncoder.encode(clientId, java.nio.charset.StandardCharsets.UTF_8);
+        
+        return new RedirectView(loginUrl);
+    }
+
+    /** Simulated hosted sign-in page (Phase-0): the SCA surface lives at the IdP, never in BFF/SPA. */
+    @GetMapping(value = "/login", produces = MediaType.TEXT_HTML_VALUE)
+    @org.springframework.web.bind.annotation.ResponseBody
+    public String loginPage(@RequestParam("request_uri") String requestUri,
+                            @RequestParam("client_id") String clientId) {
+        // Raw URI, HTML-escaped for the attribute; the browser URL-encodes it on form submit
+        String enc = html(requestUri);
+        return """
+            <!doctype html><html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>FSP Identity Provider &middot; Sign in</title>
+            <style>
+              body { font-family: system-ui, sans-serif; background: #101418; color: #e8edf2;
+                     display: grid; place-items: center; min-height: 100dvh; margin: 0; }
+              .panel { background: #1a2029; border: 1px solid #2a323d; border-radius: 12px;
+                       padding: 2rem; width: min(92vw, 22rem); }
+              h1 { font-size: 1.05rem; margin: 0 0 .25rem; }
+              p.eyebrow { font-size: .7rem; letter-spacing: .12em; text-transform: uppercase;
+                          color: #f0a10e; margin: 0 0 .75rem; }
+              label { display: block; font-size: .75rem; margin: .75rem 0 .25rem; color: #9fb0c0; }
+              input { width: 100%%; box-sizing: border-box; padding: .55rem .7rem; border-radius: 8px;
+                      border: 1px solid #3a4450; background: #101418; color: #e8edf2; font: inherit; }
+              button { margin-top: 1.25rem; width: 100%%; padding: .6rem; border: 0; border-radius: 8px;
+                       background: #f0a10e; color: #101418; font-weight: 700; cursor: pointer; }
+              .hint { margin-top: 1rem; font-size: .7rem; color: #7a8a99; line-height: 1.5; }
+            </style></head><body><div class="panel">
+            <p class="eyebrow">FSP Identity Provider</p>
+            <h1>Sign in to continue</h1>
+            <form method="post" action="/idp/authorize/callback">
+              <input type="hidden" name="request_uri" value="%s">
+              <label for="u">Username</label>
+              <input id="u" name="username" autocomplete="username" required autofocus>
+              <label for="p">Password</label>
+              <input id="p" name="password" type="password" autocomplete="current-password" required>
+              <button type="submit">Sign in</button>
+            </form>
+            <p class="hint">Client: %s &middot; Your credentials never leave the Identity Provider.</p>
+            </div></body></html>
+            """.formatted(enc, html(clientId));
+    }
+
+    // ========== FAPI 2.0: Authorization Callback (after user consent) ==========
+
+    // POST only: credentials travel in the form body, never in the URL (history, logs, Referer)
+    @PostMapping(value = "/authorize/callback", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public RedirectView authorizeCallback(@RequestParam("request_uri") String requestUri,
+                                           @RequestParam("username") String username,
+                                           @RequestParam("password") String password) {
+        // In a real implementation, this would be after the user authenticates at the hosted sign-in page
+        // For Phase-0, we simulate by accepting username/password here (but this should be a full-page IdP form)
+        
+        // 1. Consume PAR request
+        ParService.ParRequestData parData = parService.consumeParRequest(requestUri);
+        if (parData == null) {
+            log.warn("idp_authorize_failed reason=request_uri_invalid");
+            return new RedirectView("/idp/error?code=request_uri_invalid");
+        }
+
+        // 2. Authenticate user (in real flow, this happens at IdP hosted page)
+        // For now, delegate to token service password grant to validate credentials
+        IdpDtos.TokenGrant grant = new IdpDtos.TokenGrant("password", username, password, parData.clientId());
+        try {
+            IdpDtos.TokenResponse tokenResp = tokenService.grantPassword(grant);
+            
+            // 3. Store auth code linked to this user
+            String authCode = parService.storeAuthCode(parData, 
+                UUID.fromString(tokenResp.claims().userId()), 
+                UUID.fromString(tokenResp.claims().tenantId()));
+            
+            // 4. Redirect back to client's redirect_uri with code + the client's OWN state + iss
+            StringBuilder redirectUri = new StringBuilder(parData.redirectUri())
+                .append("?code=").append(URLEncoder.encode(authCode, StandardCharsets.UTF_8));
+            if (parData.state() != null) {
+                redirectUri.append("&state=").append(URLEncoder.encode(parData.state(), StandardCharsets.UTF_8));
+            }
+            redirectUri.append("&iss=").append(URLEncoder.encode(props.getIssuer(), StandardCharsets.UTF_8));
+            log.info("idp_authorize_succeeded clientId={} username={}", parData.clientId(), username);
+            return new RedirectView(redirectUri.toString());
+        } catch (IdpProblemException e) {
+            // Business rejection (grantPassword already logged the credential detail); map to a page code
+            String code = switch (e.problem().code()) {
+                case "INVALID_CREDENTIALS", "INVALID_REQUEST" -> "authentication_failed";
+                case "PERSON_INACTIVE" -> "account_inactive";
+                case "TENANT_INACTIVE", "TENANT_MISSING" -> "tenant_inactive";
+                case "IDP_EXTERNAL_FEDERATION_PENDING" -> "federation_pending";
+                default -> "authentication_failed";
+            };
+            log.warn("idp_authorize_failed clientId={} username={} problem={} status={}",
+                parData.clientId(), username, e.problem().code(), e.problem().status());
+            return new RedirectView("/idp/error?code=" + code);
+        } catch (RuntimeException e) {
+            log.error("idp_authorize_error clientId={} username={}", parData.clientId(), username, e);
+            return new RedirectView("/idp/error?code=server_error");
+        }
+    }
+
+    private static String html(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace("\"", "&quot;").replace("'", "&#39;");
+    }
+
+    // ========== Token Endpoint (ROPC - legacy + auth_code - FAPI 2.0) ==========
+
+    @PostMapping(value = "/token", consumes = MediaType.APPLICATION_JSON_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE)
+    public IdpDtos.TokenResponse token(@RequestBody Map<String, String> body,
+                                        @RequestHeader(value = "DPoP", required = false) String dpopHeader) {
+        String grantType = body.get("grant_type");
+        
+        if ("client_credentials".equals(grantType)) {
+            // FAPI 2.0 machine-plane: client_credentials + private_key_jwt + DPoP
+            IdpDtos.ClientCredentialsGrant grant = new IdpDtos.ClientCredentialsGrant(
+                body.get("grant_type"),
+                body.get("client_id"),
+                body.get("client_assertion"),
+                body.get("client_assertion_type"),
+                body.get("scope")
+            );
+            return tokenService.grantClientCredentials(grant, dpopHeader);
+        } else if ("password".equals(grantType)) {
+            // Legacy ROPC (will be deprecated)
+            IdpDtos.TokenGrant grant = new IdpDtos.TokenGrant(
+                body.get("grant_type"),
+                body.get("username"),
+                body.get("password"),
+                body.get("client_id")
+            );
+            return tokenService.grantPassword(grant);
+        } else if ("authorization_code".equals(grantType)) {
+            // FAPI 2.0: Authorization code flow with PKCE + DPoP + private_key_jwt
+            IdpDtos.TokenExchangeRequest request = new IdpDtos.TokenExchangeRequest(
+                body.get("grant_type"),
+                body.get("code"),
+                body.get("code_verifier"),
+                body.get("redirect_uri"),
+                body.get("client_assertion"),
+                body.get("client_assertion_type")
+            );
+            
+            // Consume auth code (validates PKCE)
+            ParService.AuthCodeData authCodeData = parService.consumeAuthCode(request.code(), request.codeVerifier());
+            
+            // Exchange for token (validates client_assertion, DPoP)
+            return tokenService.exchangeAuthCode(request, dpopHeader, authCodeData);
+        } else {
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "UNSUPPORTED_GRANT", "grant_type must be 'password' or 'authorization_code'", 400));
+        }
+    }
+
+    // ========== Existing endpoints ==========
+
+    @GetMapping(value = "/jwks", produces = MediaType.APPLICATION_JSON_VALUE)
+    public String jwks() {
+        return tokenService.jwksJson();
+    }
+
+    @PostMapping(value = "/introspect", consumes = MediaType.TEXT_PLAIN_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE)
+    public IdpDtos.IntrospectionResponse introspect(@RequestBody String token) {
+        return tokenService.introspect(token == null ? "" : token.trim());
+    }
+
+    @PostMapping(value = "/introspect", consumes = MediaType.APPLICATION_JSON_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE)
+    public IdpDtos.IntrospectionResponse introspectJson(@RequestBody Map<String, String> body) {
+        return tokenService.introspect(body.getOrDefault("token", ""));
+    }
+
+    @GetMapping(value = "/policy/{tenantId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public IdpDtos.PolicyView policy(@PathVariable("tenantId") UUID tenantId) {
+        return tokenService.policy(tenantId);
+    }
+
+    @PutMapping(value = "/policy/{tenantId}", consumes = MediaType.APPLICATION_JSON_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE)
+    public IdpDtos.PolicyView updatePolicy(@PathVariable("tenantId") UUID tenantId,
+                                           @RequestBody IdpDtos.PolicyUpdate update,
+                                           @RequestHeader(value = "X-FSP-User-Id", required = false) String updatedBy) {
+        UUID actor = null;
+        if (updatedBy != null && !updatedBy.isBlank()) {
+            try {
+                actor = UUID.fromString(updatedBy);
+            } catch (IllegalArgumentException ignored) {
+                actor = null;
+            }
+        }
+        return tokenService.updatePolicy(tenantId, update, actor);
+    }
+
+    @GetMapping(value = "/.well-known/openid-configuration", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Map<String, String> discovery() {
+        return Map.of(
+            "issuer", props.getIssuer(),
+            "token_endpoint", "/idp/token",
+            "jwks_uri", "/idp/jwks",
+            "pushed_authorization_request_endpoint", "/idp/par",
+            "authorization_endpoint", "/idp/authorize",
+            "grant_types_supported", "authorization_code, password, client_credentials");
+    }
+
+    // ========== Internal: OAuth client management (core only) ==========
+
+    @PostMapping(value = "/internal/clients", consumes = MediaType.APPLICATION_JSON_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE)
+    public IdpDtos.ClientView createClient(@RequestBody IdpDtos.ClientCreate body,
+                                           @RequestHeader(value = "X-FSP-Internal-Credential", required = false) String credential) {
+        if (credential == null || !credential.equals(props.getInternalCredential())) {
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "INTERNAL_CREDENTIAL_INVALID", "Internal credential required", 401));
+        }
+        if (body.clientId() == null || body.clientId().isBlank()
+            || body.ownerTenantId() == null) {
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "INVALID_REQUEST", "client_id and ownerTenantId are required", 400));
+        }
+        // Check uniqueness via JDBC
+        try {
+            jdbc.queryForObject("SELECT 1 FROM oauth_clients WHERE client_id = ?",
+                new Object[]{body.clientId()}, Integer.class);
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "CLIENT_EXISTS", "Client " + body.clientId() + " already registered", 409));
+        } catch (org.springframework.dao.EmptyResultDataAccessException ignored) {
+            // not found — good, proceed
+        }
+        jdbc.update("""
+            INSERT INTO oauth_clients (client_id, client_type, jwks, grant_types, status, owner_tenant_id, token_ttl_s, created_at, updated_at)
+            VALUES (?, 'MACHINE', ?, '["client_credentials"]', 'ACTIVE', ?, ?, now(), now())
+            """, body.clientId(), body.jwks(), body.ownerTenantId(), body.tokenTtlSeconds() == null ? 300 : body.tokenTtlSeconds());
+        log.info("idp_client_created clientId={} ownerTenant={}", body.clientId(), body.ownerTenantId());
+        return new IdpDtos.ClientView(body.clientId(), "MACHINE", body.jwks(),
+            List.of("client_credentials"), "ACTIVE", body.ownerTenantId(),
+            body.tokenTtlSeconds() == null ? 300 : body.tokenTtlSeconds());
+    }
+
+    @PatchMapping(value = "/internal/clients/{clientId}", consumes = MediaType.APPLICATION_JSON_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE)
+    public IdpDtos.ClientView patchClient(@PathVariable("clientId") String clientId,
+                                          @RequestBody IdpDtos.ClientUpdate body,
+                                          @RequestHeader(value = "X-FSP-Internal-Credential", required = false) String credential) {
+        if (credential == null || !credential.equals(props.getInternalCredential())) {
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "INTERNAL_CREDENTIAL_INVALID", "Internal credential required", 401));
+        }
+        var row = jdbc.queryForMap("SELECT client_id, status FROM oauth_clients WHERE client_id = ?", clientId);
+        String currentStatus = (String) row.get("status");
+        String newStatus = body.status() == null ? currentStatus : body.status();
+        if (!Set.of("ACTIVE", "SUSPENDED", "DEACTIVATED").contains(newStatus)) {
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "INVALID_STATUS", "status must be ACTIVE, SUSPENDED or DEACTIVATED", 400));
+        }
+        jdbc.update("UPDATE oauth_clients SET status = ?, updated_at = now() WHERE client_id = ?",
+            newStatus, clientId);
+        log.info("idp_client_patched clientId={} status={} -> {}", clientId, currentStatus, newStatus);
+        var updated = jdbc.queryForMap("SELECT client_id, client_type, jwks, grant_types, status, owner_tenant_id, token_ttl_s FROM oauth_clients WHERE client_id = ?", clientId);
+        return new IdpDtos.ClientView(
+            (String) updated.get("client_id"), (String) updated.get("client_type"),
+            (String) updated.get("jwks"),
+            List.of("client_credentials"), (String) updated.get("status"),
+            UUID.fromString((String) updated.get("owner_tenant_id")),
+            ((Number) updated.get("token_ttl_s")).intValue());
+    }
+}

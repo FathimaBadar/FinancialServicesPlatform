@@ -345,3 +345,17 @@ Smoke chain (dev): `GET :8080/bff/csrf` → `POST :8080/bff/auth/login` (session
 
 Dev login (system seed): `platform-admin` / `fsp-admin` (or `$FSP_BOOTSTRAP_PASSWORD`).
 Demo login (client-demo only): `psp-admin`, `psp-ops`, `merchant-admin`, `merchant-checker` / `demo1234`.
+
+## 9. Living architecture doc (mandatory)
+
+`docs/architecture.md` is the architecture document, kept live in two tiers:
+
+1. **Generators (`docs/gen/refresh.cjs`) auto-maintain `docs/generated/*`** — fingerprint,
+   Gradle dependency graph, `@FspOperation` catalog, Flyway ledger. Run `make docs-refresh`
+   before committing; `make docs-check` is the CI gate. Install the auto-run hook once with
+   `make docs-hook`.
+2. **Prose sections §1–§13/§15 of `docs/architecture.md` are updated in the same PR** whenever a
+   change is structural: new service or Gradle module, new package, new cross-service flow,
+   invariant change, new migration, new plugin, portal/widget surface change. If your PR
+   changes `docs/generated/*` (fingerprint moves), scan the diff: did anything structural
+   move? If yes, edit the affected prose sections — do not leave the narrative stale.

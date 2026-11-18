@@ -806,6 +806,10 @@ migrate core tables.
 
 ### 12.1 Make targets (dev happy path)
 
+> **Windows-only developer?** Start with `docs/setup-guide.md` (both OSes, full
+> troubleshooting) and `docs/windows-dev.md` (Podman/Rancher Desktop, no Docker
+> Desktop; scripts `scripts/windows-setup.ps1` + `scripts/dev-windows.ps1`).
+
 ```mermaid
 flowchart LR
     INFRA["make infra-up<br/>postgres"] --> TB["make tb-start<br/>TigerBeetle :3000"]

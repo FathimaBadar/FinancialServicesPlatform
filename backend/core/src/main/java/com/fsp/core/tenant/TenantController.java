@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Slf4j
+@RestController
 public class TenantController {
 
     private final TenantService tenantService;

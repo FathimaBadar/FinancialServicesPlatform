@@ -12,6 +12,7 @@ import { can, doLogout, useSession } from './session-core';
 import type { PortalConfig } from '../../portal-config';
 import { layoutNavEntries, useSignedLayout } from '../../signed/signed-layout';
 import { getWidget } from '../widgets/registry';
+import { useState } from 'react';
 
 export function AppShell({
   portal,
@@ -27,7 +28,8 @@ export function AppShell({
   children?: ReactNode;
 }) {
   void children;
-  const { user, permissions } = useSession();
+  const { user, permissions, actAs, exitActAs } = useSession();
+  const [exiting, setExiting] = useState(false);
 
   const layout = useSignedLayout();
   // a verified, published layout draws the sidebar; otherwise the build-time menu registry
@@ -68,6 +70,40 @@ export function AppShell({
             </button>
           </div>
         </div>
+        {actAs && (
+          <div
+            data-testid="act-as-banner"
+            role="status"
+            className="flex items-center justify-between gap-3 border-t border-line bg-raised px-4 py-2"
+          >
+            {/* ui-std §5.2: an acting principal is always NAMEABLE — person on record, target spelled out. */}
+            <div className="truncate text-xs">
+              {actAs.personName ?? user?.username} acting as{' '}
+              <strong>{actAs.targetTenantName ?? actAs.targetTenantId}</strong>
+              {actAs.path.length > 0 && (
+                <span className="text-dim">
+                  {' '}({actAs.path.map((p) => p.name).filter(Boolean).join(' › ')})
+                </span>
+              )}
+              {' '}— every action is audited as you
+            </div>
+            <button
+              data-testid="act-as-exit"
+              className="fsp-btn fsp-btn-ghost shrink-0 px-3 py-1 text-xs"
+              disabled={exiting}
+              onClick={async () => {
+                setExiting(true);
+                try {
+                  await exitActAs();
+                } finally {
+                  setExiting(false);
+                }
+              }}
+            >
+              Exit
+            </button>
+          </div>
+        )}
       </header>
 
       <div

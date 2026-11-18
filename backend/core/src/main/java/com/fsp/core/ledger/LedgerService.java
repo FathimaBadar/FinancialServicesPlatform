@@ -97,6 +97,25 @@ public class LedgerService {
         return bookRepository.findByTenantIdOrderByCreatedAtAsc(tenantId);
     }
 
+    /** KYC verification opened the tenant: its SUSPENDED books go ACTIVE (docs §7.3,
+     *  "child tenant is born with suspended books; the book auto-opens on verdict"). */
+    @Transactional
+    public void openBooksForTenant(UUID tenantId) {
+        List<Book> opened = bookRepository.findByTenantIdOrderByCreatedAtAsc(tenantId).stream()
+            .filter(b -> "SUSPENDED".equals(b.status))
+            .toList();
+        if (opened.isEmpty()) return;
+        var actor = RequestCorrelation.currentActor();
+        for (Book b : opened) {
+            b.status = "ACTIVE";
+            bookRepository.save(b);
+            audit.record(actor == null ? null : actor.personId(), null, tenantId, b.id,
+                "BOOK_OPENED", "BOOK", b.id.toString(),
+                null, audit.hashState("status=ACTIVE;currency=" + b.currency), false);
+        }
+        log.info("books_opened tenantId={} books={}", tenantId, opened.size());
+    }
+
     // ---------- CoA provisioning ----------
 
     /**

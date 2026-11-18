@@ -2,6 +2,7 @@ package com.fsp.core.rbac;
 
 import com.fsp.core.common.Actor;
 import com.fsp.core.common.ApiException;
+import com.fsp.core.common.RequestCorrelation;
 import com.fsp.core.tenant.Tenant;
 import com.fsp.core.tenant.TenantRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +48,14 @@ public class PermissionService {
     /** Effective permission keys for the actor relative to a target tenant (chain-aware). */
     public Set<String> effectiveKeys(Actor actor, UUID targetTenantId) {
         requireActor(actor);
+        // Acting (DELEGATED) is capped by the target tenant's ceiling — the settled D5 rule of
+        // plans/act-as-tenant-plan.md §3.4. ActAsFilter stores the home tenant in the correlation
+        // context; no home tenant means the DELEGATED actor did not arrive through act-as
+        // (a plugin's machine actor shares the type) and resolves like any other person.
+        if (Actor.ActorType.DELEGATED == actor.type()
+            && actor.clientId() == null && RequestCorrelation.homeTenantId() != null) {
+            return effectiveKeysForActing(actor, RequestCorrelation.homeTenantId(), targetTenantId);
+        }
         Tenant target = tenantRepository.findById(targetTenantId)
             .orElseThrow(() -> ApiException.notFound("TENANT_NOT_FOUND", "Tenant " + targetTenantId + " not found"));
         Set<UUID> chain = chainFor(actor, target);
@@ -130,12 +139,13 @@ public class PermissionService {
         if (actor.personId() == null) {
             return Set.of();
         }
-        // Holds at target + holds at home (actor copy with the right activeTenantId for chain math)
+        // Holds at target + holds at home. The copies are PERSON-type so the inner effectiveKeys
+        // never re-enters the acting branch (the actor itself is DELEGATED).
         Set<String> atTarget = effectiveKeys(
-            new Actor(actor.personId(), actor.username(), targetTenantId, actor.type(), actor.clientId()),
+            new Actor(actor.personId(), actor.username(), targetTenantId, Actor.ActorType.PERSON, null),
             targetTenantId);
         Set<String> atHome = effectiveKeys(
-            new Actor(actor.personId(), actor.username(), homeTenantId, actor.type(), actor.clientId()),
+            new Actor(actor.personId(), actor.username(), homeTenantId, Actor.ActorType.PERSON, null),
             homeTenantId);
         Set<String> holds = new HashSet<>(atTarget);
         holds.addAll(atHome);

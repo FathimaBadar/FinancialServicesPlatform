@@ -26,9 +26,16 @@ class RoleTemplatesTest {
     @Test
     void checkerCanDecideEveryRequestItsOrgRaises() {
         assertThat(RoleTemplates.checkerKeys("MANUFACTURER", false)).contains(
-            "kyc.approve", "kyc.reject", "kyc.review", "user.manage", "role.manage", "je.approve")
+            "kyc.approve", "kyc.reject", "kyc.review", "user.manage", "role.manage", "je.approve",
+            "plugin.manage") // V20: non-leaf checkers consent to their own tenant's plugin installs
             .doesNotContain("org.activate");
         assertThat(RoleTemplates.checkerKeys("DISTRIBUTOR", true)).contains("org.activate");
+    }
+
+    @Test
+    void leafCheckersNeverConsentToPluginInstalls() {
+        assertThat(RoleTemplates.checkerKeys("MERCHANT", false))
+            .doesNotContain("plugin.manage", "org.activate");
     }
 
     @Test

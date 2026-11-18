@@ -10,7 +10,7 @@
  *   GET /api/tenants/{tid} → tenant subType for org-portal eligibility
  */
 import { createContext, useContext } from 'react';
-import { apiGet, apiPost, ApiError } from './api';
+import { apiDelete, apiGet, apiPost, ApiError } from './api';
 import type { PortalConfig } from '../../portal-config';
 
 export interface SessionUser {
@@ -21,6 +21,24 @@ export interface SessionUser {
   tenantName: string | null;
   tenantType: string | null;
   roles: string[];
+}
+
+/** One step in the home › … › target chain shown in the act-as banner. */
+export interface ActAsPathStep {
+  tenantId: string | null;
+  name: string | null;
+}
+
+/** Projection of core's ActAsView (ActAsService) via GET/POST /bff/act-as. */
+export interface ActAsView {
+  sessionId: string;
+  personName: string | null;
+  homeTenantName: string | null;
+  targetTenantId: string | null;
+  targetTenantName: string | null;
+  path: ActAsPathStep[];
+  expiresAt: string | null;
+  idleUntil: string | null;
 }
 
 export interface TenantSummary {
@@ -39,9 +57,11 @@ export interface SessionState {
   user: SessionUser | null;
   permissions: string[];
   tenant: TenantSummary | null;
+  /** Live act-as session ("sudo into a tenant") or null — plans/act-as-tenant-plan.md. */
+  actAs: ActAsView | null;
 }
 
-export const NO_SESSION: SessionState = { status: 'loading', user: null, permissions: [], tenant: null };
+export const NO_SESSION: SessionState = { status: 'loading', user: null, permissions: [], tenant: null, actAs: null };
 
 /** GET /bff/session (BffSessionController). */
 export async function fetchWho(): Promise<SessionUser | null> {
@@ -59,6 +79,34 @@ export async function loadTenant(tenantId: string): Promise<TenantSummary | null
     return await apiGet<TenantSummary>(`/api/tenants/${tenantId}`);
   } catch {
     return null;
+  }
+}
+
+/** Current act-as session: {active, session} or null when none (GET /bff/act-as). */
+export async function fetchActAs(): Promise<ActAsView | null> {
+  try {
+    const r = await apiGet<{ active: boolean; session: ActAsView | null }>('/bff/act-as');
+    return r?.active ? (r.session ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** POST /bff/act-as — start sudo; core enforces tenant.act_as (home), strictly-below, audit. */
+export async function startActAs(tenantId: string): Promise<ActAsView> {
+  const r = await apiPost<{ active: boolean; session: ActAsView | null }>('/bff/act-as', { tenantId });
+  if (!r?.active || !r.session) {
+    throw new ApiError({ status: 0, title: 'Act as failed', detail: 'no act-as session was opened' });
+  }
+  return r.session;
+}
+
+/** DELETE /bff/act-as — exit sudo; idempotent: an already-expired row is still an exit. */
+export async function exitActAs(): Promise<void> {
+  try {
+    await apiDelete('/bff/act-as');
+  } catch (e) {
+    if (!(e instanceof ApiError && e.status === 401)) throw e;
   }
 }
 
@@ -105,9 +153,21 @@ export function portalEligible(portal: PortalConfig, user: SessionUser | null, t
 export interface SessionCtl extends SessionState {
   eligible: boolean | undefined; // undefined while loading tenant detail
   refresh: () => Promise<void>;
+  /** Start acting as a tenant strictly below home (C1); refreshes the session on success. */
+  startActAs: (tenantId: string) => Promise<ActAsView>;
+  /** Exit the live act-as session (C3); refreshes the session on success. */
+  exitActAs: () => Promise<void>;
 }
 
-export const SessionCtx = createContext<SessionCtl>({ ...NO_SESSION, eligible: undefined, refresh: async () => {} });
+export const SessionCtx = createContext<SessionCtl>({
+  ...NO_SESSION,
+  eligible: undefined,
+  refresh: async () => {},
+  startActAs: async () => {
+    throw new Error('no SessionProvider — cannot act as a tenant');
+  },
+  exitActAs: async () => {},
+});
 
 export function useSession(): SessionCtl {
   return useContext(SessionCtx);

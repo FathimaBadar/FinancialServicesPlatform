@@ -11,6 +11,7 @@ import com.fsp.core.rbac.PermissionService;
 import com.fsp.core.rbac.RbacRepository;
 import com.fsp.core.rbac.Role;
 import com.fsp.core.rbac.RoleRepository;
+import com.fsp.core.rbac.RoleTemplates;
 import com.fsp.core.rbac.UserRole;
 import com.fsp.core.tenant.TenantRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -137,7 +138,7 @@ public class UserAdminService {
         String email = normalizeEmail(in.email());
         String phone = normalizePhone(in.phone());
         List<Role> grant = resolveRoles(tenantId, in.roleIds());
-        requireAssignable(actor, tenantId, grant);
+        requireAssignable(actor, tenantId, grant, null);
 
         // Stage the person in PENDING state — no sign-in, no roles until checker approves.
         Person p = provisioning.createPerson(tenantId, username, fullName, email,
@@ -184,7 +185,7 @@ public class UserAdminService {
         String proposedEmail = in.email() == null ? p.email : normalizeEmail(in.email());
         String proposedPhone = in.phone() == null ? p.phone : normalizePhone(in.phone());
         List<Role> proposedRoles = in.roleIds() == null ? currentRoles(p) : resolveRoles(tenantId, in.roleIds());
-        requireAssignable(actor, tenantId, proposedRoles);
+        requireAssignable(actor, tenantId, proposedRoles, p.id);
         boolean proposedChecker = in.checker() == null ? p.isChecker : in.checker();
 
         String payload;
@@ -309,7 +310,7 @@ public class UserAdminService {
             List<String> ids = (List<String>) patch.get("roleIds");
             List<Role> wanted = resolveRoles(p.tenantId, ids.stream().map(UUID::fromString).toList());
             Actor checkerActor = new Actor(checkerId, null, p.tenantId);
-            requireAssignable(checkerActor, p.tenantId, wanted);
+            requireAssignable(checkerActor, p.tenantId, wanted, p.id);
             Set<UUID> wantedIds = new LinkedHashSet<>(wanted.stream().map(r -> r.id).toList());
             Set<UUID> current = new LinkedHashSet<>(currentRoleIds(p.id, p.tenantId));
             for (UUID id : current) if (!wantedIds.contains(id)) rbac.deleteByPersonIdAndRoleId(p.id, id);
@@ -459,17 +460,25 @@ public class UserAdminService {
         return out;
     }
 
-    /** No escalation: granting or revoking a role requires holding every permission it carries. */
-    private void requireAssignable(Actor actor, UUID tenantId, List<Role> touched) {
+    /** No escalation: granting or revoking a role requires holding every permission it carries —
+     *  EXCEPT the organization's own born roles, which a {@code user.manage} maker may stage
+     *  for a person OTHER than themselves (the merchant-admin stages its checker per the
+     *  onboarding script; only self-assignment is blocked, so nobody escalates themselves). */
+    private void requireAssignable(Actor actor, UUID tenantId, List<Role> touched, UUID subjectPersonId) {
         if (touched.isEmpty()) return;
         Set<String> held = permissions.effectiveKeys(actor, tenantId);
         for (Role r : touched) {
             List<String> keys = rbac.permissionKeysForRole(r.id);
-            if (!held.containsAll(keys)) {
-                log.warn("role_assignment_denied personId={} tenant={} role={}", actor.personId(), tenantId, r.key);
-                throw ApiException.forbidden("ROLE_NOT_ASSIGNABLE",
-                    "You can only grant or revoke roles whose permissions you hold yourself (%s)".formatted(r.name));
+            if (held.containsAll(keys)) continue;
+            if (RoleTemplates.ADMIN_ROLE.equals(r.key) || RoleTemplates.CHECKER_ROLE.equals(r.key)) {
+                if (subjectPersonId == null || !actor.personId().equals(subjectPersonId)) {
+                    log.info("role_assignment_born_role personId={} tenant={} role={} staged=true", actor.personId(), tenantId, r.key);
+                    continue;
+                }
             }
+            log.warn("role_assignment_denied personId={} tenant={} role={}", actor.personId(), tenantId, r.key);
+            throw ApiException.forbidden("ROLE_NOT_ASSIGNABLE",
+                "You can only grant or revoke roles whose permissions you hold yourself (%s)".formatted(r.name));
         }
     }
 

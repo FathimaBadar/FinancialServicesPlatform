@@ -108,7 +108,11 @@ export async function api<T>(path: string, opts: ApiOpts = {}): Promise<T> {
     });
   }
   if (r.status === 204) return undefined as T;
-  return (await r.json()) as T;
+  const text = await r.text();
+  // Void core handlers (e.g. four-eyes approve/reject) answer 200 with an EMPTY body —
+  // r.json() would throw SyntaxError and turn a successful decision into a failed mutation.
+  if (!text.length) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 export const apiGet = <T,>(path: string) => api<T>(path, { method: 'GET' });

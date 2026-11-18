@@ -99,6 +99,13 @@ export async function pollUntil(fn: () => Promise<boolean>, label: string, tries
   throw new Error(`pollUntil: ${label} never became true`);
 }
 
+/** Clear any leftover act-as session for this person (one-live-session-per-person; a failed
+ *  previous run can leave it live for 30 idle minutes) — deterministic, no hydration race. */
+export async function clearActAs(s: Session): Promise<void> {
+  const r = await s.request.delete(`${BASE_URL}/bff/act-as`, { headers: { 'X-XSRF-TOKEN': await csrf(s) } });
+  void r; // 204 when exited; 401/403 when there was nothing to exit — either is fine
+}
+
 export const suffix = (): string => randomUUID().slice(0, 8);
 
 /** Platform governance setup: KYC plugin REGISTERED (four-eyes) — idempotent across runs. */

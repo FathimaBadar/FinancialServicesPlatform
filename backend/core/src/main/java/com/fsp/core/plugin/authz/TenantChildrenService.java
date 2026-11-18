@@ -31,15 +31,18 @@ public class TenantChildrenService {
     private final AuditService audit;
     private final OutboxService outbox;
     private final com.fsp.core.config.FspProperties props;
+    private final com.fsp.core.ledger.LedgerService ledger;
 
     public TenantChildrenService(TenantRepository tenantRepository, PersonProvisioning provisioning,
                                  AuditService audit, OutboxService outbox,
-                                 com.fsp.core.config.FspProperties props) {
+                                 com.fsp.core.config.FspProperties props,
+                                 com.fsp.core.ledger.LedgerService ledger) {
         this.tenantRepository = tenantRepository;
         this.provisioning = provisioning;
         this.audit = audit;
         this.outbox = outbox;
         this.props = props;
+        this.ledger = ledger;
     }
 
     @Transactional
@@ -96,9 +99,8 @@ public class TenantChildrenService {
         provisioning.assignRole(checkerPerson.id, checkerRole.id);
         provisioning.designateChecker(checkerPerson);
 
-        // Suspended books will be activated by verification (§7.3) after KYC verdict
-        // Note: book creation is handled by KycOnboardingService in the full flow;
-        // here we create the tenant skeleton for the saga.
+        // Born with a SUSPENDED operating book (Phase-0: NAD); verification opens it (docs §7.3).
+        ledger.createBook(child.id, legalName + " Operating Book", "NAD");
 
         audit.record(actor.personId(), null, child.id, null,
             "TENANT_CHILD_CREATED", "TENANT", child.id.toString(),

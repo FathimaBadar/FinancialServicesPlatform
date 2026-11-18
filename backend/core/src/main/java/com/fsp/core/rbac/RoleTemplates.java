@@ -23,7 +23,9 @@ import java.util.Set;
  *   <li>Every checker can decide the four-eyes requests its organization raises: KYC,
  *       users, roles, journal, GL, bank accounts. The checker holding {@code user.manage}
  *       /{@code role.manage} is what lets it resolve USER_* / ROLE_* approvals
- *       ({@code ApprovalService.requirePermissionFor}); four-eyes is still person-anchored.</li>
+ *       ({@code ApprovalService.requirePermissionFor}); four-eyes is still person-anchored.
+ *       Non-leaf checkers additionally consent to their own tenant's PLUGIN_INSTALL
+ *       ({@code plugin.manage}, V20).</li>
  * </ul>
  * Granting is still bounded per actor at runtime: nobody can grant a key they do not hold
  * ({@code RoleAdminService}, {@code UserAdminService}).
@@ -48,6 +50,9 @@ public final class RoleTemplates {
         "je.approve", "je.view", "gl.account.approve", "gl.account.view", "bank.account.approve", "audit.view",
         "kyc.review", "kyc.approve", "kyc.reject", "user.manage", "role.view", "role.manage");
 
+    /** Non-leaf orgs hold the plugin-consent checker key — see V20__psp_plugin_consent.sql. */
+    private static final List<String> CHECKER_PLUGIN_CONSENT = List.of("plugin.manage");
+
     private RoleTemplates() {}
 
     /** Maker-side keys for an organization of this sub-type ({@code null} = PSP root of a chain). */
@@ -61,6 +66,9 @@ public final class RoleTemplates {
     public static List<String> checkerKeys(String subType, boolean child) {
         Set<String> keys = new LinkedHashSet<>(CHECKER_BASE);
         if (child) keys.add("org.activate");
+        // A checker decides its own tenant's PLUGIN_INSTALL (customer-consent model, V20);
+        // leaves (MERCHANT) never install or consent to plugins in Phase-0.
+        if (!isLeaf(subType)) keys.addAll(CHECKER_PLUGIN_CONSENT);
         return List.copyOf(keys);
     }
 

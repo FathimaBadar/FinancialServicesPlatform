@@ -6,6 +6,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import com.fsp.core.common.Actor;
+import com.fsp.core.common.RequestCorrelation;
 import com.fsp.core.identity.Person;
 import com.fsp.core.tenant.Tenant;
 import com.fsp.core.tenant.TenantRepository;
@@ -165,5 +166,35 @@ class PermissionServiceActingCeilingTest {
         Set<String> keys = service.effectiveKeysForActing(machine, PLATFORM, TARGET);
 
         assertThat(keys).isEmpty();
+    }
+
+    /* ------------------------------------------------- effectiveKeys wiring (ActAsFilter path) */
+
+    @Test
+    void effectiveKeysCapsADelegatedActorThatArrivedThroughActAs() {
+        // ActAsFilter replaces the principal with DELEGATED + records the home tenant —
+        // effectiveKeys must route that actor through the ceiling cap.
+        Role tenantOps = role(ROLE_TENANT_OPS, TARGET, "TENANT_OPS", "TENANT");
+        when(roleRepository.findByTenantId(TARGET)).thenReturn(List.of(tenantOps));
+        when(rbacRepository.permissionKeysForRole(ROLE_TENANT_OPS))
+            .thenReturn(List.of("je.create", "je.view"));
+        Actor acting = new Actor(PERSON, "ravi", TARGET, Actor.ActorType.DELEGATED, null);
+        try {
+            RequestCorrelation.setHomeTenantId(PLATFORM);
+            Set<String> keys = service.effectiveKeys(acting, TARGET);
+            assertThat(keys).containsExactly("je.create");
+        } finally {
+            RequestCorrelation.clear();
+        }
+    }
+
+    @Test
+    void effectiveKeysDoesNotCapADelegatedActorWithoutAnActAsSession() {
+        // DELEGATED also names a plugin acting FOR a person (clientId set) — that actor never
+        // went through ActAsFilter, so no home tenant is recorded and the ceiling does not apply.
+        Actor pluginDelegated = new Actor(PERSON, "ravi", TARGET, Actor.ActorType.DELEGATED, "kyc-plugin");
+        RequestCorrelation.clear();
+        Set<String> keys = service.effectiveKeys(pluginDelegated, TARGET);
+        assertThat(keys).containsExactlyInAnyOrder("tenant.act_as", "org.create", "je.create");
     }
 }

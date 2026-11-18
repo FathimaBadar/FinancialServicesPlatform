@@ -191,7 +191,8 @@ public class RoleAdminService {
 
     // ----------------------------------------------------------------- apply (checker)
 
-    /** Approved ROLE_CREATE: create the row + grants (checker must hold every key too). */
+    /** Approved ROLE_CREATE: create the row + grants. The hold-what-you-grant rule was already
+     * enforced on the maker at proposal time; the checker supplies four-eyes only. */
     @Transactional
     public void applyCreate(ApprovalRequest approval, Actor checker) {
         RoleDtos.RoleProposal p = proposal(approval);
@@ -199,7 +200,6 @@ public class RoleAdminService {
             throw ApiException.conflict("ROLE_KEY_TAKEN", "Role key '%s' was taken meanwhile".formatted(p.key()));
         }
         List<String> keys = requireCatalogKeys(p.permissionKeys());
-        requireHeld(checker, approval.tenantId, new LinkedHashSet<>(keys), p.key());
         Role r = new Role();
         r.id = approval.targetResourceId;
         r.tenantId = approval.tenantId;
@@ -221,7 +221,6 @@ public class RoleAdminService {
         requirePinned(r, p);
         List<String> current = rbac.permissionKeysForRole(r.id);
         List<String> proposed = requireCatalogKeys(p.permissionKeys());
-        requireHeld(checker, approval.tenantId, diff(current, proposed), r.key);
         for (String k : minus(current, proposed)) rolePermissions.deleteById(new RolePermissionId(r.id, k));
         for (String k : minus(proposed, current)) grant(r.id, k);
         // the grant set is part of the role's state: version bumps atomically against the pinned base
@@ -243,7 +242,6 @@ public class RoleAdminService {
         requireMutable(r, true);
         requireUnassigned(r);
         List<String> current = rbac.permissionKeysForRole(r.id);
-        requireHeld(checker, approval.tenantId, new LinkedHashSet<>(current), r.key);
         roles.delete(r); // role_permissions cascade (V1)
         record(approval.makerId, checker.personId(), approval.tenantId, "ROLE_DELETED", r.id, snapshot(r, current), null);
         log.info("role_delete_applied tenant={} role={} approvalId={} checker={}",
@@ -318,7 +316,10 @@ public class RoleAdminService {
         }
     }
 
-    /** No escalation: the actor must hold every key the change grants or revokes. */
+    /** No escalation: the ACTOR PROPOSING must hold every key the change grants or revokes.
+     * Applies only at proposal time — a checker approving a four-eyes request never proposes,
+     * so requiring the checker to hold the touched keys would deadlock legitimate role
+     * upgrades (e.g. adding period.open to a checker role no checker yet holds). */
     private void requireHeld(Actor actor, UUID tenantId, Set<String> touched, String roleKey) {
         if (touched.isEmpty()) return;
         Set<String> held = permissions.effectiveKeys(actor, tenantId);

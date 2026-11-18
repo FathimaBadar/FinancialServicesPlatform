@@ -3,6 +3,7 @@ package com.fsp.bff;
 import com.fsp.bff.BffDtos.SessionUser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -28,11 +29,19 @@ import java.util.Set;
 public class ApiProxyController {
 
     private static final Set<String> ALLOWED = Set.of("GET", "POST", "PUT", "PATCH", "DELETE");
+    /** Upstream 401 codes that mean THIS session's token is dead — the only ones allowed to invalidate it.
+     * INVALID_DPOP_PROOF is deliberately NOT here: a proof failure is per-request (a fresh proof is
+     * generated on the next call), not session death. */
+    private static final Set<String> TOKEN_REJECTION_CODES = Set.of("TOKEN_MISSING", "TOKEN_INVALID",
+        "AUTH_REQUIRED", "NO_SESSION", "ACT_AS_EXPIRED", "UNAUTHORIZED", "INVALID_TOKEN");
     private static final Set<String> HOP_BY_HOP = Set.of("connection", "keep-alive", "transfer-encoding",
         "te", "upgrade", "proxy-authorization", "proxy-authenticate", "set-cookie", "cookie");
-    /** Clients must not smuggle internal headers — stripped before the trusted re-issue. */
+    /** Clients must not smuggle internal headers — stripped before the trusted re-issue.
+     *  x-act-as included: the live act-as session id is BFF-session state (BffActAsController),
+     *  never a client-supplied header. */
     private static final Set<String> NEVER_PASSED = Set.of("x-fsp-user-id", "x-fsp-tenant-id", "x-fsp-username",
-        "x-fsp-client-id", "x-fsp-internal-credential", "authorization", "host", "forwarded", "cookie");
+        "x-fsp-client-id", "x-fsp-internal-credential", "authorization", "host", "forwarded", "cookie",
+        "x-act-as");
 
     private final RestClient rest;
     private final BffProperties props;
@@ -60,6 +69,11 @@ public class ApiProxyController {
             reject(response, 401, "NO_SESSION", "Authentication required (GET /bff/auth/login)");
             return;
         }
+        // plans/act-as-tenant-plan.md §3.3: every proxied call rides the BFF session's act-as
+        // id (server-side state); a stale/foreign id is refused closed by core (ACT_AS_EXPIRED).
+        HttpSession session = request.getSession(false);
+        String actAsSessionId = session == null ? null
+            : (String) session.getAttribute(BffActAsController.SESSION_ACT_AS);
 
         // Generate DPoP proof for this API call (FAPI 2.0 requirement)
         String gatewayPath = request.getRequestURI().replaceFirst("^/api", "/v1");
@@ -85,7 +99,7 @@ public class ApiProxyController {
         try {
             var spec = rest.method(HttpMethod.valueOf(method))
                 .uri(target)
-                .headers(headers -> copyTrusted(request, method, token, dpopProofHolder[0], headers));
+                .headers(headers -> copyTrusted(request, method, token, dpopProofHolder[0], actAsSessionId, headers));
             ResponseEntity<byte[]> upstream = (body.length == 0 ? spec : spec.body(body))
                 .exchange((req, res) -> {
                     byte[] raw = res.getBody().readAllBytes();
@@ -97,24 +111,37 @@ public class ApiProxyController {
                     });
                     return builder.body(raw);
                 });
-            // If the upstream (gateway/IdP) returned 401, the IdP token in this session is expired.
-            // Invalidate the BFF session so the client is forced to re-authenticate.
+            // If the upstream (gateway/IdP) returned 401 because the SESSION's bearer token is
+            // dead/expired, invalidate the BFF session so the client is forced to re-authenticate.
+            // But a 401 from a plugin/auth hiccup MUST NOT destroy a LIVE session (E2E: a distributor
+            // admin's session died mid-chain from an unrelated upstream 401 → NO_SESSION on the next
+            // call). Only true token-rejection codes invalidate; anything else is logged and passed.
             if (upstream.getStatusCode().is4xxClientError() && upstream.getStatusCode().value() == 401) {
-                try {
-                    request.getSession(false);
-                    // Invalidate via the request's session if present
-                    jakarta.servlet.http.HttpSession s = request.getSession(false);
-                    if (s != null) s.invalidate();
-                } catch (Exception ignored) {}
+                String code = problemCode(new String(upstream.getBody(), java.nio.charset.StandardCharsets.UTF_8));
+                if (TOKEN_REJECTION_CODES.contains(code)) {
+                    log.warn("proxy_session_invalidated path={} code={}", request.getRequestURI(), code);
+                    try {
+                        jakarta.servlet.http.HttpSession s = request.getSession(false);
+                        if (s != null) s.invalidate();
+                    } catch (Exception ignored) {}
+                } else {
+                    log.warn("proxy_upstream_401 path={} code={} sessionKept=true", request.getRequestURI(), code);
+                }
             }
             writePassthrough(response, upstream);
         } catch (org.springframework.web.client.HttpStatusCodeException e) {
-            // 401 from upstream: IdP token expired — invalidate the session before surfacing the error.
+            // 401 from upstream: session invalidation follows the same token-rejection codes rule.
             if (e.getStatusCode().value() == 401) {
-                try {
-                    jakarta.servlet.http.HttpSession s = request.getSession(false);
-                    if (s != null) s.invalidate();
-                } catch (Exception ignored) {}
+                String code = problemCode(e.getResponseBodyAsString());
+                if (TOKEN_REJECTION_CODES.contains(code)) {
+                    log.warn("proxy_session_invalidated path={} code={}", request.getRequestURI(), code);
+                    try {
+                        jakarta.servlet.http.HttpSession s = request.getSession(false);
+                        if (s != null) s.invalidate();
+                    } catch (Exception ignored) {}
+                } else {
+                    log.warn("proxy_upstream_401 path={} code={} sessionKept=true", request.getRequestURI(), code);
+                }
             }
             writeProblem(response, e.getStatusCode().value(), e.getResponseBodyAsString());
         } catch (Exception e) {
@@ -124,7 +151,7 @@ public class ApiProxyController {
     }
 
     private void copyTrusted(HttpServletRequest request, String method, String token, String dpopProof,
-                             org.springframework.http.HttpHeaders headers) {
+                             String actAsSessionId, org.springframework.http.HttpHeaders headers) {
         // Only neutral passthrough headers + Idempotency-Key survive; identity comes from the session token.
         java.util.Enumeration<String> names = request.getHeaderNames();
         while (names.hasMoreElements()) {
@@ -137,6 +164,9 @@ public class ApiProxyController {
         headers.setBearerAuth(token);
         if (dpopProof != null) {
             headers.set("DPoP", dpopProof);
+        }
+        if (StringUtils.hasText(actAsSessionId)) {
+            headers.set("X-Act-As", actAsSessionId);
         }
         headers.set("X-FSP-Client-Id", "fsp-bff");
         if (!"GET".equals(method) && !StringUtils.hasText(request.getHeader("Idempotency-Key"))) {
@@ -155,6 +185,14 @@ public class ApiProxyController {
             }
             return bytes;
         }
+    }
+
+    /** Best-effort RFC-7807 `code` extraction from an upstream problem body. */
+    private static String problemCode(String body) {
+        if (body == null) return "";
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"code\"\s*:\\s*\"([^\"]+)\"")
+            .matcher(body);
+        return m.find() ? m.group(1) : "";
     }
 
     private static void writePassthrough(HttpServletResponse response, ResponseEntity<byte[]> upstream)

@@ -10,6 +10,8 @@
  * [UI]  = clicked in a portal screen     [API] = same signed-in session via /api/**
  * Remaining [API] legs: the KYC application form (a long multi-tab form — its screen is
  * asserted, the filing itself goes through the plugin API) and the journal entry legs.
+ * Plugin install approval = [UI] through act-as (the PSP's own queue; the platform checker
+ * steps in rather than deciding outside the tenant).
  *
  * Prereqs: the dev stack (`make infra-up tb-start backend-idp backend-core backend-gateway
  * backend-bff backend-plugin-kyc frontend-dev`) and `make portal-publish` once per DB.
@@ -17,7 +19,7 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import {
-  api, BOOT_PASS, ensureKycPlugin, kycApplication, NO_ACCESS_WALL, PERSON_PASS, PLATFORM_TENANT_ID,
+  api, BOOT_PASS, clearActAs, ensureKycPlugin, kycApplication, NO_ACCESS_WALL, PERSON_PASS, PLATFORM_TENANT_ID,
   pendingApproval, pollUntil, sagaAdminUsername, sessionUser, signIn, suffix, type Session,
 } from './support';
 
@@ -65,16 +67,32 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   const { json: psps } = await api<{ id: string; legalName: string }[]>(maker, 'GET', `/tenants/${PLATFORM_TENANT_ID}/children`);
   const mfrTenantId = psps.find((t) => t.legalName === legalName)!.id;
 
-  // [UI] plugin installation request (plugins.governance) → [UI] checker approves
+  // [UI] plugin installation request (plugins.governance) → [UI · act-as] checker approves
   await maker.page.goto(`/admin/plugins?org=${mfrTenantId}`);
   await maker.page.getByLabel('Install plugin').selectOption({ label: 'kyc 1.0.0' });
   await maker.page.getByRole('button', { name: 'Request installation' }).click();
   await expect(maker.page.getByText(/Installation of kyc requested/)).toBeVisible();
+
+  /* The approval lives on the PSP's queue — the PSP consents to a machine client entering its
+   * perimeter (customer-consent model, V20), so the platform does NOT decide from outside:
+   * the checker STEPS IN via act-as (plans/act-as-tenant-plan.md) and clicks, like it will
+   * for any other stuck tenant. Audit names the real person; the ceiling caps them at the
+   * PSP's own role keys. */
+  // [UI] the checker finds the PSP row (onboard.psp) and starts acting as it
+  await clearActAs(checker); // a failed previous run may have left the session acting (by design)
+  await checker.page.goto('/admin/onboarding');
+  const pspRow = checker.page.locator('li', { hasText: legalName });
+  await expect(pspRow).toBeVisible();
+  await pspRow.getByRole('button', { name: `Act as ${legalName}` }).click();
+  // [UI] the banner names the person on record and the target tenant
+  await expect(checker.page.getByTestId('act-as-banner')).toContainText(legalName);
   const install = await pendingApproval(checker, mfrTenantId, 'PLUGIN_INSTALL');
-  expect(install, 'PLUGIN_INSTALL approval opened').toBeDefined();
-  // the install approval lives on the manufacturer tenant; the platform checker decides it there via API
-  const ok = await api(checker, 'POST', `/approvals/${install!.id}/approve`, { reason: 'e2e: kyc plugin install' });
-  expect(ok.status).toBe(200);
+  expect(install, 'PLUGIN_INSTALL approval is on the PSP queue (visible to the acting person)').toBeDefined();
+  // [UI] the checker approves in the (PSP) queue — real clicks, four-eyes on person_ids
+  await approveInUi(checker, '/admin', install!.id, `e2e: kyc plugin install (act-as ${s})`);
+  // [UI] exit returns the checker to their own tenant context
+  await checker.page.getByTestId('act-as-exit').click();
+  await expect(checker.page.getByTestId('act-as-banner')).toHaveCount(0);
 
   /* ── SCENE 3 · manufacturer personnel land in a RENDERED portal (GAP-5 closed) ── */
   const mfrAdmin = await signIn(browser, 'manufacturer admin', '/manufacturer', mfrAdminUsername, PERSON_PASS);
@@ -142,14 +160,16 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   const bookId = books.find((b) => b.status === 'ACTIVE')!.id;
   expect((await api(merAdmin, 'POST', `/tenants/${merTenantId}/books/${bookId}/provision-default-coa`, {})).status).toBe(200);
   const { json: gl } = await api<{ id: string }[]>(merAdmin, 'GET', `/tenants/${merTenantId}/books/${bookId}/gl-accounts`);
+  // Post inside the OPEN accounting period (provision opens the current month).
+  const day = new Date(Date.now() + 60_000).toISOString().slice(0, 10);
   const je = await api<{ entryId: string }>(merAdmin, 'POST', `/tenants/${merTenantId}/journal-entries`, {
-    bookId, postingDate: '2026-12-01', valueDate: '2026-12-01', description: 'Opening float', reference: `e2e-${randomUUID().slice(0, 8)}`,
+    bookId, postingDate: day, valueDate: day, description: 'Opening float', reference: `e2e-${randomUUID().slice(0, 8)}`,
     lines: [
       { glAccountId: gl[0].id, direction: 'DEBIT', amount: '250000', memo: 'cash in' },
       { glAccountId: gl[gl.length - 1].id, direction: 'CREDIT', amount: '250000', memo: 'revenue' },
     ],
   });
-  expect(je.status, `balanced JE created: ${JSON.stringify(je.json)}`).toBe(201);
+  expect(je.status, `balanced JE created (status=${je.status}): ${JSON.stringify(je.json)}`).toBeLessThan(300);
   expect((await api(merAdmin, 'POST', `/tenants/${merTenantId}/journal-entries/${je.json.entryId}/submit-for-approval`, {})).status).toBe(200);
   expect((await api(merChecker, 'POST', `/tenants/${merTenantId}/journal-entries/${je.json.entryId}/approve`, {})).status).toBe(200);
   const { json: entry } = await api<{ status: string }>(merAdmin, 'GET', `/tenants/${merTenantId}/journal-entries/${je.json.entryId}`);

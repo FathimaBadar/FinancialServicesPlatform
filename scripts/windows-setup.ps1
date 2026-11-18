@@ -161,16 +161,33 @@ if ($Engine -eq 'podman') {
             [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ";$candDir", 'User')
             Good "added podman dir to user PATH: $candDir (new terminals required)"
         }
-        Step "Initializing podman machine (WSL2 provider, start now)..."
+        Step "Initializing podman machine (WSL2 provider, sized for FSP dev)..."
         $machines = & $podman machine list --format json 2>$null | ConvertFrom-Json
         if ($machines -and $machines.Count -gt 0) {
             $running = $machines | Where-Object { $_.State -eq 'running' } | Select-Object -First 1
             if ($running) { Good "podman machine '$($running.Name)' already running" }
             else { & $podman machine start | Out-Host; Good "podman machine started" }
         } else {
-            # --now creates AND starts; WSL backend is the default on Windows Podman 5+
-            & $podman machine init --now | Out-Host
-            if ($LASTEXITCODE -eq 0) { Good "podman machine created + started" }
+            # FSP sizing (auto from this laptop's RAM — leaves the HOST room to also run the
+            # five JVM services natively):
+            #   <= 9  GB total -> 2 GB / 2 vCPU  (8 GB laptops: postgres + tigerbeetle only;
+            #                                     use scripts\dev-windows.ps1 dev, not stack-up)
+            #   <= 17 GB total -> 5 GB / 2 vCPU  (16 GB laptops — 'stack-up' fits)
+            #   >  17 GB total -> 6 GB / 3 vCPU
+            # Resize anytime: scripts\dev-windows.ps1 tune [-MemoryMB n -Cpus n]
+            $totalGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
+            if ($totalGB -le 9)  { $vmMB = 2048; $vmCpu = 2 }
+            elseif ($totalGB -le 17) { $vmMB = 5120; $vmCpu = 2 }
+            else { $vmMB = 6144; $vmCpu = 3 }
+            & $podman machine init --memory $vmMB --cpus $vmCpu --now | Out-Host
+            if ($LASTEXITCODE -eq 0) {
+                Good "podman machine created ($vmMB MB / $vmCpu vCPU — laptop has ~$totalGB GB) + started"
+                if ($totalGB -le 9) {
+                    Info "8 GB laptop detected: the VM holds ONLY postgres + tigerbeetle. Run the five"
+                    Info "backend services natively with: powershell -File scripts\dev-windows.ps1 dev"
+                    Info "and do NOT use 'stack-up' (five JVM containers will not fit in 2 GB)."
+                }
+            }
             else { Warn "podman machine init failed (exit $LASTEXITCODE). Usually a missing reboot (WSL2) — reboot and re-run." }
         }
     }
@@ -208,8 +225,14 @@ if ($Engine -eq 'podman') {
             $json | Add-Member -NotePropertyName 'containerEngine' -NotePropertyValue @{ name = 'moby' } -Force
             $json | Add-Member -NotePropertyName 'wsl' -NotePropertyValue @{ integrateDefaultDistro = $true } -Force
             $json | Add-Member -NotePropertyName 'application' -NotePropertyValue @{ startInBackground = $true; autoStart = $true } -Force
+            # FSP sizing (auto from RAM): 2 GB on 8 GB laptops, 5 GB on 16 GB, 6 GB above
+            $totalGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
+            if ($totalGB -le 9)  { $vmMemGB = 2; $vmCpu = 2 }
+            elseif ($totalGB -le 17) { $vmMemGB = 5; $vmCpu = 2 }
+            else { $vmMemGB = 6; $vmCpu = 3 }
+            $json | Add-Member -NotePropertyName 'virtualMachine' -NotePropertyValue @{ memoryInGB = $vmMemGB; numberCPUs = $vmCpu } -Force
             $json | ConvertTo-Json -Depth 10 | Set-Content $rd -Encoding utf8
-            Good "settings preconfigured (moby engine => real docker/docker compose CLI)"
+            Good "settings preconfigured (moby engine => real docker/docker compose CLI, $vmMemGB GB / $vmCpu vCPU)"
         } catch { Warn "could not rewrite settings.json ($_) — configure in Preferences (see docs/windows-dev.md, Rancher section)" }
     } else {
         Info "No settings.json yet — start Rancher Desktop once and pick:"

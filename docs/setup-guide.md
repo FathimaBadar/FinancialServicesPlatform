@@ -153,6 +153,13 @@ standalone `docker-compose.exe` on PATH so `podman compose` works.
 With `-Engine rancher`: Rancher Desktop preconfigured to the **dockerd (moby)**
 engine, WSL2 provider, Kubernetes **off**.
 
+> **8 GB laptop?** The installer auto-sizes the engine VM to the machine's RAM
+> (≤9 GB → 2 GB/2 vCPU, ≤17 → 5 GB/2, above → 6 GB/3), leaving the host room to run
+> the five JVM services natively. On 8 GB: skip `stack-up`, run
+> `scripts\dev-windows.ps1 dev` (one call starts everything in its own terminals),
+> cap the Gradle daemon with `org.gradle.jvmargs=-Xmx1g` in `%USERPROFILE%\.gradle\gradle.properties`.
+> Resize anytime: `dev-windows.ps1 tune [-MemoryMB n -Cpus n]`.
+
 Verify:
 
 ```powershell
@@ -309,6 +316,15 @@ bff:     Tomcat started on 8080
 ---
 
 ## 6. Run the frontend
+
+Linux/macOS: `cd frontend && bun install && bun run dev` → `http://localhost:5173`.
+Windows: just run **`scripts\dev-windows.ps1 dev`** — one call brings up postgres,
+TigerBeetle, all five services and the SPA in separate terminal windows
+(`stop` reverses, `tune` resizes the engine VM, `status` shows every port).
+
+Beyond the portals there is a **widget workbench** for building portal screen panels
+with or without an LLM: see **`docs/widget-workbench.md`**
+(quick start: `cd frontend && bun run workbench` → `http://localhost:5173/widget-workbench/`).
 
 ```bash
 cd frontend

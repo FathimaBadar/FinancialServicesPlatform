@@ -6,8 +6,11 @@
 > For the dual-OS end-to-end setup + troubleshooting matrix see `docs/setup-guide.md`.  
 >  
 > **TL;DR:** run `powershell -ExecutionPolicy Bypass -File scripts\windows-setup.ps1`
-> in an Administrator PowerShell, reboot once, then start every terminal step from
-> §"Daily workflow". Full manual walkthrough and every decision below.
+> in an Administrator PowerShell, reboot once, then — easiest — start everything with
+> `powershell -File scripts\dev-windows.ps1 dev` (full bring-up in one call; `stop`
+> reverses; `tune` resizes the engine VM; §5.4–5.5 below). For LLM-assisted portal
+> widget authoring see `docs/widget-workbench.md`.
+> Full manual walkthrough and every decision below.
 
 ---
 
@@ -301,6 +304,43 @@ curl http://127.0.0.1:8080/bff/csrf
 # → GET http://127.0.0.1:5173 in your browser
 ```
 
+### 5.4 One command to run everything
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dev-windows.ps1 dev
+```
+
+`dev` starts the whole platform in the stated order — engine VM (auto-sized), postgres,
+TigerBeetle, then `idp → core → gateway → bff → plugin-kyc` each in **its own terminal
+window** (so you can read each service's logs as AGENTS §2c expects), then the SPA. It ends
+by printing the smoke chain and the stop command.
+
+| Command | What it does |
+|---|---|
+| `dev` | everything up (containers for pg/tb + native JVM terminals + SPA terminal) |
+| `stop` | reverse: stops vite, gradle daemons, leftover JVM ports, TB, postgres |
+| `tune` | resize the engine VM (defaults **auto-size from the laptop's physical RAM**; override with `-MemoryMB 3072 -Cpus 2`) |
+| `status` | engine + ports (5432, 3000, 8082, 8081, 8090, 8080, 8083, 5173) at a glance |
+| `dev` on an existing checkout without prior `windows-setup.ps1` | run the installer first — it creates the engine machine; `dev` only needs the engine CLI on PATH |
+
+### 5.5 Engine sizing — laptops with limited RAM
+
+`windows-setup.ps1` and `dev-windows.ps1 tune` size the engine VM **from the laptop's total RAM**, so the HOST keeps enough memory for the five JVM services that run as native terminals:
+
+| Laptop RAM | Engine VM (auto) | What fits | What to avoid |
+|---|---|---|---|
+| **8 GB** | **2 GB / 2 vCPU** | postgres + tigerbeetle only; all five services run **natively** via `dev` | `stack-up` (5 JVM containers won't fit) — the 2 GB VM is only for postgres/TB |
+| 12–16 GB | 5 GB / 2 vCPU | everything incl. `stack-up` | — |
+| 32 GB+ | 6 GB / 3 vCPU | everything + IDE + parallel builds | — |
+
+Extra tips for 8 GB machines:
+
+- Run services **natively** (`scripts\dev-windows.ps1 dev`) — JVMs on the host use exactly what each service needs, no container overhead.
+- Cap the Gradle daemon's appetite: add `org.gradle.jvmargs=-Xmx1g` to `%USERPROFILE%\.gradle\gradle.properties` (and `org.gradle.daemon=true` so builds reuse it instead of re-forking).
+- Close heavy apps (IDE indexing, Chrome tabs) during first build; afterwards idle JVMs sit at ~150–300 MB each.
+- Low on memory mid-session: `dev-windows.ps1 stop` frees everything; the script is idempotent, `dev` brings it all back.
+- If even 2 GB is too much: only postgres is a hard container (`infra-up`); TigerBeetle can live in **WSL2 instead** (§4.1 option B) — then the VM holds postgres alone (~512 MB is enough: `tune -MemoryMB 512 -Cpus 1`).
+
 ---
 
 ## 6. Environment variables on Windows (session-scope, PowerShell)
@@ -333,6 +373,10 @@ User-persistent versions (survive terminals):
 | Gradle can't write to `~/.gradle` (OneDrive-synced profile!) | Gradle user home inside OneDrive locks files → set `GRADLE_USER_HOME` outside OneDrive, e.g. `C:\dev\gradle-home` |
 | `wsl --update` fails behind a corporate proxy | `wsl.exe --update --web-download`, or install the MSI from Microsoft Learn |
 | Docker/Rancher tray spins forever | virtualization off in BIOS → enable VT-x/AMD-V; also check "Windows Hypervisor Platform" feature |
+| machine/VM consumes more RAM than documented | someone resized before the auto-sizing existed → `scripts\dev-windows.ps1 tune` (no args = correct size for this laptop) |
+| `dev` opens terminals that close instantly | `gradlew.bat bootRun` failed at once (port in use / PKI) → relaunch manually from `backend\<svc>` and read the error; first-time JDK missing → run installer with `-InstallToolchain` |
+| SPA terminal closes instantly | `bun` missing → installer `-InstallToolchain`, then open a new terminal |
+| workbench says "registry server unavailable" | services not up → `dev-windows.ps1 dev`, then sign in via the BFF (§6 env vars for non-default passwords) |
 | Vite dev server slow / file-watch misses changes | repo cloned on a Windows-mounted drive *inside* WSL2 → clone inside the WSL filesystem instead (§8), or mark trust with `bun run build` sanity |
 | `bash` not found for `pki` | Git for Windows missing → re-run installer |
 

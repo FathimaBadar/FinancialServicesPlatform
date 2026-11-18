@@ -740,6 +740,9 @@ screens (`screens.tsx`) are governed route mount points that place widgets by
 menu entry. Tooling self-syncs against backend controllers so a widget never
 drifts from the operation catalog.
 
+> **How to actually work with the workbench** (author packs by hand or with an LLM,
+> preview at every grid tier, register, publish layouts): **`docs/widget-workbench.md`**.
+
 ### 10.4 UI standard invariants (why the UI looks the way it does)
 
 | Rule | Meaning on screen |

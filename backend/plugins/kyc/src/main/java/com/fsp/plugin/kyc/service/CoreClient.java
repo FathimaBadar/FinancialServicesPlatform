@@ -69,6 +69,11 @@ public class CoreClient {
             + "&sort=" + sort, null, actorAssertion, null));
     }
 
+    /** GET /v1/tenants/{id} — one organization, visible only if the PERSON could see it (DELEGATED). */
+    public Map<String, Object> getTenant(UUID tenantId, String actorAssertion) {
+        return object(call(HttpMethod.GET, "/v1/tenants/" + tenantId, null, actorAssertion, null));
+    }
+
     /** Installations of this plugin awaiting readiness (MACHINE). */
     public List<Map<String, Object>> provisioning(String pluginCode) {
         JsonNode n = call(HttpMethod.GET, "/v1/plugins/" + pluginCode + "/installations/provisioning", null, null, null);

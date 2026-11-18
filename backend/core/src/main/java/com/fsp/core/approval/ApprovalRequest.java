@@ -29,6 +29,10 @@ public class ApprovalRequest {
         public static final String USER_ACTIVATE = "USER_ACTIVATE";
         public static final String USER_REMOVE = "USER_REMOVE";
         public static final String UI_LAYOUT_PUBLISH = "UI_LAYOUT_PUBLISH";
+        /** Organization role governance (RoleAdminService) — checker needs role.manage. */
+        public static final String ROLE_CREATE = "ROLE_CREATE";
+        public static final String ROLE_UPDATE = "ROLE_UPDATE";
+        public static final String ROLE_DELETE = "ROLE_DELETE";
         /** Plugin platform op types pass through via the PLUGIN: prefix (canonicalOpType). */
         public static final String PLUGIN_REGISTER = "PLUGIN_REGISTER";
         public static final String PLUGIN_INSTALL = "PLUGIN_INSTALL";

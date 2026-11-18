@@ -69,7 +69,7 @@ export function UsersOrganization() {
 
   const users = useMemo(() => list.data ?? [], [list.data]);
   const counts = useMemo(() => {
-    const c: Record<StatusFilter, number> = { current: 0, ACTIVE: 0, DISABLED: 0, ARCHIVED: 0 };
+    const c: Record<StatusFilter, number> = { current: 0, PENDING: 0, ACTIVE: 0, DISABLED: 0, ARCHIVED: 0 };
     for (const u of users) for (const f of STATUS_IDS) if (matchesFilter(u, f)) c[f] += 1;
     return c;
   }, [users]);
@@ -117,29 +117,29 @@ export function UsersOrganization() {
     if (openId === 'new') {
       run({ kind: 'create', values }, (saved) => {
         setDirty(false);
-        say('ok', `Added ${saved.fullName}.`);
+        say('ok', `Request sent — ${saved.fullName} is added once a checker approves it.`);
         patch({ user: saved.id, edit: null, status: null, q: null });
       });
     } else if (openUser) {
       run({ kind: 'update', user: openUser, values, rolesEditable: openUser.id !== meId }, (saved) => {
         setDirty(false);
-        say('ok', `Saved changes to ${saved.fullName}.`);
+        say('ok', `Change requested for ${saved.fullName} — it applies once a checker approves it.`);
         patch({ edit: null });
       });
     }
   };
 
   const activate = (u: UserRow) =>
-    run({ kind: 'activate', user: u }, (saved) => say('ok', `${saved.fullName} is active again and can sign in.`));
+    run({ kind: 'activate', user: u }, (saved) => say('ok', `Reactivation of ${saved.fullName} requested — awaiting a checker.`));
 
   const deactivate = (u: UserRow) =>
     run({ kind: 'deactivate', user: u }, (saved) =>
-      say('ok', `${saved.fullName} was deactivated.`, { label: 'Undo', run: () => activate(saved) }),
+      say('ok', `Deactivation of ${saved.fullName} requested — awaiting a checker.`),
     );
 
   const remove = (u: UserRow) =>
     run({ kind: 'remove', user: u }, (saved) => {
-      say('ok', `${saved.fullName} was removed.`);
+      say('ok', `Removal of ${saved.fullName} requested — awaiting a checker.`);
       forceClose();
     });
 

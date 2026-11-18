@@ -326,6 +326,12 @@ public class KycCaseService {
     // ---------- private helpers ----------
 
     private void validateCreate(KycDtos.CreateCaseRequest req) {
+        // screening is the provider's verdict (ScreeningService), never the applicant's/maker's claim
+        if (req.screeningOutcome() != null) {
+            log.warn("kyc_screening_outcome_asserted_by_client refused");
+            throw new ApiProblemException("SCREENING_NOT_CLIENT_SETTABLE",
+                "screeningOutcome is decided by the screening provider and cannot be supplied", 400);
+        }
         NamibiaRules.requireNonBlank(req.legalName(), "KYC_LEGAL_NAME", "legalName is required");
         NamibiaRules.requireNonBlank(req.registrationNumber(), "KYC_REGISTRATION", "registrationNumber is required");
         NamibiaRules.requireBipaRegistration(req.registrationNumber());

@@ -101,6 +101,19 @@ public class PersonProvisioning {
         return role;
     }
 
+    /**
+     * Marks a provisioned person as a designated checker (persons.is_checker). Only for the
+     * checker an organization is BORN with (PSP creation / KYC saga) — every later change goes
+     * through the four-eyes USER_CREATE / USER_UPDATE flow (docs/checker-flag.md).
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public Person designateChecker(Person person) {
+        person.isChecker = true;
+        Person saved = personRepository.save(person);
+        log.info("person_designated_checker personId={} tenant={}", saved.id, saved.tenantId);
+        return saved;
+    }
+
     @Transactional(propagation = Propagation.REQUIRED)
     public void assignRole(UUID personId, UUID roleId) {
         if (rbacRepository.findByPersonId(personId).stream().anyMatch(ur -> ur.roleId.equals(roleId))) {

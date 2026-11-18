@@ -33,13 +33,15 @@ public class ApprovalService {
     private final com.fsp.core.identity.PersonRepository persons;
     private final com.fsp.core.plugin.registry.PluginTypeRepository pluginTypes;
     private final Map<String, ApprovalHandler> handlers = new HashMap<>();
+    private final org.springframework.transaction.support.TransactionTemplate tx;
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public ApprovalService(ApprovalRequestRepository repository, PermissionService permissions,
                            KeyLocks keyLocks, com.fsp.core.audit.AuditService audit,
                            OutboxService outbox, List<ApprovalHandler> handlerList,
                            com.fsp.core.identity.PersonRepository persons,
-                           com.fsp.core.plugin.registry.PluginTypeRepository pluginTypes) {
+                           com.fsp.core.plugin.registry.PluginTypeRepository pluginTypes,
+                           org.springframework.transaction.PlatformTransactionManager txManager) {
         this.repository = repository;
         this.permissions = permissions;
         this.keyLocks = keyLocks;
@@ -47,6 +49,7 @@ public class ApprovalService {
         this.outbox = outbox;
         this.persons = persons;
         this.pluginTypes = pluginTypes;
+        this.tx = new org.springframework.transaction.support.TransactionTemplate(txManager);
         for (ApprovalHandler h : handlerList) handlers.put(h.operationType(), h);
     }
 
@@ -116,8 +119,35 @@ public class ApprovalService {
         ApprovalRequest row = repository.findById(approvalId)
             .orElseThrow(() -> ApiException.notFound("APPROVAL_NOT_FOUND", "Approval request not found"));
         requirePluginOwnsApproval(row, checker);
+        requirePluginDecidesItsOwn(row, checker);
         requirePermissionFor(row, checker);
-        keyLocks.withLock("approval", approvalId, () -> resolveLocked(approvalId, approved, checker, reason));
+        // DB-only domain effects (USER_*, ROLE_*) run in ONE transaction with the approval row: a
+        // handler that refuses (stale role, user state, …) rolls the resolution back instead of
+        // leaving an APPROVED row whose change never happened. Handlers that dispatch remotely
+        // (JE_POSTING → TigerBeetle) keep their own boundaries (ApprovalHandler#atomicWithResolution).
+        // (resolveLocked is self-invoked, so its @Transactional is NOT proxied — hence the template.)
+        ApprovalHandler handler = handlers.get(row.operationType);
+        if (handler != null && handler.atomicWithResolution()) {
+            keyLocks.withLock("approval", approvalId, () -> {
+                tx.executeWithoutResult(status -> resolveLocked(approvalId, approved, checker, reason));
+            });
+        } else {
+            keyLocks.withLock("approval", approvalId, () -> resolveLocked(approvalId, approved, checker, reason));
+        }
+    }
+
+    /**
+     * A PLUGIN:* row is the evidence of a decision the PLUGIN owns (e.g. a KYC case). Resolving it
+     * straight in core would leave the plugin's case undecided and later conflict, so persons
+     * decide such rows only through the plugin (which resolves as a DELEGATED actor).
+     */
+    private void requirePluginDecidesItsOwn(ApprovalRequest row, Actor checker) {
+        if (row.operationType.startsWith("PLUGIN:") && checker.type() != Actor.ActorType.DELEGATED) {
+            log.warn("plugin_owned_approval_direct_resolve approvalId={} type={} personId={}",
+                row.id, row.operationType, checker.personId());
+            throw ApiException.conflict("APPROVAL_PLUGIN_OWNED",
+                "This request is decided in the %s plugin's own screen".formatted(row.operationType.split(":")[1]));
+        }
     }
 
     /** A plugin acting for a person may resolve ONLY approvals its own client opened (plan §7.1). */
@@ -154,9 +184,32 @@ public class ApprovalService {
                  ApprovalRequest.OpType.USER_REMOVE -> "user.manage";
             case ApprovalRequest.OpType.PLUGIN_REGISTER,
                  ApprovalRequest.OpType.PLUGIN_INSTALL -> "plugin.manage";
+            case ApprovalRequest.OpType.ROLE_CREATE,
+                 ApprovalRequest.OpType.ROLE_UPDATE,
+                 ApprovalRequest.OpType.ROLE_DELETE -> "role.manage";
             default -> "user.manage";
         };
         permissions.require(checker, perm, row.tenantId);
+    }
+
+    /** The permission a checker needs for this row (core types; plugin rows read the manifest). */
+    private String checkerPermissionOf(ApprovalRequest row) {
+        if (row.operationType.startsWith("PLUGIN:")) {
+            try {
+                return pluginCheckerPermission(row.operationType);
+            } catch (ApiException e) {
+                return null;
+            }
+        }
+        return switch (row.operationType) {
+            case ApprovalRequest.OpType.KYC_TENANT_ACTIVATION -> "kyc.approve";
+            case ApprovalRequest.OpType.JE_POSTING -> "je.approve";
+            case ApprovalRequest.OpType.UI_LAYOUT_PUBLISH -> "ui.layout.manage";
+            case ApprovalRequest.OpType.PLUGIN_REGISTER, ApprovalRequest.OpType.PLUGIN_INSTALL -> "plugin.manage";
+            case ApprovalRequest.OpType.ROLE_CREATE, ApprovalRequest.OpType.ROLE_UPDATE,
+                 ApprovalRequest.OpType.ROLE_DELETE -> "role.manage";
+            default -> "user.manage";
+        };
     }
 
     /** checkerPermission declared by the REGISTERED plugin manifest for "PLUGIN:<code>:<action>". */
@@ -258,13 +311,51 @@ public class ApprovalService {
 
     // ---------- queue ----------
 
+    /** Every permission that lets someone decide SOME approval type — any one opens the queue. */
+    static final List<String> CHECKER_PERMISSIONS = List.of(
+        "kyc.approve", "kyc.reject", "kyc.review", "je.approve", "ui.layout.manage",
+        "user.manage", "role.manage", "plugin.manage");
+
     public List<ApprovalDtos.QueueView> queue(UUID tenantId, List<String> statuses, Actor actor) {
-        permissions.requireAny(actor, List.of("kyc.approve", "je.approve", "kyc.review", "ui.layout.manage"), tenantId);
+        permissions.requireAny(actor, CHECKER_PERMISSIONS, tenantId);
         List<ApprovalRequest> rows = (statuses == null || statuses.isEmpty())
             ? repository.findByTenantIdOrderByRequestedAtDesc(tenantId)
             : repository.findByTenantIdAndStatusOrderByRequestedAtDesc(tenantId, statuses.getFirst());
-        return rows.stream().map(r -> new ApprovalDtos.QueueView(r.id, r.tenantId, r.operationType,
-            r.targetResourceId, r.status, r.makerId, r.checkerId, r.reason, r.requestedAt, r.decidedAt)).toList();
+        java.util.Set<String> held = permissions.effectiveKeys(actor, tenantId);
+        boolean flagged = actor.personId() != null
+            && persons.findById(actor.personId()).map(p -> p.isChecker).orElse(false);
+        Map<UUID, String> names = new HashMap<>();
+        return rows.stream().map(r -> view(r, actor, held, flagged, names)).toList();
+    }
+
+    /** Single-row view for the caller (used by the open endpoint). */
+    public ApprovalDtos.QueueView view(ApprovalRequest row, Actor actor) {
+        java.util.Set<String> held = permissions.effectiveKeys(actor, row.tenantId);
+        boolean flagged = actor.personId() != null
+            && persons.findById(actor.personId()).map(p -> p.isChecker).orElse(false);
+        return view(row, actor, held, flagged, new HashMap<>());
+    }
+
+    private ApprovalDtos.QueueView view(ApprovalRequest r, Actor actor, java.util.Set<String> held, boolean flagged,
+                                        Map<UUID, String> names) {
+        String perm = checkerPermissionOf(r);
+        String blocked;
+        if (!ApprovalRequest.Status.PENDING_CHECKER.equals(r.status)) blocked = "DECIDED";
+        else if (r.operationType.startsWith("PLUGIN:")) blocked = "PLUGIN_OWNED";
+        else if (actor.personId() != null && actor.personId().equals(r.makerId)) blocked = "OWN_REQUEST";
+        else if (perm == null || !held.contains(perm)) blocked = "NO_PERMISSION";
+        else if (!flagged) blocked = "NOT_CHECKER";
+        else blocked = null;
+        // payload only for core-owned person/role changes — plugin rows hold a hash, never data
+        String payload = r.operationType.startsWith("USER_") || r.operationType.startsWith("ROLE_") ? r.payload : null;
+        return new ApprovalDtos.QueueView(r.id, r.tenantId, r.operationType, r.targetResourceId, r.status,
+            r.makerId, nameOf(r.makerId, names), r.checkerId, nameOf(r.checkerId, names), r.reason,
+            r.requestedAt, r.decidedAt, payload, blocked == null, blocked, perm);
+    }
+
+    private String nameOf(UUID personId, Map<UUID, String> cache) {
+        if (personId == null) return null;
+        return cache.computeIfAbsent(personId, id -> persons.findById(id).map(p -> p.username).orElse(null));
     }
 
     private static String canonicalOpType(String raw) {
@@ -285,6 +376,9 @@ public class ApprovalService {
             case ApprovalRequest.OpType.UI_LAYOUT_PUBLISH -> ApprovalRequest.OpType.UI_LAYOUT_PUBLISH;
             case ApprovalRequest.OpType.PLUGIN_REGISTER -> ApprovalRequest.OpType.PLUGIN_REGISTER;
             case ApprovalRequest.OpType.PLUGIN_INSTALL -> ApprovalRequest.OpType.PLUGIN_INSTALL;
+            case ApprovalRequest.OpType.ROLE_CREATE -> ApprovalRequest.OpType.ROLE_CREATE;
+            case ApprovalRequest.OpType.ROLE_UPDATE -> ApprovalRequest.OpType.ROLE_UPDATE;
+            case ApprovalRequest.OpType.ROLE_DELETE -> ApprovalRequest.OpType.ROLE_DELETE;
             default -> ApprovalRequest.OpType.GENERIC;
         };
     }

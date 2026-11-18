@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { Alert, Button, Chip, KvPair, StatusBadge } from '../../../ui/atoms';
+import { Link } from 'react-router-dom';
+import { Alert, Button, Chip, KvPair } from '../../../ui/atoms';
 import { InlineConfirm } from '../../kit/InlineConfirm';
 import { UserAvatar } from './UserAvatar';
+import { UserStatusBadge } from './UserStatusBadge';
 import { absoluteTime, relativeTime } from './model';
 import type { Problem, UserRow } from './model';
 
@@ -36,7 +38,7 @@ export function UserDetails({
             <div className="truncate text-lg font-extrabold">{user.fullName}</div>
             <div className="mono text-dim truncate">@{user.username}</div>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
-              <StatusBadge status={user.status} />
+              <UserStatusBadge status={user.status} />
               {isMe && <Chip tone="info">You</Chip>}
               {user.isApplicant && <Chip>KYC applicant</Chip>}
               {user.checker && <Chip tone="info">Checker</Chip>}
@@ -55,6 +57,12 @@ export function UserDetails({
           </Alert>
         )}
 
+        {user.status === 'PENDING' && (
+          <Alert kind="warn">
+            Awaiting approval — a checker other than the person who added this user must approve it in{' '}
+            <Link className="underline" to="/approvals">Approvals</Link>. Until then the user can’t sign in and holds no roles.
+          </Alert>
+        )}
         {user.status === 'DISABLED' && (
           <Alert kind="warn">Deactivated — this user can’t sign in and holds no permissions until reactivated.</Alert>
         )}

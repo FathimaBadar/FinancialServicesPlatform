@@ -17,6 +17,7 @@ timeline
     V14 : act as sessions
     V15 : plugin types columns
     V16 : person checker flag
+    V19 : roles governance
 
-**Next free migration number: V17.**
+**Next free migration number: V20.**
 ```

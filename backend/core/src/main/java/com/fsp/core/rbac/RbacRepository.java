@@ -20,6 +20,8 @@ public interface RbacRepository extends JpaRepository<UserRole, UserRoleId> {
 
     long deleteByPersonIdAndRoleId(UUID personId, UUID roleId);
 
+    long countByRoleId(UUID roleId);
+
     List<UserRole> findByPersonIdIn(java.util.Collection<UUID> personIds);
 
     @Query("select rp.permissionKey from RolePermission rp where rp.roleId = :roleId")

@@ -88,12 +88,18 @@ export async function doLogout(): Promise<void> {
   }
 }
 
-/** Eligibility of ONE hydrated session against ONE portal identity. */
+/**
+ * Eligibility of ONE hydrated session against ONE portal identity. A tenant's sub-type picks its
+ * portal; a tenant row with no sub-type (legacy) is admitted only by a portal that lists its
+ * TYPE in `admitsTypes` (PSP → manufacturer). Anything else fails closed. This is a routing
+ * decision only — core re-checks every permission on every call.
+ */
 export function portalEligible(portal: PortalConfig, user: SessionUser | null, tenant: TenantSummary | null): boolean {
   if (!user) return false;
   if (portal.tenantSubType === 'PLATFORM') return user.tenantType === 'PLATFORM';
-  if (tenant && tenant.subType) return tenant.subType === portal.tenantSubType;
-  return false;
+  if (!tenant) return false;
+  if (tenant.subType) return tenant.subType === portal.tenantSubType;
+  return (portal.admitsTypes ?? []).includes(tenant.type);
 }
 
 export interface SessionCtl extends SessionState {

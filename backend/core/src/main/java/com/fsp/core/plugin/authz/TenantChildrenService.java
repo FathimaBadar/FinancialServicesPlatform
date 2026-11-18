@@ -5,6 +5,7 @@ import com.fsp.core.common.ApiException;
 import com.fsp.core.identity.PersonProvisioning;
 import com.fsp.core.outbox.OutboxService;
 import com.fsp.core.rbac.Role;
+import com.fsp.core.rbac.RoleTemplates;
 import com.fsp.core.tenant.Tenant;
 import com.fsp.core.tenant.TenantRepository;
 import com.fsp.core.audit.AuditService;
@@ -24,14 +25,6 @@ import java.util.UUID;
 @Slf4j
 @Service
 public class TenantChildrenService {
-
-    // Maker-side permissions for the new tenant
-    private static final List<String> TENANT_ADMIN_PERMS = List.of(
-        "kyc.review", "kyc.approve", "je.create", "je.view", "gl.account.create",
-        "gl.account.view", "bank.account.create", "period.open", "audit.view");
-    private static final List<String> TENANT_CHECKER_PERMS = List.of(
-        "kyc.approve", "kyc.reject", "kyc.review", "org.activate", "je.approve", "je.view",
-        "gl.account.approve", "gl.account.view", "bank.account.approve", "audit.view");
 
     private final TenantRepository tenantRepository;
     private final PersonProvisioning provisioning;
@@ -87,8 +80,11 @@ public class TenantChildrenService {
         tenantRepository.save(child);
 
         // Provision applicant admin + checker roles
-        Role adminRole = provisioning.ensureRole(child.id, "TENANT_ADMIN", "Tenant Admin", "TENANT", TENANT_ADMIN_PERMS);
-        Role checkerRole = provisioning.ensureRole(child.id, "TENANT_CHECKER", "Tenant Checker", "TENANT", TENANT_CHECKER_PERMS);
+        // templates by sub-type: a leaf (MERCHANT) admin never onboards children (RoleTemplates)
+        Role adminRole = provisioning.ensureRole(child.id, RoleTemplates.ADMIN_ROLE, "Tenant Admin", "TENANT",
+            RoleTemplates.adminKeys(st));
+        Role checkerRole = provisioning.ensureRole(child.id, RoleTemplates.CHECKER_ROLE, "Tenant Checker", "TENANT",
+            RoleTemplates.checkerKeys(st, true));
 
         // credentials belong to the IdP; the bootstrap password comes from config (FSP_PERSON_PASSWORD)
         String defaultPassword = props.getSecurity().getDefaultPersonPassword();
@@ -98,6 +94,7 @@ public class TenantChildrenService {
             child.id, "checker-" + adminUsername, "Checker for " + adminUsername, null, defaultPassword, true);
         provisioning.assignRole(adminPerson.id, adminRole.id);
         provisioning.assignRole(checkerPerson.id, checkerRole.id);
+        provisioning.designateChecker(checkerPerson);
 
         // Suspended books will be activated by verification (§7.3) after KYC verdict
         // Note: book creation is handled by KycOnboardingService in the full flow;

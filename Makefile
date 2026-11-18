@@ -1,4 +1,4 @@
-.PHONY: help infra-up infra-down infra-init tb-start tb-stop tb-init tb-reset tb-clean backend-core backend-bff frontend-dev frontend-install test-e2e clean pki docs-refresh docs-check docs-hook
+.PHONY: help infra-up infra-down infra-init tb-start tb-stop tb-init tb-reset tb-clean backend-core backend-bff frontend-dev frontend-install test-e2e portal-publish clean pki docs-refresh docs-check docs-hook
 
 help:
 	@echo "FSP Phase-0 — available commands"
@@ -12,7 +12,8 @@ help:
 	@echo "  make backend-bff   — run BFF service"
 	@echo "  make frontend-dev  — run React SPA dev server (bun)"
 	@echo "  make frontend-install — install frontend deps (bun)"
-	@echo "  make test-e2e      — run Playwright E2E tests"
+	@echo "  make test-e2e      — run Playwright E2E tests (gap probes + onboarding chain)"
+	@echo "  make portal-publish — publish a signed portal bundle four-eyes (PORTAL=admin default)"
 	@echo "  make docs-refresh  — regenerate architecture doc artifacts (docs/generated)"
 	@echo "  make docs-check    — fail if architecture artifacts are stale (CI gate)"
 	@echo "  make docs-hook     — install pre-commit hook that regenerates docs on every commit"
@@ -89,7 +90,14 @@ frontend-dev:
 	@cd frontend && bun run dev
 
 test-e2e:
-	@cd frontend && bunx --bun playwright test
+	@cd frontend && bunx playwright test
+
+# GAP-7: publish a SIGNED portal bundle through the real four-eyes builder flow
+# (platform-admin saves + submits, admin-checker approves; core signs). Idempotent.
+# Usage: make portal-publish [PORTAL=admin] [FSP_PUBLISH_FORCE=1]. Needs the dev stack up.
+PORTAL ?= admin
+portal-publish:
+	@cd frontend && PORTAL=$(PORTAL) bunx playwright test -c playwright.setup.config.ts
 
 frontend-install:
 	@cd frontend && bun install

@@ -70,9 +70,9 @@ public class KycOnboardingSagaService {
         c = caseRepository.save(c);
         caseService.event(c, "TENANT_CREATED", makerName, "Organization created in the platform, pending verification");
 
-        String outcome = req.screeningOutcome() == null ? "PASS" : req.screeningOutcome();
-        screening.runIdentity(c.id, ownerTenantId, outcome);
-        screening.runSanctions(c.id, ownerTenantId, outcome);
+        // outcomes are decided by the screening provider from the application — never by the caller
+        screening.runIdentity(c.id, ownerTenantId, req.ubos());
+        screening.runSanctions(c.id, ownerTenantId, req.legalName(), req.ubos());
         caseService.event(c, "SCREENED", "KYC plugin", "Identity and sanctions screening");
 
         String payloadHash = sha256(c.caseNo + "|" + c.legalName + "|" + c.registrationNumber + "|" + coreTenantId);

@@ -1,0 +1,184 @@
+/**
+ * Shared E2E plumbing for the onboarding chain + the gap probes.
+ *
+ * Every persona gets its OWN browser context (own cookies → own BFF session → own CSRF
+ * token); four-eyes is maker ≠ checker at person_id, so sessions are never shared.
+ * The only credential surface is the IdP's hosted sign-in page (#u / #p / "Sign in") —
+ * reached through the real portal → BFF PAR → IdP chain (FAPI2: no password grant here).
+ */
+import { expect, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+
+export const BOOT_PASS = process.env.FSP_BOOTSTRAP_PASSWORD ?? 'fsp-admin';
+export const PERSON_PASS = process.env.FSP_PERSON_PASSWORD ?? 'fsp-person-2026';
+export const PLATFORM_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const MANIFEST_PATH = new URL('../../../backend/plugins/kyc/plugin-manifest.json', import.meta.url);
+
+export interface Session {
+  name: string;
+  username: string;
+  context: BrowserContext;
+  page: Page;
+  request: APIRequestContext;
+  /** CSRF token of THIS session (double-submit) — never shared across personas. */
+  csrf?: string;
+}
+
+/** Full browser login: portal /login → BFF PAR → hosted IdP page → back to the portal. */
+export const BASE_URL = process.env.FSP_SPA_URL ?? 'http://localhost:5173';
+
+export async function signIn(browser: Browser, name: string, portalPath: string, username: string, password: string): Promise<Session> {
+  const context = await browser.newContext({ baseURL: BASE_URL });
+  const page = await context.newPage();
+  await page.goto(`${portalPath}/login`);
+  await page.waitForSelector('#u', { timeout: 30_000 });
+  await page.fill('#u', username);
+  await page.fill('#p', password);
+  await page.click('button:has-text("Sign in")');
+  await page.waitForURL((u) => u.pathname.startsWith(portalPath), { timeout: 30_000 });
+  await page.waitForLoadState('networkidle');
+  return { name, username, context, page, request: context.request };
+}
+
+export interface SessionUser { userId: string; username: string; tenantId: string; tenantType: string }
+
+/** BFF session probe — `{authenticated, user}` (BffDtos.SessionResponse). */
+export async function sessionUser(s: Session): Promise<SessionUser> {
+  const r = await s.request.get(`${BASE_URL}/bff/session`);
+  expect(r.status(), `${s.name}: BFF session endpoint`).toBe(200);
+  const body = (await r.json()) as { authenticated: boolean; user: SessionUser | null };
+  expect(body.authenticated, `${s.name}: session must be authenticated`).toBe(true);
+  return body.user!;
+}
+
+async function csrf(s: Session): Promise<string> {
+  if (!s.csrf) {
+    const r = await s.request.get(`${BASE_URL}/bff/csrf`);
+    s.csrf = ((await r.json()) as { token: string }).token;
+  }
+  return s.csrf;
+}
+
+export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+
+/** Authenticated BFF call (/api/** → gateway /v1/**). Mutations carry CSRF + Idempotency-Key. */
+export async function api<T = unknown>(s: Session, method: Method, path: string, body?: unknown): Promise<{ status: number; json: T }> {
+  const headers: Record<string, string> = {};
+  if (method !== 'GET') {
+    headers['X-XSRF-TOKEN'] = await csrf(s);
+    headers['Idempotency-Key'] = randomUUID(); // AGENTS §2e — every mutation
+  }
+  const r = await s.request.fetch(`${BASE_URL}/api${path}`, { method, headers, data: body });
+  return { status: r.status(), json: (await r.json().catch(() => ({}))) as T };
+}
+
+export interface Approval { id: string; operationType: string; status: string; targetResourceId: string }
+
+export async function pendingApproval(s: Session, tenantId: string, operationType: string): Promise<Approval | undefined> {
+  const { status, json } = await api<Approval[]>(s, 'GET', `/approvals?tenantId=${tenantId}&status=PENDING_CHECKER`);
+  expect(status, `${s.name}: approval queue readable`).toBe(200);
+  return json.find((a) => a.operationType === operationType && a.status === 'PENDING_CHECKER');
+}
+
+/** API-lane checker half (used for SETUP only; the probes drive the UI). */
+export async function approveVia(s: Session, tenantId: string, operationType: string, label: string): Promise<string> {
+  const row = await pendingApproval(s, tenantId, operationType);
+  expect(row, `a PENDING ${operationType} approval must exist (${label})`).toBeDefined();
+  const { status, json } = await api(s, 'POST', `/approvals/${row!.id}/approve`, { reason: `e2e: ${label}` });
+  expect(status, `${operationType} approved by ${s.name}: ${JSON.stringify(json)}`).toBe(200);
+  return row!.id;
+}
+
+/** Poll with a real delay between tries. */
+export async function pollUntil(fn: () => Promise<boolean>, label: string, tries = 40, delayMs = 500): Promise<void> {
+  for (let i = 0; i < tries; i++) {
+    if (await fn()) return;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  throw new Error(`pollUntil: ${label} never became true`);
+}
+
+export const suffix = (): string => randomUUID().slice(0, 8);
+
+/** Platform governance setup: KYC plugin REGISTERED (four-eyes) — idempotent across runs. */
+export async function ensureKycPlugin(maker: Session, checker: Session): Promise<void> {
+  const existing = await api<{ status?: string }>(maker, 'GET', '/platform/plugins/kyc/1.0.0');
+  if (existing.status === 200 && existing.json.status === 'REGISTERED') return;
+  if (existing.status !== 200) {
+    const manifest = readFileSync(MANIFEST_PATH, 'utf-8');
+    const manifestHash = createHash('sha256').update(manifest).digest('hex');
+    const reg = await api(maker, 'POST', '/platform/plugins', {
+      code: 'kyc', version: '1.0.0', baseUrl: 'http://localhost:8083', manifest, manifestHash,
+    });
+    expect(reg.status, `plugin registration opened: ${JSON.stringify(reg.json)}`).toBe(200);
+  }
+  await approveVia(checker, PLATFORM_TENANT_ID, 'PLUGIN_REGISTER', 'kyc plugin registration');
+}
+
+export interface PspFixture { tenantId: string; adminUsername: string; checkerUsername: string }
+
+/** Platform creates a PSP (manufacturer) and installs the KYC plugin on it (four-eyes). */
+export async function createManufacturer(maker: Session, checker: Session): Promise<PspFixture> {
+  const s = suffix();
+  const adminUsername = `acme.admin.${s}`;
+  const checkerUsername = `acme.checker.${s}`;
+  const created = await api<{ tenantId: string }>(maker, 'POST', '/tenants', {
+    legalName: `Acme Manufacturers ${s} (Pty) Ltd`,
+    adminUsername, adminFullName: 'Acme Administrator',
+    checkerUsername, checkerFullName: 'Acme Checker',
+  });
+  expect(created.status, `PSP created: ${JSON.stringify(created.json)}`).toBe(200);
+  const tenantId = created.json.tenantId;
+  const install = await api(maker, 'POST', `/tenants/${tenantId}/plugins`, { code: 'kyc', version: '1.0.0', config: null });
+  expect(install.status, `plugin install opened: ${JSON.stringify(install.json)}`).toBe(200);
+  await approveVia(checker, tenantId, 'PLUGIN_INSTALL', 'kyc plugin install');
+  return { tenantId, adminUsername, checkerUsername };
+}
+
+/** A complete, valid KYC application (NamibiaRules-clean; money = minor-unit STRINGS). */
+export function kycApplication(subType: 'DISTRIBUTOR' | 'MERCHANT', legalName: string): Record<string, unknown> {
+  const digits = () => randomUUID().replace(/\D/g, '');
+  return {
+    subType,
+    legalName,
+    entityType: 'PRIVATE_LIMITED',
+    registrationNumber: `${100000 + Math.floor(Math.random() * 300000)}`,
+    incorporationDate: '2018-06-01',
+    taxId: `${10000000 + Math.floor(Math.random() * 90000000)}`,
+    mccCode: '5411',
+    expectedMonthlyVolume: '50000000', avgTicketSize: '250000',
+    registeredAddress: `St ${suffix()}, Windhoek`,
+    registeredCity: 'Windhoek', registeredRegion: 'Khomas',
+    registeredPostal: '10001', registeredCountry: 'NAD',
+    operationalAddressSame: true,
+    ubos: [{
+      fullName: 'Elsi Hove', dob: '1980-02-14', nationality: 'NAM',
+      residentialAddress: '12 Fidel Castro St, Windhoek',
+      phone: '+264-81-000-0000', email: 'elsi@example.na',
+      idDocType: 'ID', idNumber: '80021400123', idExpiry: '2030-01-01',
+      ownershipPct: 100, isPep: false,
+    }],
+    bankAccounts: [{
+      holderName: legalName, bankName: 'BANK_WINDHOEK',
+      branchCode: '481972', accountNumber: `1${digits().slice(0, 8)}`,
+      accountType: 'CURRENT',
+    }],
+  };
+}
+
+/** Text the SPA shows for a menu point whose widget id is not in the registry. */
+export const UNREGISTERED_WIDGET = /not registered yet/i;
+/** Text of the portal eligibility wall. */
+export const NO_ACCESS_WALL = 'No access to this portal';
+
+/**
+ * The applicant admin username the KYC saga provisions — mirrors
+ * KycOnboardingSagaService.adminUsername (slug of the legal name, ≤40 chars, + case-number tail).
+ */
+export function sagaAdminUsername(legalName: string, caseNo: string): string {
+  let slug = legalName.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '');
+  if (slug.length > 40) slug = slug.slice(0, 40).replace(/\.+$/, '');
+  if (slug.length < 3) slug = 'org';
+  return `${slug}.${caseNo.slice(caseNo.lastIndexOf('-') + 1)}`;
+}

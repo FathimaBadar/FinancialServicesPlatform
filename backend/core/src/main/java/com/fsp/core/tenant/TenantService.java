@@ -8,6 +8,7 @@ import com.fsp.core.identity.PersonProvisioning;
 import com.fsp.core.identity.PersonRepository;
 import com.fsp.core.rbac.PermissionService;
 import com.fsp.core.rbac.Role;
+import com.fsp.core.rbac.RoleTemplates;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,15 +24,11 @@ import java.util.UUID;
 @Service
 public class TenantService {
 
-    /** Maker-side permissions held by the PSP TENANT_ADMIN role. */
-    private static final List<String> PSP_ADMIN_PERMS = List.of(
-        "je.create", "je.view", "gl.account.create",
-        "gl.account.view", "bank.account.create", "period.open", "period.close", "audit.view");
-
-    /** Checker-side permissions held by the PSP TENANT_CHECKER role. */
-    private static final List<String> PSP_CHECKER_PERMS = List.of(
-        "je.approve", "je.view",
-        "gl.account.approve", "gl.account.view", "bank.account.approve", "audit.view");
+    /**
+     * Every PSP created under the platform root is a supply-chain MANUFACTURER: the portal
+     * eligibility key (frontend portal-config) and the role templates read it.
+     */
+    static final String PSP_SUB_TYPE = "MANUFACTURER";
 
     private final TenantRepository tenantRepository;
     private final PersonRepository personRepository;
@@ -71,6 +68,7 @@ public class TenantService {
         psp.depth = parent.depth + 1;
         psp.hierarchyPath = parent.hierarchyPath + "/" + psp.id;
         psp.type = "PSP";
+        psp.subType = PSP_SUB_TYPE;
         psp.status = "ACTIVE";
         psp.verificationStatus = "VERIFIED";
         psp.legalName = req.legalName().trim();
@@ -78,8 +76,10 @@ public class TenantService {
         psp.activatedBy = actor.personId();
         tenantRepository.save(psp);
 
-        Role adminRole = provisioning.ensureRole(psp.id, "TENANT_ADMIN", "Tenant Admin", "TENANT", PSP_ADMIN_PERMS);
-        Role checkerRole = provisioning.ensureRole(psp.id, "TENANT_CHECKER", "Tenant Checker", "TENANT", PSP_CHECKER_PERMS);
+        Role adminRole = provisioning.ensureRole(psp.id, RoleTemplates.ADMIN_ROLE, "Tenant Admin", "TENANT",
+            RoleTemplates.adminKeys(psp.subType));
+        Role checkerRole = provisioning.ensureRole(psp.id, RoleTemplates.CHECKER_ROLE, "Tenant Checker", "TENANT",
+            RoleTemplates.checkerKeys(psp.subType, false));
 
         String defaultPassword = props.getSecurity().getDefaultPersonPassword();
         Person admin = provisioning.createPerson(psp.id, req.adminUsername(),
@@ -90,6 +90,8 @@ public class TenantService {
                 ? req.checkerUsername() : req.checkerFullName(), null, defaultPassword, false);
         provisioning.assignRole(admin.id, adminRole.id);
         provisioning.assignRole(checker.id, checkerRole.id);
+        // the provisioned checker IS the organization's designated checker (docs/checker-flag.md)
+        provisioning.designateChecker(checker);
 
         log.info("psp_created tenantId={} admin={} checker={} depth={}", psp.id, admin.username, checker.username, psp.depth);
         return new TenantDtos.PspCreated(psp.id, admin.username, checker.username,

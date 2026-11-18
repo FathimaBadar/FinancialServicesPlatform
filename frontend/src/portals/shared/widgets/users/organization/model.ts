@@ -9,7 +9,8 @@ import { ApiError } from '../../../web-core/api';
 import type { WidgetDataPortLike } from '../../core/manifest';
 
 /* ------------------------------------------------------------------ wire */
-export type UserStatus = 'ACTIVE' | 'DISABLED' | 'ARCHIVED';
+/** PENDING = staged by a maker, awaiting a checker (USER_CREATE) — cannot sign in, holds no roles. */
+export type UserStatus = 'PENDING' | 'ACTIVE' | 'DISABLED' | 'ARCHIVED';
 
 export interface RoleRef {
   id: string;
@@ -259,10 +260,11 @@ export function absoluteTime(iso: string | null | undefined): string {
   return iso ? new Date(iso).toLocaleString() : '—';
 }
 
-export type StatusFilter = 'current' | 'ACTIVE' | 'DISABLED' | 'ARCHIVED';
+export type StatusFilter = 'current' | 'PENDING' | 'ACTIVE' | 'DISABLED' | 'ARCHIVED';
 
 export const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
   { id: 'current', label: 'All' },
+  { id: 'PENDING', label: 'Awaiting approval' },
   { id: 'ACTIVE', label: 'Active' },
   { id: 'DISABLED', label: 'Deactivated' },
   { id: 'ARCHIVED', label: 'Removed' },

@@ -62,6 +62,8 @@ public final class KycDtos {
         String operationalPostal,
         List<UboRequest> ubos,
         List<BankAccountRequest> bankAccounts,
+        /** REFUSED when present (400 SCREENING_NOT_CLIENT_SETTABLE) — kept only so a client that
+         *  still sends it is told so, instead of the field being silently ignored. */
         String screeningOutcome
     ) {}
 

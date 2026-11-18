@@ -51,8 +51,7 @@ public class ApprovalController {
         if (body.targetResourceId() == null) throw ApiException.badRequest("APPROVAL_FIELDS", "targetResourceId required");
         var row = approvalService.open(actor.activeTenantId(), body.operationType(), body.targetResourceId(),
             actor, "generic-" + body.targetResourceId(), null);
-        return new ApprovalDtos.QueueView(row.id, row.tenantId, row.operationType, row.targetResourceId,
-            row.status, row.makerId, row.checkerId, row.reason, row.requestedAt, row.decidedAt);
+        return approvalService.view(row, actor);
     }
 
     @FspOperation(id = "approval.resolve.approve", component = "approval",

@@ -10,7 +10,7 @@ export const TIER_TEST_WIDTH: Record<Tier, number> = { xs: 390, sm: 768, md: 110
 export const TIER_LABEL: Record<Tier, string> = { xs: 'Phone', sm: 'Tablet', md: 'Laptop', lg: 'Desktop' };
 
 /** Business portals a widget can be previewed in (WidgetDef.contexts minus ANY). */
-export const PORTAL_CONTEXTS = ['PLATFORM', 'MANUFACTURER', 'DISTRIBUTOR', 'WHOLESALER'] as const;
+export const PORTAL_CONTEXTS = ['PLATFORM', 'MANUFACTURER', 'DISTRIBUTOR', 'WHOLESALER', 'MERCHANT'] as const;
 export type PortalContext = (typeof PORTAL_CONTEXTS)[number];
 
 /** Builder targets: the portal key layouts + signed bundles are published under (core). */
@@ -26,6 +26,7 @@ export const BUILDER_PORTALS: readonly BuilderPortal[] = [
   { key: 'manufacturer', label: 'Manufacturer', context: 'MANUFACTURER', menuPortal: 'org' },
   { key: 'distributor', label: 'Distributor', context: 'DISTRIBUTOR', menuPortal: 'org' },
   { key: 'wholesaler', label: 'Wholesaler', context: 'WHOLESALER', menuPortal: 'org' },
+  { key: 'merchant', label: 'Merchant', context: 'MERCHANT', menuPortal: 'org' },
 ];
 
 /** Fixture org used when the URL names none and access is not the signed-in user's. */

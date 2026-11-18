@@ -391,6 +391,18 @@ flowchart LR
 - Machine plane: `oauth_clients` (IdP) + `client_grants(tenant, client,
   permission_key)` (core) resolve through the *same* reachability math — no
   lateral trust; a PSP-installed plugin operates only inside the PSP's subtree.
+- **Anchor roles & templates (`rbac/RoleTemplates`).** Every organization is born with
+  `TENANT_ADMIN` (maker) and `TENANT_CHECKER` (checker). PSP and non-leaf orgs' admins
+  can onboard children (`org.onboard_child`, `org.create`, `screening.run`); the leaf
+  `MERCHANT` never can. Every admin/checker holds `user.manage` + `role.view`/`role.manage`
+  so an org runs itself without platform help. The provisioned checker is a designated
+  checker (`persons.is_checker`). V19 back-fills organizations created earlier.
+- **Role governance (`rbac/RoleAdminService`, `/v1/tenants/{id}/roles`).** Reads need
+  `role.view`; create / update / delete are STAGED as `ROLE_CREATE|UPDATE|DELETE`
+  approvals (202) and applied to `role_permissions` only on a checker's approval. No
+  escalation: maker AND checker must hold every key the change adds or removes.
+  Version-pinned (`expectedVersion` → approval `baseVersion` → atomic `bumpVersion`);
+  PLATFORM roles are read-only here; anchor roles and assigned roles cannot be deleted.
 
 ### 5.3 Act-as tenant ("sudo into an org")
 
@@ -422,6 +434,10 @@ flowchart LR
 
 Approval of the KYC case flips tenant → `ACTIVE`, books → `ACTIVE`, and
 provisions the chart of accounts automatically (§6.2).
+
+PSPs are created directly by the platform (`POST /v1/tenants`, admin portal
+"Onboarding" → `onboard.psp`) as ACTIVE/VERIFIED with sub-type `MANUFACTURER`;
+every deeper organization arrives through the KYC plugin saga.
 
 ---
 
@@ -558,6 +574,17 @@ flowchart TB
   never silently hidden.
 - Identical retry by the *same* checker is idempotent; conflicting decisions
   fail with a state error.
+- **Atomicity is per handler.** DB-only effects (`USER_*`, `ROLE_*`) declare
+  `atomicWithResolution()` and run in ONE transaction with the approval row — a refused
+  effect rolls the decision back. Handlers that dispatch remotely keep their own
+  boundaries: `JE_POSTING` must COMMIT its canonical plan before the TigerBeetle call (§6.5).
+- **Plugin-owned rows.** `PLUGIN:<code>:<action>` approvals are decided only through the
+  owning plugin (DELEGATED); a person resolving one directly gets `409 APPROVAL_PLUGIN_OWNED`.
+- **The queue tells each caller what they may do.** `GET /v1/approvals` opens for any
+  checker permission and returns per row `canDecide` + `blockedReason`
+  (`OWN_REQUEST · NOT_CHECKER · NO_PERMISSION · PLUGIN_OWNED · DECIDED`), maker/checker
+  names and — for core `USER_*`/`ROLE_*` rows only — the proposal payload. The
+  `approvals.queue` widget renders exactly that (no client re-derivation).
 
 ### 7.2 Idempotency in depth (`IdempotencyFilter`, order 2)
 
@@ -665,9 +692,15 @@ sequenceDiagram
 - **Five-tab data capture** per the SME model: business profile · operations ·
   addresses · UBO & key management (person 1 = applicant admin, `UsernamePolicy`
   generates their username) · settlement bank accounts.
-- **Simulated screening:** IDENTITY + SANCTIONS checks (PASS / FAIL / MANUAL_REVIEW);
-  a sanctions FAIL blocks approval; risk rating (LOW/MED/HIGH) drives re-review
+- **Screening (sandbox provider, `ScreeningService`):** IDENTITY + SANCTIONS checks
+  (PASS / FAIL / MANUAL_REVIEW) decided **server-side from the application** — incomplete
+  or expired UBO identity → MANUAL_REVIEW, PEP → MANUAL_REVIEW, watch-list hit
+  (`fsp.kyc.screening.sandbox-watchlist`) → FAIL — and persisted to `kyc_checks`. A
+  client-supplied `screeningOutcome` is refused (`400 SCREENING_NOT_CLIENT_SETTABLE`).
+  A sanctions FAIL blocks approval; risk rating (LOW/MED/HIGH) drives re-review
   cadence (36/24/12 months).
+- **`GET /organizations/{id}`** (kyc.org.get) returns the org's KYC standing; core decides
+  visibility through the person's chain (`tenant.detail.read`, DELEGATED).
 - **Namibian validation** (`NamibiaRules`, plugin-local copy): BIPA
   `^([A-Z]{2})?\d{3,10}$` (normalized), TIN `^\d{8}$`, branch code `^\d{5,6}$`,
   UBO threshold ≥ 25 %, records kept ≥ 5 years.
@@ -688,13 +721,22 @@ flowchart LR
     SRC --> MAN["manufacturer.html"]
     SRC --> DIB["distributor.html"]
     SRC --> WHO["wholesaler.html"]
+    SRC --> MER["merchant.html"]
     SRC --> CH["index.html → chooser"]
     SRC --> WB["widget-workbench.html"]
 ```
 
 Portals share `OrgApp` and differ only by `portal-config.ts` identity
 (name, accent, tenantSubType, menu). Eligibility = session tenant `subType`
-(`portalEligible`); the platform admin portal keys on `tenantType=PLATFORM`.
+(`portalEligible`); a legacy row without a sub-type is admitted only where the portal
+lists its TYPE in `admitsTypes` (PSP → manufacturer); the platform admin portal keys on
+`tenantType=PLATFORM`. `merchant.html` is the leaf portal (sub-type `MERCHANT`).
+
+Every menu point's widget is registered (the unit probe `gap-probes.test.ts` fails the
+build otherwise): `overview.tiles`, `onboard.psp` (platform) / `kyc.manage` (org)
+onboarding, `kyc.orgs`, `kyc.application`, `users.organization`, `approvals.queue`,
+`journal.entry`, `audit.trail`, `rbac.matrix`, `permissions.catalogue`,
+`plugins.governance` (platform), `ledger.accounts`, `period.control`.
 
 ### 10.2 Session hydration (once per portal load)
 
@@ -785,7 +827,7 @@ erDiagram
 
 ```mermaid
 timeline
-    title Core DB migrations (next free number: V17)
+    title Core DB migrations (next free number: V20 — seed folders own V17/V18)
     V1 : core schema — tenants, persons, RBAC, books, JE, approvals
     V2 : idempotency_records
     V3 : idp_configs / idp_identities
@@ -794,6 +836,7 @@ timeline
     V9–V10 : plugin registry install/enable, core KYC retired
     V14 : act_as_sessions
     V16 : person checker flag
+    V19 : role.view + PSP sub-type back-fill + anchor-role template back-fill + provisioned-checker flag
 ```
 
 Rules: demo data exists **only** under `db/seed/demo` gated by the
@@ -826,7 +869,9 @@ flowchart LR
 ```
 
 Other targets: `make pki` (dev PKI), `make tb-reset` (wipe ledger), `make test-e2e`
-(Playwright). Smoke chain: `GET :8080/bff/csrf` → `POST /bff/auth/login` →
+(Playwright: gap probes + onboarding chain), `make portal-publish` (publish a SIGNED
+portal bundle through the four-eyes builder flow — once per fresh DB, else the admin
+console stays fail-closed). Smoke chain: `GET :8080/bff/csrf` → `POST /bff/auth/login` →
 `GET /api/**`; direct `:8090/v1/**` needs a Bearer from `/idp/token`.
 
 ### 12.2 Tests as executable architecture

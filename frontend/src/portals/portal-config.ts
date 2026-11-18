@@ -7,10 +7,17 @@
  *   manufacturer.html → OrgApp port=portals.portal.manufacturer
  *   distributor.html  → OrgApp port=portals.portal.distributor
  *   wholesaler.html   → OrgApp port=portals.portal.wholesaler
+ *   merchant.html     → OrgApp port=portals.portal.merchant (leaf of the supply chain)
  */
 export interface PortalConfig {
   /** The tenant subType whose members may sign in here (PLATFORM for the admin console). */
-  tenantSubType: 'PLATFORM' | 'MANUFACTURER' | 'DISTRIBUTOR' | 'WHOLESALER';
+  tenantSubType: 'PLATFORM' | 'MANUFACTURER' | 'DISTRIBUTOR' | 'WHOLESALER' | 'MERCHANT';
+  /**
+   * Tenant TYPES also admitted when the tenant row carries no sub-type yet (legacy rows from
+   * before sub-type stamping). PSPs are manufacturers: core stamps MANUFACTURER on creation
+   * and V19 back-fills old rows, so this is a belt-and-braces fallback, never a widening.
+   */
+  admitsTypes?: readonly string[];
   /** The browser route base for this portal entry ('' for admin). */
   basePath: string;
   label: string;
@@ -38,6 +45,7 @@ export const ADMIN_PORTAL: PortalConfig = {
 
 export const PORTAL_MANUFACTURER: PortalConfig = {
   tenantSubType: 'MANUFACTURER',
+  admitsTypes: ['PSP'],
   basePath: '/manufacturer',
   label: 'Manufacturer',
   accent: '#f0a35e',
@@ -64,6 +72,16 @@ export const PORTAL_WHOLESALER: PortalConfig = {
   storageKey: 'fsp.wholesaler.session',
   signedDelivery: false,
   deliveryKey: 'wholesaler',
+};
+
+export const PORTAL_MERCHANT: PortalConfig = {
+  tenantSubType: 'MERCHANT',
+  basePath: '/merchant',
+  label: 'Merchant',
+  accent: '#5ee0a0',
+  storageKey: 'fsp.merchant.session',
+  signedDelivery: false,
+  deliveryKey: 'merchant',
 };
 
 /** The widget workbench (SME projects/widget-workbench): widget frames, registry, portal

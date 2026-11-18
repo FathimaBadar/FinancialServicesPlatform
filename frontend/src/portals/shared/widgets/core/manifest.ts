@@ -57,7 +57,7 @@ export interface WidgetDef<C = Record<string, unknown>> {
   description?: string;
   category?: string;
   /** portals whose widgets registry carries it. */
-  contexts: Array<'PLATFORM' | 'MANUFACTURER' | 'DISTRIBUTOR' | 'WHOLESALER' | 'ANY'>;
+  contexts: Array<'PLATFORM' | 'MANUFACTURER' | 'DISTRIBUTOR' | 'WHOLESALER' | 'MERCHANT' | 'ANY'>;
   /** permission keys — any held one lets the widget render (OR); or {all:[…]} to require several. */
   requires: string[] | { all: string[] };
   /** optional second gate: render only when this is ALSO met (e.g. a target selection). */

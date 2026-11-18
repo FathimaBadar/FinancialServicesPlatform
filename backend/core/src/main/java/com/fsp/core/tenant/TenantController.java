@@ -33,7 +33,10 @@ public class TenantController {
         return created;
     }
 
-    @FspOperation(id = "tenant.detail.read", component = "tenant", title = "View tenant detail")
+    // DELEGATED: a plugin acting for a person (KYC "My organization") reads through the SAME
+    // scoped visibility check (TenantService.detail) as the person would — no wider reach.
+    @FspOperation(id = "tenant.detail.read", component = "tenant", title = "View tenant detail",
+        actors = {Actor.ActorType.PERSON, Actor.ActorType.DELEGATED})
     @GetMapping("/v1/tenants/{tenantId}")
     public TenantDtos.TenantView detail(jakarta.servlet.http.HttpServletRequest request, @PathVariable("tenantId") UUID tenantId) {
         return tenantService.detail(tenantId, actor(request));

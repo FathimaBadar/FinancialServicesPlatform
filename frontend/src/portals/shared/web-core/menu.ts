@@ -18,11 +18,11 @@
 export type PortalId = 'platform' | 'org';
 
 export type MenuWidget =
-  | 'kyc.orgs' | 'kyc.tasks' | 'kyc.application' | 'kyc.decisions'
-  | 'tenant.directory' | 'onboard.child'
+  | 'kyc.orgs' | 'kyc.manage' | 'kyc.application'
+  | 'onboard.psp'
   | 'approvals.queue' | 'journal.entry' | 'audit.trail'
-  | 'rbac.matrix' | 'permissions.catalogue'
-  | 'users.organization' | 'users.signin'
+  | 'rbac.matrix' | 'permissions.catalogue' | 'plugins.governance'
+  | 'users.organization'
   | 'ledger.accounts' | 'period.control'
   | 'overview.tiles';
 
@@ -45,8 +45,12 @@ export const MENU_ITEMS: MenuItem[] = [
   // ---------------- governance (both portals, governance-first like SME)
   { id: 'overview', label: 'Overview', icon: '◫', link: '/overview',
     perm: ['audit.view'], portals: ['platform', 'org'], widgets: ['overview.tiles'] },
+  // platform onboards PSPs directly (org.create at the root); organizations onboard children
+  // through the KYC plugin (org.onboard_child) — one label, one link per portal
+  { id: 'onboarding-psp', label: 'Onboarding', icon: '⇲', link: '/onboarding',
+    perm: ['org.create'], portals: ['platform'], widgets: ['onboard.psp'] },
   { id: 'onboarding', label: 'Onboarding', icon: '⇲', link: '/onboarding',
-    perm: ['org.create', 'org.onboard_child'], portals: ['platform', 'org'], widgets: ['onboard.child'] },
+    perm: ['org.onboard_child'], portals: ['org'], widgets: ['kyc.manage'] },
   { id: 'network', label: 'My network', icon: '⑃', link: '/network',
     perm: ['kyc.review'], portals: ['org'], widgets: ['kyc.orgs'] },
   { id: 'users', label: 'User management', icon: '☰', link: '/users',
@@ -56,13 +60,14 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: 'kyc-applications', label: 'KYC applications', icon: '◈', link: '/kyc/applications',
     perm: ['kyc.review'], portals: ['platform'], group: 'KYC', widgets: ['kyc.orgs'] },
   { id: 'kyc-reviews', label: 'Review queue', icon: '✓', link: '/kyc/reviews',
-    perm: ['kyc.approve', 'kyc.reject'], portals: ['platform', 'org'], group: 'KYC', widgets: ['kyc.tasks'] },
+    perm: ['kyc.approve', 'kyc.reject'], portals: ['org'], group: 'KYC', widgets: ['kyc.manage'] },
   { id: 'kyc-decisions', label: 'My organization', icon: '◈', link: '/kyc',
     perm: ['kyc.review'], portals: ['org'], group: 'KYC', widgets: ['kyc.application'] },
 
   // ---------------- operations (money-adjacent: four-eyes surfaces)
   { id: 'approvals', label: 'Approvals', icon: '✓', link: '/approvals',
-    perm: ['kyc.approve', 'je.approve', 'org.approve_child', 'bank.account.approve', 'gl.account.approve'],
+    perm: ['kyc.approve', 'kyc.reject', 'je.approve', 'org.approve_child', 'bank.account.approve', 'gl.account.approve',
+      'user.manage', 'role.manage', 'plugin.manage', 'ui.layout.manage'],
     portals: ['platform', 'org'], group: 'Operations', widgets: ['approvals.queue'] },
   { id: 'journal', label: 'Journal entries', icon: '⇄', link: '/journal',
     perm: ['je.view', 'je.create', 'je.approve'], portals: ['platform', 'org'],
@@ -70,12 +75,14 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: 'ledger-audit', label: 'Audit trail', icon: '☰', link: '/audit',
     perm: ['audit.view'], portals: ['platform', 'org'], group: 'Operations', widgets: ['audit.trail'] },
 
-  // ---------------- platform admin surface
+  // ---------------- access + ledger setup
   { id: 'rbac', label: 'Roles and permissions', icon: '⚿', link: '/rbac',
-    perm: ['role.manage'], portals: ['platform'], group: 'Access', widgets: ['rbac.matrix'] },
+    perm: ['role.view', 'role.manage'], portals: ['platform', 'org'], group: 'Access', widgets: ['rbac.matrix'] },
   { id: 'permissions', label: 'All permissions', icon: '⌗', link: '/permissions',
     perm: ['audit.view', 'role.manage', 'kyc.review'], portals: ['platform', 'org'],
     group: 'Access', widgets: ['permissions.catalogue'] },
+  { id: 'plugins', label: 'Plugins', icon: '⧉', link: '/plugins',
+    perm: ['plugin.manage'], portals: ['platform'], group: 'Access', widgets: ['plugins.governance'] },
   { id: 'ledger', label: 'Chart of accounts', icon: '▣', link: '/ledger',
     perm: ['gl.account.view'], portals: ['platform', 'org'], group: 'Access', widgets: ['ledger.accounts'] },
   { id: 'periods', label: 'Accounting periods', icon: '◷', link: '/periods',

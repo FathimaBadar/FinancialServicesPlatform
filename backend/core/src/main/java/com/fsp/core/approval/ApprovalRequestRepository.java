@@ -9,6 +9,7 @@ import java.util.UUID;
 public interface ApprovalRequestRepository extends JpaRepository<ApprovalRequest, UUID> {
     List<ApprovalRequest> findByTenantIdOrderByRequestedAtDesc(UUID tenantId);
     List<ApprovalRequest> findByTenantIdAndStatusOrderByRequestedAtDesc(UUID tenantId, String status);
+    List<ApprovalRequest> findByTargetResourceIdAndStatus(UUID targetResourceId, String status);
     Optional<ApprovalRequest> findByOperationTypeAndTargetResourceId(String operationType, UUID targetResourceId);
 
     /** A target (e.g. a reused layout draft row) may carry many resolved approvals; ask only about live ones. */

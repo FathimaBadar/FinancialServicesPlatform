@@ -872,6 +872,74 @@ The one-page checklist every change is measured against (from `AGENTS.md` §2–
 
 ---
 
+## 14. Live document — how this file updates itself
+
+This doc stays true to the code through a **two-tier** maintenance model:
+
+```mermaid
+flowchart TB
+    subgraph Code["source of truth: the code"]
+        SRC["java · tsx · sql · yml · gradle"]
+    end
+    subgraph Gen["Tier 1 — mechanical (automatic)"]
+        REFRESH["docs/gen/refresh.cjs"]
+        FP["fingerprint.md — per-tree SHA-256"]
+        DEPD["dependencies.md — Gradle graph"]
+        OPS["operations.md — all @FspOperation"]
+        MIG["migrations.md — Flyway ledger + next V-number"]
+    end
+    subgraph Prose["Tier 2 — human (on structural change)"]
+        ARCH["architecture.md §1–§13, §15"]
+    end
+    SRC --> REFRESH --> FP & DEPD & OPS & MIG
+    SRC -."reviewer reads diff on PR".-> ARCH
+```
+
+**Tier 1 (generators)** — `docs/gen/refresh.cjs` regenerates `docs/generated/*`
+from source. It never edits prose. `--check` mode fails when artifacts are
+stale (CI gate + pre-commit). Generated surfaces:
+
+| Artifact | Derived from | Catches |
+|---|---|---|
+| `fingerprint.md` | per-tree SHA-256 over backend/frontend/migration/infra files | *anything* changed anywhere — a reviewer's "what moved" cue |
+| `dependencies.md` | `implementation(project(":…"))` in every `build.gradle.kts` | new service / new module wiring |
+| `operations.md` | every `@FspOperation(id, permission, risk)` in core | route/permission/risk contract changes the gateway routes on |
+| `migrations.md` | `db/migration/V*.sql` filenames | schema evolution; asserts the next free V-number |
+
+**Tier 2 (prose)** — §§1–13, §15 are human-written. The rule: *a PR that
+changes the architecture materially (new service, new package, invariant
+change, new cross-service flow) must update the affected sections in the same
+PR*. The generated fingerprint is the reviewer's checklist: if it changed,
+scan the diff for structural impact.
+
+**Run it**
+
+| When | Command |
+|---|---|
+| manually | `node docs/gen/refresh.cjs` |
+| automatically on commit | `make docs-hook` (installs `.githooks/pre-commit`, needs `git config core.hooksPath .githooks`; it refreshes artifacts and stages them) |
+| CI gate | `make docs-check` (fails the build when artifacts are stale) |
+
+```mermaid
+sequenceDiagram
+    participant Dev as developer
+    participant H as pre-commit hook
+    participant G as git
+    Dev->>G: git commit (code change)
+    G->>H: pre-commit
+    H->>H: node docs/gen/refresh.cjs
+    alt artifacts changed
+        H->>G: git add docs/generated/*
+    end
+    G->>G: commit proceeds (doc + code travel together)
+    Note over G,Dev: CI additionally runs make docs-check — staleness can never merge
+```
+
+Why two tiers: fully-generated docs drift into unreadability and lose the *why*;
+fully-manual docs drift from the code. Generators pin the mechanical truth
+(exact operations, exact migration numbers, exact wiring) while humans keep
+the narrative. Disagreement is impossible to hide — regenerating fails CI.
+
 ## 15. Glossary
 
 | Term | Meaning |

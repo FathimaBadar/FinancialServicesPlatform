@@ -10,4 +10,4 @@
 | kyc plugin | 35 | `919af52b67c5` |
 | db migrations | 18 | `48713ecc6053` |
 | frontend | 115 | `643aa33a5af9` |
-| infra | 0 | `e3b0c44298fc` |
+| infra | 2 | `98b3a3f0862e` |

@@ -151,8 +151,8 @@ Every REST controller endpoint fetching a collection or dataset from the server 
 
 ## 4. Plugin Process & Schema Isolation Mandate
 
-1. **Independent Process:** Every plugin MUST run as a separate, standalone OS/container process on its own dedicated port (e.g. KYC `:8083`, Inventory `:8085`).
-2. **Isolated Database Schema:** Every plugin MUST connect to its own database schema or database instance (e.g. `fsp_plugin_kyc`).
+1. **Independent Process:** Every plugin MUST run as a separate, standalone OS/container process on its own dedicated port (e.g. KYC `:8083`, Inventory `:8084`).
+2. **Isolated Database Schema:** Every plugin MUST connect to its own database schema or database instance (e.g. `fsp_plugin_kyc`, `fsp_plugin_inventory`).
 3. **Independent Flyway Migrations:** Every plugin manages its own schema migrations completely separately from Core (e.g. `classpath:db/plugin/kyc/migration/`). Plugins NEVER modify core tables.
 4. **Zero Shared Storage:** Plugins cannot query core tables directly or execute cross-database joins. Cross-domain communication is strictly via API Gateway HTTP routes with actor assertions.
 

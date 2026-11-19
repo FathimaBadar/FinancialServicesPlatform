@@ -49,6 +49,17 @@ public class TenantController {
         return tenantService.children(tenantId, actor(request));
     }
 
+    @FspOperation(id = "tenant.children.page", component = "tenant", title = "Page tenant children")
+    @GetMapping("/v1/tenants/{tenantId}/children/page")
+    public TenantDtos.ChildPage childrenPage(jakarta.servlet.http.HttpServletRequest request,
+                                             @PathVariable("tenantId") UUID tenantId,
+                                             @org.springframework.web.bind.annotation.RequestParam(required = false) Integer page,
+                                             @org.springframework.web.bind.annotation.RequestParam(required = false) Integer size,
+                                             @org.springframework.web.bind.annotation.RequestParam(required = false) String q,
+                                             @org.springframework.web.bind.annotation.RequestParam(required = false) String sort) {
+        return tenantService.childrenPage(tenantId, actor(request), page, size, q, sort);
+    }
+
     private static Actor actor(jakarta.servlet.http.HttpServletRequest request) {
         Actor actor = (Actor) request.getAttribute("fsp.actor");
         if (actor == null) {

@@ -177,7 +177,8 @@ public class ForwardFilterConfig {
                         problem(response, 403, "ACTOR_TYPE_REJECTED", "plugin operations are person-only");
                         return;
                     }
-                    if (!admitToPlugin(pluginOp.get(), claims, method, path, trace, response, upstream)) {
+                    if (!admitToPlugin(pluginOp.get(), claims, method, path, trace, response, upstream,
+                            request.getHeader("X-Act-As"))) {
                         return; // Response already written
                     }
                     if (idem != null) {
@@ -200,6 +201,15 @@ public class ForwardFilterConfig {
                     } else {
                         upstream.set("X-FSP-User-Id", claims.userId());
                         upstream.set("X-FSP-Username", claims.username());
+                        // Act-as (plans/act-as-tenant-plan.md D4): the opaque session id rides to core
+                        // on the PERSON plane only. It is not an identity claim — core's ActAsFilter
+                        // honours it only when the session belongs to the verified person above and
+                        // is live, else 401 ACT_AS_EXPIRED (fail closed). Without this the BFF's id
+                        // was dropped here and act-as never reached core (no ceiling, no audit trail).
+                        String actAs = request.getHeader("X-Act-As");
+                        if (actAs != null && !actAs.isBlank()) {
+                            upstream.set("X-Act-As", actAs.trim());
+                        }
                     }
                     if (idem != null) {
                         upstream.set("Idempotency-Key", idem);
@@ -473,8 +483,52 @@ public class ForwardFilterConfig {
          */
         private boolean admitToPlugin(CatalogRouteTable.PluginOp op, JwtService.Claims claims, String method,
                                       String path, String trace, HttpServletResponse response,
-                                      HttpHeaders upstream) throws IOException {
+                                      HttpHeaders upstream, String actAsHeader) throws IOException {
             String tenantId = claims.tenantId();
+            // Act-as (plans/act-as-tenant-plan.md): a person acting as a tenant works on plugins AS that
+            // tenant. Core — the only owner of act-as sessions — resolves it for the VERIFIED person;
+            // anything but a live session of theirs refuses the call (never falls back to home).
+            String actSessionId = null;
+            String homeTenantId = null;
+            if (actAsHeader != null && !actAsHeader.isBlank()) {
+                String sid = actAsHeader.trim();
+                if (!sid.matches("[A-Za-z0-9-]{1,64}")) {
+                    problem(response, 401, "ACT_AS_EXPIRED", "Your session acting as another tenant has ended");
+                    return false;
+                }
+                try {
+                    ResponseEntity<String> res = rest.method(HttpMethod.GET)
+                        .uri(props.getCoreBaseUrl() + "/internal/act-as/" + sid)
+                        .header("X-FSP-Internal-Credential", props.getInternalCredential())
+                        .header("X-FSP-User-Id", claims.userId())
+                        .header("X-FSP-Tenant-Id", claims.tenantId())
+                        .header("X-FSP-Username", claims.username())
+                        .header("X-FSP-Client-Id", claims.clientId())
+                        .header("X-Correlation-Id", trace)
+                        .retrieve().toEntity(String.class);
+                    JsonNode live = mapper.readTree(res.getBody() == null ? "{}" : res.getBody());
+                    if (!claims.userId().equals(live.path("personId").asText())
+                        || live.path("targetTenantId").asText().isBlank()) {
+                        problem(response, 401, "ACT_AS_EXPIRED", "Your session acting as another tenant has ended");
+                        return false;
+                    }
+                    actSessionId = live.path("sessionId").asText();
+                    homeTenantId = live.path("homeTenantId").asText();
+                    tenantId = live.path("targetTenantId").asText();
+                } catch (org.springframework.web.client.RestClientResponseException e) {
+                    log.warn("gateway_plugin_act_as_refused path={} status={}", path, e.getStatusCode().value());
+                    if (e.getStatusCode().value() == 401) {
+                        problem(response, 401, "ACT_AS_EXPIRED", "Your session acting as another tenant has ended");
+                    } else {
+                        problem(response, 503, "ACT_AS_UNAVAILABLE", "Act-as session check unavailable");
+                    }
+                    return false;
+                } catch (Exception e) {
+                    log.warn("gateway_plugin_act_as_error path={} detail={}", path, e.getMessage());
+                    problem(response, 503, "ACT_AS_UNAVAILABLE", "Act-as session check unavailable");
+                    return false;
+                }
+            }
             try {
                 ResponseEntity<String> ready = rest.method(HttpMethod.GET)
                     .uri(props.getCoreBaseUrl() + "/internal/plugins/" + op.code() + "/effective?tenantId=" + tenantId)
@@ -494,13 +548,15 @@ public class ForwardFilterConfig {
 
             JsonNode decision;
             try {
-                String body = mapper.writeValueAsString(Map.of(
+                Map<String, Object> ask = new java.util.LinkedHashMap<>(Map.of(
                     "permission", op.permission(), "tenantId", tenantId, "operationId", op.operationId()));
+                if (actSessionId != null) ask.put("actSessionId", actSessionId);
+                String body = mapper.writeValueAsString(ask);
                 ResponseEntity<String> res = rest.method(HttpMethod.POST)
                     .uri(props.getCoreBaseUrl() + "/internal/authz/decide")
                     .header("X-FSP-Internal-Credential", props.getInternalCredential())
                     .header("X-FSP-User-Id", claims.userId())
-                    .header("X-FSP-Tenant-Id", tenantId)
+                    .header("X-FSP-Tenant-Id", claims.tenantId())
                     .header("X-FSP-Username", claims.username())
                     .header("X-FSP-Client-Id", claims.clientId())
                     .header("X-Correlation-Id", trace)
@@ -528,11 +584,11 @@ public class ForwardFilterConfig {
 
             String assertion = assertions.mint(new com.fsp.shared.ActorAssertion.Subject(
                     claims.userId(), tenantId, claims.username(), claims.clientId(), op.operationId(),
-                    op.permission(), tenantId, trace),
+                    op.permission(), tenantId, trace, actSessionId, homeTenantId),
                 "plugin:" + op.code(), method, path);
             upstream.set("X-FSP-Actor-Assertion", assertion);
-            log.info("gateway_plugin_admitted plugin={} op={} person={} tenant={}",
-                op.code(), op.operationId(), claims.userId(), tenantId);
+            log.info("gateway_plugin_admitted plugin={} op={} person={} tenant={} actAs={}",
+                op.code(), op.operationId(), claims.userId(), tenantId, actSessionId != null);
             return true;
         }
 

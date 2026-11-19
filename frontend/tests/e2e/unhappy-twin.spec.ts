@@ -48,7 +48,7 @@ test('unhappy twin — REQUEST_INFO loop, REJECT, self-approve blocks, stalled r
   /* ── A · REQUEST_INFO: the returned case loops once more and is then approved ── */
   const nameA = `Two Rivers Trading ${suffix()} (Pty) Ltd`;
   const filedA = await api<{ caseId: string; subjectTenantId: string; caseNo: string; status: string; version: number }>(
-    mfrAdmin, 'POST', '/plugins/kyc/cases', kycApplication('MERCHANT', nameA));
+    mfrAdmin, 'POST', '/plugins/kyc/cases', kycApplication('DISTRIBUTOR', nameA));
   expect(filedA.status, `case filed: ${JSON.stringify(filedA.json)}`).toBe(201);
   const caseIdA = filedA.json.caseId;
   const tenantA = filedA.json.subjectTenantId;
@@ -83,7 +83,7 @@ test('unhappy twin — REQUEST_INFO loop, REJECT, self-approve blocks, stalled r
   /* ── B · REJECT: terminal verdict, no activation, no second decision ── */
   const nameB = `Kuiseb Logistics ${suffix()} (Pty) Ltd`;
   const filedB = await api<{ caseId: string; subjectTenantId: string }>(
-    mfrAdmin, 'POST', '/plugins/kyc/cases', kycApplication('MERCHANT', nameB));
+    mfrAdmin, 'POST', '/plugins/kyc/cases', kycApplication('DISTRIBUTOR', nameB));
   expect(filedB.status).toBe(201);
   const rejected = await decide(mfrChecker, filedB.json.caseId, 'REJECT', 'Watch-list hit on the listed UBO, unresolved.');
   expect(rejected.status, `rejected: ${JSON.stringify(rejected.json)}`).toBe(200);
@@ -97,7 +97,7 @@ test('unhappy twin — REQUEST_INFO loop, REJECT, self-approve blocks, stalled r
 
   /* ── C · self-approve is blocked as a STATE, not hidden (ui-std §5.2) ── */
   // C0 · filing needs the maker permission — a checker cannot open a case at all.
-  const checkerFiles = await api(mfrChecker, 'POST', '/plugins/kyc/cases', kycApplication('MERCHANT', `Not A Filer ${suffix()}`));
+  const checkerFiles = await api(mfrChecker, 'POST', '/plugins/kyc/cases', kycApplication('DISTRIBUTOR', `Not A Filer ${suffix()}`));
   expect(checkerFiles.status, 'filing needs org.onboard_child (the maker side)').toBe(403);
   expect(code(checkerFiles.json)).toBe('PERMISSION_DENIED');
 
@@ -105,7 +105,7 @@ test('unhappy twin — REQUEST_INFO loop, REJECT, self-approve blocks, stalled r
   // refused by the API and, server-side, the viewer's canDecide=false/block=MAKER. The review
   // queue UI is the checker's positive control (a NON-maker renders the decision controls).
   const nameC = `Onyx Crafts ${suffix()} (Pty) Ltd`;
-  const byAdmin = await api<{ caseId: string }>(mfrAdmin, 'POST', '/plugins/kyc/cases', kycApplication('MERCHANT', nameC));
+  const byAdmin = await api<{ caseId: string }>(mfrAdmin, 'POST', '/plugins/kyc/cases', kycApplication('DISTRIBUTOR', nameC));
   expect(byAdmin.status, 'the admin (maker side) may file').toBe(201);
   const makerApiTry = await decide(mfrAdmin, byAdmin.json.caseId, 'APPROVE', 'trying to bless my own filing');
   expect(makerApiTry.status, `maker decide refused: ${JSON.stringify(makerApiTry.json)}`).toBe(403);
@@ -130,10 +130,11 @@ test('unhappy twin — REQUEST_INFO loop, REJECT, self-approve blocks, stalled r
   expect((await api<{ status: string }>(mfrAdmin, 'GET', `/plugins/kyc/cases/${byAdmin.json.caseId}`)).json.status)
     .toBe('PENDING_REVIEW');
 
-  // C2 · JE: enter the (now ACTIVE) merchant org of scene A; the maker tries to approve.
+  // C2 · JE: enter the (now ACTIVE) org of scene A — a DISTRIBUTOR, the manufacturer's only
+  // allowed child (core TenantLadder) — in its own portal; the maker tries to approve.
   const merAdminUsername = sagaAdminUsername(nameA, filedA.json.caseNo);
-  const merAdmin = await signIn(browser, 'merchant admin', '/merchant', merAdminUsername, PERSON_PASS);
-  const merChecker = await signIn(browser, 'merchant checker', '/merchant', `checker-${merAdminUsername}`, PERSON_PASS);
+  const merAdmin = await signIn(browser, 'distributor admin', '/distributor', merAdminUsername, PERSON_PASS);
+  const merChecker = await signIn(browser, 'distributor checker', '/distributor', `checker-${merAdminUsername}`, PERSON_PASS);
   const merTenantId = (await sessionUser(merAdmin)).tenantId;
   const books = await api<{ id: string; status: string }[]>(merAdmin, 'GET', `/tenants/${merTenantId}/books`);
   const bookId = books.json.find((b) => b.status === 'ACTIVE')!.id;
@@ -158,7 +159,7 @@ test('unhappy twin — REQUEST_INFO loop, REJECT, self-approve blocks, stalled r
   expect(selfApprove.status, `maker JE approve refused: ${JSON.stringify(selfApprove.json)}`).toBe(403);
   expect(code(selfApprove.json)).toBe('PERMISSION_DENIED');
   // UI lane: the maker's detail shows the four-eyes banner, never an approve control
-  await merAdmin.page.goto(`/merchant/journal?entry=${entryId}`);
+  await merAdmin.page.goto(`/distributor/journal?entry=${entryId}`);
   await expect(merAdmin.page.locator('[data-posting-state="PENDING_CHECKER"]').first()).toBeVisible();
   await expect(merAdmin.page.getByText('so you can’t approve it')).toBeVisible();
   await expect(merAdmin.page.locator('[data-action="je.approve"]')).toHaveCount(0);

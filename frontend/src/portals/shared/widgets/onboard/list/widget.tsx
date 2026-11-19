@@ -14,6 +14,8 @@ import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { useWidgetRuntime } from '../../core/runtime';
+import type { WidgetRuntimeProps } from '../../core/manifest';
+import type { OnboardListConfig } from './index';
 import { Button, Chip, EmptyState, Input, PageHeader, Panel, StatusBadge } from '../../../ui/atoms';
 import { StatePanel } from '../../kit/StatePanel';
 import { Drawer } from '../../kit/Drawer';
@@ -26,7 +28,7 @@ import {
   useOrgPage, useKycCasePage, joinOrgsToKyc, DEFAULT_QUERY, PAGE_SIZES,
   type OrgListQuery, type OrgWithKyc, type KycListQuery, KYC_DEFAULT_QUERY,
 } from './model';
-import { emptyForm, useCaseCommand, useMasterValues } from '../../kyc/manage/model';
+import { emptyForm, useCaseCommand, useMasterValues, useNextLevel } from '../../kyc/manage/model';
 import type { CaseFormValues } from '../../kyc/manage/model';
 import { CaseForm } from '../../kyc/manage/CaseForm';
 
@@ -168,8 +170,15 @@ function OrgPager({ page, size, shown, hasNext, busy, onPage, onSize }: {
   );
 }
 
-export function OnboardList() {
+export function OnboardList(props: WidgetRuntimeProps<OnboardListConfig>) {
   const { port, context } = useWidgetRuntime();
+  const session = useSession();
+  // "own": the signed-in org (or the org acted as). "selected": the org picked on this screen;
+  // onboarding under a picked org needs acting as its admin (it must be the org you work in).
+  const scope = props.config?.scope ?? 'own';
+  const workingOrg = context.orgId ?? '';
+  const parentOrg = scope === 'selected' ? (context.selection.orgId ?? (session.actAs ? workingOrg : '')) : workingOrg;
+  const readOnly = parentOrg !== '' && parentOrg !== workingOrg;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const query = useMemo((): OrgListQuery => {
@@ -213,14 +222,19 @@ export function OnboardList() {
     });
   }, [patch, query]);
 
-  const orgPage = useOrgPage(port, query, context.orgId);
-  const kycPage = useKycCasePage(port, kycQuery, context.orgId);
+  const orgPage = useOrgPage(port, query, parentOrg);
+  // KYC cases are the WORKING org's (the plugin's owner tenant); a picked org's are not readable here
+  const kycPage = useKycCasePage(port, kycQuery, readOnly ? '' : parentOrg);
+  // the parent's next rung (core's TenantLadder) fixes what "New onboarding" may create
+  const next = useNextLevel(port, parentOrg);
+  const { childSubType, orgName: parentName } = next;
 
   // ---- "New onboarding": the KYC add form in a drawer (URL state onew=1, ui-std §7)
   // creating a KYC application is the plugin's org.onboard_child operation —
   // core + the plugin re-decide every call; the held permission only shapes affordances.
   const canCreate = context.permissions.includes('org.onboard_child');
-  const formOpen = params.get('onew') === '1';
+  const canOnboardHere = !readOnly && childSubType !== null;
+  const formOpen = params.get('onew') === '1' && canOnboardHere;
   const master = useMasterValues(port, formOpen);
   const cmd = useCaseCommand(port);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -231,8 +245,8 @@ export function OnboardList() {
   // ---- "Act as" (plans/act-as-tenant-plan.md): step into an org below yours and work as it —
   // its users, roles, onboarding. Core decides (tenant.act_as at HOME, strictly below, ACTIVE)
   // and audits every action as the real person; the banner + Exit live in the app shell.
-  const session = useSession();
-  const maySudo = canAny(session.permissions, ['tenant.act_as']);
+  // per-row "Act as" belongs to the own-org directory; on a picked-org screen the users panel offers it
+  const maySudo = scope === 'own' && canAny(session.permissions, ['tenant.act_as']);
   const [actingId, setActingId] = useState<string | null>(null);
   const actAs = useCallback(async (r: OrgWithKyc) => {
     setActingId(r.id);
@@ -283,16 +297,18 @@ export function OnboardList() {
   const onOpen = useCallback((r: OrgWithKyc) => {
     if (r.hasKyc && r.kycCaseId) {
       navigate(`/kyc/reviews?case=${r.kycCaseId}`);
-    } else {
+    } else if (canOnboardHere) {
       openForm();
     }
-  }, [navigate, openForm]);
+  }, [navigate, openForm, canOnboardHere]);
 
   const onNewOnboarding = useCallback(() => {
     openForm();
   }, [openForm]);
 
-  if (orgPage.isPending || kycPage.isPending) return <StatePanel kind="loading" title="Loading organizations" />;
+  // a "selected" screen shows nothing until an organization is picked
+  if (scope === 'selected' && !parentOrg) return null;
+  if (orgPage.isPending || (!readOnly && kycPage.isPending)) return <StatePanel kind="loading" title="Loading organizations" />;
   if (orgPage.isError) {
     if (isForbidden(orgPage.error)) {
       return <StatePanel kind="forbidden" title="Not allowed here" hint="Onboarding needs org.create at the platform root." />;
@@ -311,16 +327,29 @@ export function OnboardList() {
   const hasNext = orgPage.data?.hasNext ?? false;
 
   // Always-visible header + search, even when there are 0 orgs
+  const level = next.label;
   const header = (
-    <PageHeader
-      title="Onboarding"
-      subtitle={`Organizations · ${rows.length} onboarded`}
-      actions={
-        <Button variant="primary" data-action="org.onboard" onClick={onNewOnboarding}>
-          New onboarding
-        </Button>
-      }
-    />
+    <>
+      <PageHeader
+        title="Onboarding"
+        subtitle={`${scope === 'selected' ? `${parentName} · ` : ''}Organizations · ${rows.length} onboarded${level ? ` · next level: ${level}` : ''}`}
+        actions={
+          canOnboardHere ? (
+            <Button variant="primary" data-action="org.onboard" onClick={onNewOnboarding}>
+              New onboarding
+            </Button>
+          ) : undefined
+        }
+      />
+      {next.loaded && childSubType === null && (
+        <p className="text-dim mb-3 text-[12px]">{parentName} is the last level — it doesn’t onboard organizations.</p>
+      )}
+      {readOnly && childSubType !== null && (
+        <p className="text-dim mb-3 text-[12px]">
+          To onboard a {level?.toLowerCase()} under {parentName}, act as its admin (Users panel).
+        </p>
+      )}
+    </>
   );
 
   const formDrawer = formOpen && (
@@ -341,9 +370,11 @@ export function OnboardList() {
     >
       {canCreate ? (
         <CaseForm
-          key="new"
+          key={`new-${childSubType ?? ''}`}
           mode="create"
-          initial={emptyForm()}
+          initial={{ ...emptyForm(), subType: childSubType ?? '' }}
+          lockedSubType={childSubType ?? undefined}
+          lockedSubTypeHint={level ? `Below ${parentName} you can onboard a ${level.toLowerCase()} only.` : undefined}
           master={master.data}
           masterLoading={master.isPending}
           busy={cmd.isPending}

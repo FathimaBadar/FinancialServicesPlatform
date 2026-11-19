@@ -11,14 +11,17 @@ flowchart LR
     A[Actor record] --> P["PERSON<br/>human, roles from user_roles"]
     A --> M["MACHINE<br/>OAuth client (plugin), roles always EMPTY"]
     A --> D["DELEGATED<br/>machine acting for a person (Path D)"]
+    A --> X["ACTING<br/>person acting as a tenant below home (act-as)"]
 ```
 
-| Invariant | PERSON | MACHINE | DELEGATED |
-|---|---|---|---|
-| Can be maker of an approval | ✅ | ❌ | ❌ |
-| Can be checker (four-eyes) | ✅ | ❌ | ❌ — service precondition in `ApprovalService`/`JournalService` |
-| Permissions resolved from | RBAC rows | `client_grants` | min(person RBAC, plugin grants) |
-| Token carries | `sub`,`tid`,`uname`,`clid` | `clid`,`tid` | both + actor assertion |
+| Invariant | PERSON | MACHINE | DELEGATED | ACTING (act-as) |
+|---|---|---|---|---|
+| Can be maker of an approval | ✅ | ❌ | ❌ | ✅ — maker = the real `person_id` |
+| Can be checker (four-eyes) | ✅ | ❌ | ❌ — service precondition in `ApprovalService`/`JournalService` | ✅ at real `person_id`; never on `PLUGIN:` rows |
+| Permissions resolved from | RBAC rows | `client_grants` | min(person RBAC, plugin grants) | (person RBAC at home ∪ at target) ∩ target ceiling |
+| Token carries | `sub`,`tid`,`uname`,`clid` | `clid`,`tid` | both + actor assertion | the person's own token; BFF adds `X-Act-As` (gateway forwards on the person plane) |
+| Admitted on operations | `actors` incl. PERSON | `actors` incl. MACHINE | `actors` incl. DELEGATED | wherever PERSON is admitted |
+| Audit row | `actor_id` | client | person + client | `actor_id` = real person, `acting_tenant_id` = home, `act_session_id` = session |
 
 ---
 

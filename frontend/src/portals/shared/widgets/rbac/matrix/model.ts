@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import type { WidgetDataPortLike } from '../../core/manifest';
+import type { MenuItem } from '../../../web-core/menu';
 
 export interface RoleView {
   id: string;
@@ -100,12 +101,16 @@ export function byComponent(defs: PermissionDef[]): Array<[string, PermissionDef
   return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
-/* ───────────────────────────── permission matrix (component × resource × verb) ─────────────────────────────
- * The FSP catalogue is flat keys `<resource>.<verb>` (no verb grid server-side). The matrix only
- * PRESENTS them as a grid: rows = resource grouped by owning component, columns = the verb families
- * that actually occur. Every catalogue key lands in exactly one cell — nothing is invented, nothing
- * is dropped (an unknown verb falls into Update). A cell is ONE box: ticking it grants every key in
- * it (e.g. Authorize on KYC case = kyc.approve + kyc.reject).
+/* ───────────────────────────── permission matrix (menu link × verb) ─────────────────────────────
+ * Rows are EXACTLY the portal's sidebar: one header row per menu group, one row per menu link, in
+ * menu order. A link's keys = its own gate (MenuItem.perm) ∪ every key its screen's widgets name
+ * (requires + action cells), limited to keys the catalogue has. The FSP catalogue is flat keys
+ * `<resource>.<verb>` (no verb grid server-side); the matrix only PRESENTS each link's keys by verb
+ * family. A cell is ONE box: ticking it grants every key in it (Authorize = kyc.approve + kyc.reject).
+ *
+ * "Active" is one more box per link: it is the link itself — on when the role holds any key of the
+ * link's gate (the link shows in the sidebar), ticking it grants the gate key, unticking revokes the
+ * gate. Keys no link uses are not shown, and editing a role never strips them.
  */
 export type VerbColumn = 'create' | 'view' | 'update' | 'authorize';
 
@@ -122,24 +127,6 @@ const VERB_TO_COLUMN: Record<string, VerbColumn> = {
   approve: 'authorize', reject: 'authorize', approve_child: 'authorize',
 };
 
-const RESOURCE_LABEL: Record<string, string> = {
-  audit: 'Audit trail', idp: 'Identity provider', je: 'Journal entry', 'bank.account': 'Bank account',
-  kyc: 'KYC case', screening: 'Screening', 'gl.account': 'GL account', period: 'Accounting period',
-  notification: 'Notification', org: 'Organization', platform: 'Platform', plugin: 'Plugin', role: 'Role',
-  user: 'Back office user', tenant: 'Tenant', 'ui.layout': 'Portal layout', 'ui.widget': 'Widget',
-};
-
-const COMPONENT_LABEL: Record<string, string> = {
-  audit: 'Audit', identity: 'Identity', journal: 'Journal', kyc: 'KYC', ledger: 'Ledger',
-  notify: 'Notifications', org: 'Organizations', onboarding: 'Onboarding', platform: 'Platform',
-  plugins: 'Plugins', rbac: 'User & Role Management', tenant: 'Tenancy', ui: 'Portal UI',
-};
-
-function humanize(s: string): string {
-  const t = s.replace(/[._]/g, ' ').trim();
-  return t.charAt(0).toUpperCase() + t.slice(1);
-}
-
 export interface MatrixCell {
   key: string;
   title: string;
@@ -147,54 +134,72 @@ export interface MatrixCell {
 }
 
 export interface MatrixRow {
-  resource: string;
+  /** the menu link (route), unique per portal */
+  link: string;
   label: string;
   cells: Record<VerbColumn, MatrixCell[]>;
+  /** every key the link covers (gate ∪ widget keys) */
   keys: string[];
+  /** the link's gate — holding any one shows the link (the Active box) */
+  gate: string[];
 }
 
 export interface MatrixGroup {
-  component: string;
+  /** the sidebar group header ('Menu' for links shown without one) */
   label: string;
   rows: MatrixRow[];
   keys: string[];
 }
 
 export interface PermissionMatrixModel {
-  /** only the verb families the catalogue actually uses */
+  /** only the verb families the rows actually use */
   columns: VerbColumn[];
   groups: MatrixGroup[];
 }
+
+/** Label of the group for menu links rendered without a sidebar header. */
+export const UNGROUPED = 'Menu';
 
 export function splitKey(key: string): { resource: string; verb: string } {
   const i = key.lastIndexOf('.');
   return i < 0 ? { resource: key, verb: '' } : { resource: key.slice(0, i), verb: key.slice(i + 1) };
 }
 
-export function buildMatrix(defs: PermissionDef[]): PermissionMatrixModel {
+export function columnOf(key: string): VerbColumn {
+  return VERB_TO_COLUMN[splitKey(key).verb] ?? 'update';
+}
+
+/**
+ * Build the matrix from a portal's menu (registry order). `widgetKeys` returns every permission key
+ * a widget names (its requires + action cells) — passed in so the model stays pure.
+ */
+export function buildMatrix(
+  menu: readonly MenuItem[],
+  defs: readonly PermissionDef[],
+  widgetKeys: (widgetId: string) => readonly string[],
+): PermissionMatrixModel {
+  const byKey = new Map(defs.map((d) => [d.key, d] as const));
   const used = new Set<VerbColumn>();
   const groups: MatrixGroup[] = [];
-  for (const [component, list] of byComponent(defs)) {
-    const rows = new Map<string, MatrixRow>();
-    for (const d of list) {
-      const { resource, verb } = splitKey(d.key);
-      const col = VERB_TO_COLUMN[verb] ?? 'update';
-      used.add(col);
-      let row = rows.get(resource);
-      if (!row) {
-        row = { resource, label: RESOURCE_LABEL[resource] ?? humanize(resource), cells: { create: [], view: [], update: [], authorize: [] }, keys: [] };
-        rows.set(resource, row);
-      }
-      row.cells[col].push({ key: d.key, title: d.title, risk: d.risk });
-      row.keys.push(d.key);
+  for (const item of menu) {
+    const label = item.group ?? UNGROUPED;
+    let group = groups.find((g) => g.label === label);
+    if (!group) {
+      group = { label, rows: [], keys: [] };
+      groups.push(group);
     }
-    const sorted = [...rows.values()].sort((a, b) => a.label.localeCompare(b.label));
-    groups.push({
-      component,
-      label: COMPONENT_LABEL[component] ?? humanize(component),
-      rows: sorted,
-      keys: sorted.flatMap((r) => r.keys),
-    });
+    const keys = [...new Set([...item.perm, ...item.widgets.flatMap((w) => widgetKeys(w))])]
+      .filter((k) => byKey.has(k))
+      .sort();
+    const cells: Record<VerbColumn, MatrixCell[]> = { create: [], view: [], update: [], authorize: [] };
+    for (const k of keys) {
+      const d = byKey.get(k)!;
+      const col = columnOf(k);
+      used.add(col);
+      cells[col].push({ key: k, title: d.title, risk: d.risk });
+    }
+    group.rows.push({ link: item.link, label: item.label, cells, keys, gate: item.perm.filter((k) => byKey.has(k)) });
+    for (const k of keys) if (!group.keys.includes(k)) group.keys.push(k);
   }
   return { columns: VERB_COLUMNS.filter((c) => used.has(c)), groups };
 }
@@ -221,16 +226,35 @@ export function toggleAll(keys: readonly string[], selected: ReadonlySet<string>
   return next;
 }
 
-/**
- * Components the matrix SHOWS (in this order). Everything else is hidden, not removed: hidden keys
- * stay in the catalogue and on every role — editing a role never strips them (the form keeps the
- * full key set; only the grid filters). Add a component id here to show it again.
- */
-export const VISIBLE_COMPONENTS: readonly string[] = ['kyc', 'org', 'rbac'];
+/** Active = the link shows: the role holds ANY key of the link's gate (OR, like the sidebar). */
+export function isActive(gate: readonly string[], selected: ReadonlySet<string>): boolean {
+  return gate.some((k) => selected.has(k));
+}
 
-/** The matrix limited to the visible components; columns shrink to the verbs those still use. */
-export function visibleMatrix(m: PermissionMatrixModel, visible: readonly string[] = VISIBLE_COMPONENTS): PermissionMatrixModel {
-  const groups = visible.map((c) => m.groups.find((g) => g.component === c)).filter((g): g is MatrixGroup => !!g);
-  const columns = m.columns.filter((col) => groups.some((g) => g.rows.some((r) => r.cells[col].length > 0)));
-  return { columns, groups };
+/** The one key ticking Active grants: the gate's view-family key if it has one, else its first grantable key. */
+export function activeKey(gate: readonly string[], grantable: ReadonlySet<string>): string | null {
+  const mine = gate.filter((k) => grantable.has(k));
+  return mine.find((k) => columnOf(k) === 'view') ?? mine[0] ?? null;
+}
+
+/**
+ * Toggle a link's Active box. On → grant one gate key (the least privilege that shows the link).
+ * Off → revoke every gate key the editor may revoke, so the link no longer shows.
+ */
+export function toggleActive(gate: readonly string[], selected: ReadonlySet<string>, grantable: ReadonlySet<string>): Set<string> {
+  const next = new Set(selected);
+  if (isActive(gate, selected)) {
+    for (const k of gate) if (grantable.has(k)) next.delete(k);
+  } else {
+    const k = activeKey(gate, grantable);
+    if (k) next.add(k);
+  }
+  return next;
+}
+
+/** Other links that share a gate key with this one — unticking its Active box hides them too. */
+export function sharedGateLinks(m: PermissionMatrixModel, row: MatrixRow): string[] {
+  return m.groups.flatMap((g) => g.rows)
+    .filter((r) => r.link !== row.link && r.gate.some((k) => row.gate.includes(k)))
+    .map((r) => r.label);
 }

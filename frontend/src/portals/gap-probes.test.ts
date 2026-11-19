@@ -35,21 +35,27 @@ describe('GAP-3/4 · approvals queue and plugin governance have menu points', ()
   });
 });
 
-describe('ADMIN-MENU · the admin console shows only the specified menus FSP implements', () => {
+describe('ADMIN-MENU · the admin console shows the specified menus and submenus', () => {
   const all = [...new Set(MENU_ITEMS.flatMap((i) => i.perm))];
-  it('sidebar is User Management → Back Office User, Organization; Role Management → Role, Approvals', () => {
+  it('sidebar is the spec: User Management → Back Office User, Reset Password, Customer, Organization; Onboarding; Role Management → Component, Sub Component, Branch, Department, Role, Approvals', () => {
     const nav = navEntries('platform', () => true).map((e) => (e.kind === 'group' ? `#${e.label}` : e.label));
-    expect(nav).toEqual(['#User Management', 'Back Office User', 'Organization', '#Role Management', 'Role', 'Approvals']);
+    expect(nav).toEqual(['#User Management', 'Back Office User', 'Reset Password', 'Customer', 'Organization',
+      '#Onboarding', 'Onboarding',
+      '#Role Management', 'Component', 'Sub Component', 'Branch', 'Department', 'Role', 'Approvals']);
   });
-  it('no menu point exists without a feature behind it', () => {
-    const labels = menuFor('platform').map((i) => i.label);
-    for (const absent of ['Reset Password', 'Customer', 'Component', 'Sub Component', 'Branch', 'Department']) {
-      expect(labels).not.toContain(absent);
+  it('menu points without a feature yet land on the placeholder and are still gated', () => {
+    for (const label of ['Reset Password', 'Customer', 'Component', 'Sub Component', 'Branch', 'Department']) {
+      const item = menuFor('platform').find((i) => i.label === label);
+      expect(item?.widgets).toEqual(['menu.placeholder']);
+      expect(item?.perm.length).toBeGreaterThan(0);
     }
   });
-  it('organization screen offers the directory and PSP creation, gated by their union', () => {
+  it('organization screen is the directory → picked org’s users + onboarding (no PSP panel), gated by their union', () => {
     const org = menuFor('platform').find((i) => i.label === 'Organization');
-    expect(org?.widgets).toEqual(expect.arrayContaining(['kyc.orgs', 'onboard.psp']));
+    // PSPs are onboarded from the platform rung of "New onboarding"; the separate PSP panel is gone
+    expect(org?.widgets).toEqual(['kyc.orgs', 'users.organization', 'onboard.list']);
+    expect(org?.config?.['users.organization']).toEqual({ scope: 'selected' });
+    expect(org?.config?.['onboard.list']).toEqual({ scope: 'selected' });
     expect(org?.perm).toEqual(expect.arrayContaining(['kyc.review', 'org.create']));
   });
   it('home falls back to a point the portal actually has (never a missing /overview)', () => {

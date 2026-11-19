@@ -19,6 +19,10 @@ export interface CaseFormProps {
   onSubmit: (values: CaseFormValues) => void;
   onCancel: () => void;
   onDirtyChange: (dirty: boolean) => void;
+  /** the only organization type allowed here (core's ladder: the parent's next level) */
+  lockedSubType?: CaseFormValues['subType'];
+  /** why it is fixed, e.g. "Below Acme you can onboard a distributor only." */
+  lockedSubTypeHint?: string;
 }
 
 const SUB_OPTIONS = SUB_TYPES.map((s) => ({ value: s, label: s.charAt(0) + s.slice(1).toLowerCase() }));
@@ -41,7 +45,9 @@ function Section({ title, children, action }: { title: string; children: ReactNo
  * field problems are routed back to their field and step. Masked numbers stay masked and are
  * sent as "unchanged".
  */
-export function CaseForm({ mode, initial, master, masterLoading, busy, problem, onSubmit, onCancel, onDirtyChange }: CaseFormProps) {
+export function CaseForm({
+  mode, initial, master, masterLoading, busy, problem, onSubmit, onCancel, onDirtyChange, lockedSubType, lockedSubTypeHint,
+}: CaseFormProps) {
   const [v, setV] = useState<CaseFormValues>(initial);
   const [step, setStep] = useState<StepId>('company');
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
@@ -186,18 +192,18 @@ export function CaseForm({ mode, initial, master, masterLoading, busy, problem, 
               <SelectField
                 label="Organization type"
                 value={v.subType}
-                options={SUB_OPTIONS}
+                options={lockedSubType ? SUB_OPTIONS.filter((o) => o.value === lockedSubType) : SUB_OPTIONS}
                 placeholder="Choose…"
                 onChange={(e) => set('subType', e.target.value as CaseFormValues['subType'])}
                 onBlur={() => touch('subType')}
                 error={err('subType')}
-                disabled={busy || mode === 'edit'}
-                hint={mode === 'edit' ? 'Fixed once the organization exists.' : undefined}
+                disabled={busy || mode === 'edit' || Boolean(lockedSubType)}
+                hint={mode === 'edit' ? 'Fixed once the organization exists.' : lockedSubType ? lockedSubTypeHint : undefined}
               />
               {select('entityType', 'Entity type', optionsOf(master, 'entityType'))}
               {text('legalName', 'Registered name', { autoComplete: 'organization', className: 'sm:col-span-2' })}
               {text('dbaName', 'Trading as', { optional: true, className: 'sm:col-span-2' })}
-              {text('registrationNumber', 'BIPA registration no.', { hint: 'e.g. CC/2019/04512', autoCapitalize: 'characters' })}
+              {text('registrationNumber', 'Business Registration no.', { hint: 'e.g. CC/2019/04512', autoCapitalize: 'characters' })}
               {text('taxId', 'Tax ID (TIN)', { inputMode: 'numeric', maxLength: 8, hint: '8 digits' })}
               {text('incorporationDate', 'Incorporation date', { type: 'date' })}
             </div>

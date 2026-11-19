@@ -10,6 +10,7 @@ import type { Tier } from '../../portals/shared/widgets/core/grid';
 import type { WidgetDef } from '../../portals/shared/widgets/core/manifest';
 import { cellsOf } from '../../portals/shared/widgets/core/manifest';
 import { menuFor } from '../../portals/shared/web-core/menu';
+import type { MenuWidget } from '../../portals/shared/web-core/menu';
 import type { BuilderPortal } from '../model';
 import { worksIn } from '../model';
 
@@ -111,7 +112,16 @@ export function seedLayout(portal: BuilderPortal, defs: ReadonlyMap<string, Widg
       placedWidgets: item.widgets
         .map((w) => defs.get(w))
         .filter((d): d is WidgetDef => !!d)
-        .map(placeWidget),
+        .map((d) => {
+          const placed = placeWidget(d);
+          const menuConfig = item.config?.[d.id as MenuWidget];
+          const menuSpan = item.span?.[d.id as MenuWidget];
+          return {
+            ...placed,
+            ...(menuConfig ? { config: { ...placed.config, ...menuConfig } } : {}),
+            ...(menuSpan ? { span: { ...placed.span, ...menuSpan } } : {}),
+          };
+        }),
     });
   }
   return { portal: portal.key, menus };

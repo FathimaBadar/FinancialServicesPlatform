@@ -41,6 +41,9 @@ public final class RoleTemplates {
     private static final List<String> ADMIN_BASE = List.of(
         "je.create", "je.view", "gl.account.create", "gl.account.view", "bank.account.create", "bank.account.view",
         "period.open", "period.close", "audit.view", "notification.view",
+        "inventory.view", "inventory.sku.manage", "inventory.stock.upload",
+        "digital.view", "digital.product.manage", "digital.voucher.upload", "digital.float.deposit", "digital.dispense",
+        "je.post.immediate",
         "kyc.review", "user.manage", "role.view", "role.manage");
 
     private static final List<String> ADMIN_ONBOARDING = List.of(
@@ -49,6 +52,8 @@ public final class RoleTemplates {
     private static final List<String> CHECKER_BASE = List.of(
         "je.approve", "je.view", "gl.account.approve", "gl.account.view", "bank.account.approve", "bank.account.view", "audit.view",
         "notification.view",
+        "inventory.view", "inventory.pricing.approve", "inventory.stock.approve",
+        "digital.view", "digital.voucher.authorize",
         "kyc.review", "kyc.approve", "kyc.reject", "user.manage", "role.view", "role.manage");
 
     /** Non-leaf orgs hold the plugin-consent checker key — see V20__psp_plugin_consent.sql. */

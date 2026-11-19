@@ -9,7 +9,7 @@ import { DEFAULT_QUERY, PAGE_SIZES } from './model';
 import { forbidUnless } from '../../kit/forbid';
 
 export const sources: DataSources = {
-  'onboard.orgs.list': { '*': { method: 'GET', path: '/api/tenants/{tenantId}/children', query: ['page', 'size', 'q', 'sort'] } },
+  'onboard.orgs.list': { '*': { method: 'GET', path: '/api/tenants/{tenantId}/children/page', query: ['page', 'size', 'q', 'sort'] } },
 };
 
 const all: OrgRow[] = [

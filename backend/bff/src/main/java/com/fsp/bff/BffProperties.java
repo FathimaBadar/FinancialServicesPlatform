@@ -10,6 +10,14 @@ public class BffProperties {
     private final Proxy proxy = new Proxy();
     private String idpIssuer = "https://idp.fsp.local";
     private String loginRedirectUri = "http://localhost:5173/bff/auth/callback";
+    /** Public base URL the BROWSER is sent to for /idp/authorize (defaults to gateway baseUrl;
+     *  in deployments where the gateway is loopback-only, point this at the IdP's public origin). */
+    private String authorizeUrlBase;
+
+    public String getAuthorizeUrlBase() {
+        return authorizeUrlBase != null && !authorizeUrlBase.isBlank() ? authorizeUrlBase : gateway.baseUrl;
+    }
+    public void setAuthorizeUrlBase(String v) { this.authorizeUrlBase = v; }
 
     public Gateway getGateway() { return gateway; }
     public Proxy getProxy() { return proxy; }

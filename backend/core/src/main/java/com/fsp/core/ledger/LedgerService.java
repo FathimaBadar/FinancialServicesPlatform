@@ -206,6 +206,81 @@ public class LedgerService {
         return created;
     }
 
+    /**
+     * Additive, idempotent CoA provision (plans/inventory-plugin-plan.md D4): inserts ONLY rows whose
+     * code does not already exist in the book; existing accounts at those codes are used as-is
+     * (code collisions, e.g. PSP template 2110 "Payouts in Transit", are never recreated).
+     * Does NOT flip the book status and does NOT create periods. Rows carry the same deterministic
+     * UUID math as provisionTemplate, so a duplicate ensure is idempotent (same PK re-insert → 500
+     * conflict instead of a second account). The plugin's readiness step calls this at activation.
+     */
+    @Transactional
+    public List<GlAccount> ensureAdditive(UUID tenantId, UUID bookId, Actor actor, List<CoaTemplates.Row> rows) {
+        permissions.require(actor, "gl.account.create", tenantId);
+        Book book = bookRepository.findById(bookId)
+            .orElseThrow(() -> ApiException.notFound("BOOK_NOT_FOUND", "Book " + bookId + " not found"));
+        if (!book.tenantId.equals(tenantId)) {
+            throw ApiException.forbidden("TENANT_MISMATCH", "Book does not belong to tenant");
+        }
+        var existingCodes = glAccountRepository.findByBookIdOrderByCodeAsc(bookId).stream()
+            .map(g -> g.code).collect(java.util.stream.Collectors.toSet());
+        List<CoaTemplates.Row> missing = rows.stream().filter(r -> !existingCodes.contains(r.code())).toList();
+        if (missing.isEmpty()) {
+            log.debug("coa_ensure_noop tenantId={} bookId={}", tenantId, bookId);
+            return List.of();
+        }
+
+        List<GlAccount> created = new ArrayList<>();
+        List<TbService.AccountSpec> tbSpecs = new ArrayList<>();
+        for (CoaTemplates.Row row : missing) {
+            GlAccount gl = new GlAccount();
+            gl.id = Uuid5.glAccountId(bookId, UUID.nameUUIDFromBytes(String.valueOf(row.code()).getBytes()));
+            gl.bookId = bookId;
+            gl.tenantId = tenantId;
+            gl.tbAccountId = Uuid5.glAccountId(bookId, gl.id).toString();
+            gl.ledgerId = book.ledgerId;
+            gl.code = row.code();
+            gl.name = row.name();
+            gl.accountType = row.accountType();
+            gl.normalBalance = row.normalBalance();
+            gl.balanceBound = row.balanceBound();
+            gl.postingAllowed = true;
+            gl.currency = book.currency;
+            gl.status = "ACTIVE";
+            gl.createdBy = actor.personId();
+            gl.approvedBy = actor.personId(); // machine provisioning, audited
+            created.add(gl);
+            tbSpecs.add(new TbService.AccountSpec(
+                Uuid5.glAccountId(bookId, gl.id),
+                book.ledgerId,
+                row.code(),
+                tbService.flagFor(bound(row.balanceBound()), "ASSET".equals(row.accountType())),
+                gl.id,
+                tenantId.getLeastSignificantBits(),
+                0));
+        }
+        switch (tbService.createAccounts(tbSpecs)) {
+            case TbResult.Ok ok -> log.debug("tb_accounts_ensured bookId={} count={}", bookId, tbSpecs.size());
+            case TbResult.DefinitiveRejection rejected -> {
+                log.warn("coa_ensure_rejected tenantId={} bookId={} detail={}", tenantId, bookId, rejected.detail());
+                throw ApiException.conflict("TB_ACCOUNT_REJECTED", rejected.detail());
+            }
+            case TbResult.UnknownTransport unknown -> {
+                log.error("coa_ensure_unknown_transport tenantId={} bookId={} detail={}", tenantId, bookId, unknown.detail());
+                throw ApiException.serviceUnavailable("LEDGER_UNAVAILABLE", unknown.detail());
+            }
+        }
+        glAccountRepository.saveAll(created);
+        audit.record(actor.personId(), null, tenantId, bookId, "COA_ENSURED", "BOOK", bookId.toString(),
+            audit.hashState("null"), audit.hashState("accounts=%d;codes=%s".formatted(created.size(),
+                created.stream().map(g -> g.code).map(String::valueOf).sorted().toList())), false);
+        outbox.record("Book", bookId, "GL_ACCOUNT_CREATED",
+            "{\"bookId\":\"%s\",\"ensure\":\"additive\",\"accounts\":%d}".formatted(bookId, created.size()));
+        log.info("coa_ensured tenantId={} bookId={} added={} codes={}", tenantId, bookId, created.size(),
+            created.stream().map(g -> g.code).toList());
+        return created;
+    }
+
     private TbService.Bound bound(String balanceBound) {
         return switch (balanceBound) {
             case "DEBIT_BOUND" -> TbService.Bound.DEBIT_BOUND;

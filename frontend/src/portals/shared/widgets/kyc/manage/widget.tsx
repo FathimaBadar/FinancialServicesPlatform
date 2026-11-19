@@ -21,6 +21,7 @@ import { CaseToolbar } from './CaseToolbar';
 import {
   DEFAULT_QUERY, emptyForm, formFromView, isEditableStatus, isNotReady, parseListQuery, toProblem, useCase, useCaseCommand, useCasePage,
   useMasterValues,
+  useNextLevel,
 } from './model';
 import type { CaseFormValues, CaseSummary, Decision, ListQuery, SortKey } from './model';
 
@@ -35,7 +36,9 @@ export function KycManage() {
   const { port, context } = useWidgetRuntime();
   const held = context.permissions;
   // onboarding a child org is core's existing org.onboard_child (the plugin acts on-behalf)
-  const canCreate = held.includes('org.onboard_child');
+  const next = useNextLevel(port, context.orgId ?? '');
+  // a leaf org (merchant) onboards nothing — core refuses it; don't offer it
+  const canCreate = held.includes('org.onboard_child') && (!next.loaded || next.childSubType !== null);
 
   // ---- URL state
   const [params, setParams] = useSearchParams();
@@ -250,9 +253,11 @@ export function KycManage() {
           {openId === 'new' ? (
             canCreate ? (
               <CaseForm
-                key="new"
+                key={`new-${next.childSubType ?? ''}`}
                 mode="create"
-                initial={emptyForm()}
+                initial={{ ...emptyForm(), subType: next.childSubType ?? '' }}
+                lockedSubType={next.childSubType ?? undefined}
+                lockedSubTypeHint={next.label ? `Below ${next.orgName} you can onboard a ${next.label.toLowerCase()} only.` : undefined}
                 master={master.data}
                 masterLoading={master.isPending}
                 busy={cmd.isPending}

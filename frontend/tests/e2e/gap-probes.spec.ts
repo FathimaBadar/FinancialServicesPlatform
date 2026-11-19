@@ -16,7 +16,7 @@
 import { expect, test, type Browser } from '@playwright/test';
 import {
   api, BOOT_PASS, createManufacturer, ensureKycPlugin, NO_ACCESS_WALL, PERSON_PASS, PLATFORM_TENANT_ID,
-  clearActAs, pendingApproval, sessionUser, signIn, suffix, UNREGISTERED_WIDGET,
+  clearActAs, kycApplication, pendingApproval, sessionUser, signIn, suffix, UNREGISTERED_WIDGET,
   type PspFixture, type Session,
 } from './support';
 
@@ -256,6 +256,109 @@ test('USERS-ACT-AS · platform admin acts as an org from Organization and lands 
   await page.getByTestId('act-as-exit').click();
   await expect(page.getByTestId('act-as-banner')).toHaveCount(0);
   await clearActAs(platformMaker);
+});
+
+/* ─────── ORG-ACT-AS · Organization → org's users → "Act as <org> admin" → create, audited as the REAL person ─────── */
+
+interface AuditRow { actionType: string; actorId: string; resourceId: string; actSessionId: string | null }
+
+test('ORG-ACT-AS · clicking an org shows its users; acting as its admin creates users audited as the real person', async () => {
+  const { json: org } = await api<{ legalName: string }>(platformMaker, 'GET', `/tenants/${psp.tenantId}`);
+  const page = platformMaker.page;
+  await clearActAs(platformMaker);
+  const me = await sessionUser(platformMaker);
+
+  // Organization screen (signed admin layout) → click the org row: stay here, its users appear
+  await page.goto('/admin');
+  await page.getByRole('navigation', { name: 'Portal navigation' })
+    .getByRole('link', { name: /Organization$/ }).click();
+  await page.locator('[data-widget="kyc.orgs"]').getByRole('button', { name: new RegExp(org.legalName.replace(/[()]/g, '\\$&')) }).click();
+  const users = page.locator('[data-widget="users.organization"]');
+  await expect(users).toContainText(org.legalName);
+  await expect(users.getByText(psp.adminUsername).first()).toBeVisible();
+  // viewing another org is read-only until you step in as its admin
+  await expect(users.getByRole('button', { name: '+ Add user' })).toHaveCount(0);
+
+  await users.getByRole('button', { name: `Act as ${org.legalName} admin` }).click();
+  await expect(page.getByTestId('act-as-banner')).toContainText(org.legalName);
+
+  // create a user on the org's behalf
+  const username = `probe.actas.${suffix()}`;
+  await users.getByRole('button', { name: '+ Add user' }).click();
+  const form = page.getByRole('dialog', { name: 'Add user' });
+  await form.getByLabel('Full name', { exact: true }).fill('Probe Act As');
+  await form.getByLabel('Username', { exact: true }).fill(username);
+  await form.getByLabel(/^Email/).fill(`${username}@example.test`);
+  await form.getByRole('button', { name: 'Add user', exact: true }).click();
+  await expect(page.getByText(/Request sent/)).toBeVisible();
+
+  // core saw the ACTING principal: the audit row names the real person AND the act-as session
+  const { json: audit } = await api<{ content: AuditRow[] }>(platformMaker, 'GET', `/tenants/${psp.tenantId}/audit?page=0&size=20`);
+  const { json: created } = await api<{ items: { id: string; username: string }[] }>(
+    platformMaker, 'GET', `/tenants/${psp.tenantId}/users?q=${username}&status=PENDING`);
+  const personId = created.items.find((u) => u.username === username)?.id;
+  const row = audit.content.find((r) => r.actionType === 'USER_CREATE_REQUESTED' && r.resourceId === personId);
+  expect(row, 'USER_CREATE_REQUESTED audit row for the new user').toBeTruthy();
+  expect(row?.actorId, 'audit names the real signed-in person').toBe(me.userId);
+  expect(row?.actSessionId, 'audit records the act-as session it ran under').toBeTruthy();
+
+  // the new user's drawer opened over the page; close it, then step out
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByTestId('act-as-exit').click();
+  await expect(page.getByTestId('act-as-banner')).toHaveCount(0);
+  await clearActAs(platformMaker);
+});
+
+/* ─────── ORG-ONBOARD · picked org: next rung only, only while acting, created UNDER the acted-as org ─────── */
+
+test('ORG-ONBOARD · onboarding under a picked org is its next level, needs act-as, and lands under that org', async () => {
+  const { json: org } = await api<{ legalName: string }>(platformMaker, 'GET', `/tenants/${psp.tenantId}`);
+  const page = platformMaker.page;
+  await clearActAs(platformMaker);
+  const me = await sessionUser(platformMaker);
+
+  await page.goto('/admin');
+  await page.getByRole('navigation', { name: 'Portal navigation' }).getByRole('link', { name: /Organization$/ }).click();
+  const users = page.locator('[data-widget="users.organization"]');
+  const onboarding = page.locator('[data-widget="onboard.list"]');
+  // nothing below the list until an org is picked; the PSP panel is gone
+  await expect(page.locator('[data-widget="kyc.orgs"]')).toBeVisible();
+  await expect(users).toBeEmpty();
+  await expect(onboarding).toBeEmpty();
+  await expect(page.locator('[data-widget="onboard.psp"]')).toHaveCount(0);
+
+  // pick the manufacturer: its next level is Distributor; onboarding needs acting as its admin
+  await page.locator('[data-widget="kyc.orgs"]').getByRole('button', { name: new RegExp(org.legalName.replace(/[()]/g, '\\$&')) }).click();
+  await expect(onboarding).toContainText('next level: Distributor');
+  await expect(onboarding.getByRole('button', { name: 'New onboarding' })).toHaveCount(0);
+
+  await users.getByRole('button', { name: `Act as ${org.legalName} admin` }).click();
+  await expect(page.getByTestId('act-as-banner')).toContainText(org.legalName);
+  await onboarding.getByRole('button', { name: 'New onboarding' }).click();
+  const orgType = page.getByRole('dialog').getByLabel('Organization type');
+  await expect(orgType).toBeDisabled();
+  await expect(orgType).toHaveValue('DISTRIBUTOR');
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+
+  // filed while acting → the plugin works AS the manufacturer: the child is ITS distributor
+  const distName = `Probe Distribution ${suffix()} (Pty) Ltd`;
+  const filed = await api<{ caseId: string; subjectTenantId: string }>(platformMaker, 'POST', '/plugins/kyc/cases', kycApplication('DISTRIBUTOR', distName));
+  expect(filed.status, 'KYC case filed while acting').toBe(201);
+  const { json: child } = await api<{ parentTenantId: string; subType: string }>(platformMaker, 'GET', `/tenants/${filed.json.subjectTenantId}`);
+  expect(child.parentTenantId, 'created under the acted-as org, not the platform').toBe(psp.tenantId);
+  expect(child.subType).toBe('DISTRIBUTOR');
+
+  // off-ladder: a manufacturer cannot onboard a merchant (core refuses)
+  const wrong = await api(platformMaker, 'POST', '/plugins/kyc/cases', kycApplication('MERCHANT', `Probe Shop ${suffix()} (Pty) Ltd`));
+  expect(wrong.status, 'MERCHANT under a manufacturer is refused').toBeGreaterThanOrEqual(400);
+
+  await clearActAs(platformMaker);
+  // the child's creation is audited as the real person, under the act-as session
+  const { json: audit } = await api<{ content: { actionType: string; actorId: string; actSessionId: string | null }[] }>(
+    platformMaker, 'GET', `/tenants/${filed.json.subjectTenantId}/audit?page=0&size=20`);
+  const created = audit.content.find((r) => r.actionType === 'TENANT_CHILD_CREATED');
+  expect(created?.actorId, 'audit names the real person').toBe(me.userId);
+  expect(created?.actSessionId, 'audit records the act-as session').toBeTruthy();
 });
 
 test('GAP-3 · the checker approves a staged user from the Approvals screen (click, not API)', async () => {

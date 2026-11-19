@@ -169,7 +169,7 @@ export async function createManufacturer(maker: Session, checker: Session): Prom
 }
 
 /** A complete, valid KYC application (NamibiaRules-clean; money = minor-unit STRINGS). */
-export function kycApplication(subType: 'DISTRIBUTOR' | 'MERCHANT', legalName: string): Record<string, unknown> {
+export function kycApplication(subType: 'DISTRIBUTOR' | 'WHOLESALER' | 'MERCHANT', legalName: string): Record<string, unknown> {
   const digits = () => randomUUID().replace(/\D/g, '');
   return {
     subType,
@@ -211,8 +211,8 @@ export const NO_ACCESS_WALL = 'No access to this portal';
  * Returns the created case id, read off the drawer's ?case= deep link.
  */
 export async function fileKycUi(
-  session: Session, portal: 'manufacturer' | 'distributor',
-  subType: 'DISTRIBUTOR' | 'MERCHANT', legalName: string,
+  session: Session, portal: 'manufacturer' | 'distributor' | 'wholesaler',
+  subType: 'DISTRIBUTOR' | 'WHOLESALER' | 'MERCHANT', legalName: string,
 ): Promise<string> {
   const page = session.page;
   const regNo = `${100000 + Math.floor(Math.random() * 300000)}`;
@@ -224,10 +224,16 @@ export async function fileKycUi(
   // Company — the master values (entity type) load async with the drawer; wait for options.
   const entityType = page.getByLabel('Entity type');
   await expect(entityType.locator('option')).not.toHaveCount(0, { timeout: 30_000 });
-  await page.getByLabel('Organization type').selectOption({ label: subType === 'DISTRIBUTOR' ? 'Distributor' : 'Merchant' });
+  // the ladder fixes the type to the filer's next level (core TenantLadder) — assert, don't choose
+  const orgType = page.getByLabel('Organization type');
+  if (await orgType.isDisabled()) {
+    await expect(orgType).toHaveValue(subType);
+  } else {
+    await orgType.selectOption({ value: subType });
+  }
   await entityType.selectOption({ label: 'Private Limited / LLC' });
   await page.getByLabel('Registered name').fill(legalName);
-  await page.getByLabel('BIPA registration no.').fill(regNo);
+  await page.getByLabel('Business Registration no.').fill(regNo);
   await page.getByLabel('Tax ID (TIN)').fill(taxId);
   await page.getByLabel('Incorporation date').fill('2018-06-01');
 
@@ -274,7 +280,7 @@ export async function fileKycUi(
  * Approve a pending KYC case through the REAL decision panel (kyc.manage case drawer):
  * Approve → confirm in the alertdialog → wait for the decided state.
  */
-export async function approveKycUi(session: Session, portal: 'manufacturer' | 'distributor', caseId: string): Promise<void> {
+export async function approveKycUi(session: Session, portal: 'manufacturer' | 'distributor' | 'wholesaler', caseId: string): Promise<void> {
   const page = session.page;
   // /kyc/reviews is the checker's screen (kyc.approve gate) — /onboarding is maker-only.
   await page.goto(`/${portal}/kyc/reviews?case=${caseId}`);

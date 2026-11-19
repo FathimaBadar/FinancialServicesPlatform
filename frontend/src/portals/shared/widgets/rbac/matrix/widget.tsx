@@ -6,6 +6,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useWidgetRuntime } from '../../core/runtime';
+import { useSession } from '../../../web-core/session-core';
+import type { PortalId } from '../../../web-core/menu';
 import { Button, PageHeader, Panel } from '../../../ui/atoms';
 import { NoticeBar } from '../../kit/Notice';
 import type { Notice } from '../../kit/Notice';
@@ -29,6 +31,10 @@ export function RbacMatrix() {
   const dismiss = useCallback(() => setNotice(null), []);
   const held = useMemo(() => new Set(context.permissions), [context.permissions]);
   const canManage = held.has('role.manage');
+  // the matrix mirrors the sidebar of the portal this org's users sign in to: the admin console for
+  // the platform's own roles, the org portals for a tenant's (also when the admin acts as one)
+  const { actAs } = useSession();
+  const menuPortal: PortalId = context.portal === 'PLATFORM' && !actAs ? 'platform' : 'org';
 
   const list = roles.data ?? [];
   const view = params.get('role');
@@ -70,6 +76,7 @@ export function RbacMatrix() {
         <RoleForm
           key={formRole?.id ?? NEW}
           role={formRole}
+          portal={menuPortal}
           catalog={catalog.data ?? []}
           held={held}
           canManage={canManage}

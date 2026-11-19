@@ -120,13 +120,29 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   await distAdmin.page.goto('/distributor/network');
   await expect(distAdmin.page.locator('[data-widget="kyc.orgs"]')).toBeVisible();
 
-  /* ── SCENE 6 · distributor onboards the MERCHANT (real form + decision panel) ── */
+  /* ── SCENE 6 · distributor onboards the WHOLESALER — the ladder's next rung (real form + decision panel) ── */
+  // Platform → Manufacturer → Distributor → Wholesaler → Merchant (core TenantLadder): a distributor
+  // cannot onboard a merchant directly any more.
+  const whoName = `Erongo Wholesale ${s} (Pty) Ltd`;
+  const whoCaseId = await fileKycUi(distAdmin, 'distributor', 'WHOLESALER', whoName);
+  await approveKycUi(distChecker, 'distributor', whoCaseId);
+  const { json: whoView } = await api<{ caseNo: string; subjectTenantId: string }>(distAdmin, 'GET', `/plugins/kyc/cases/${whoCaseId}`);
+  const whoTenantId = whoView.subjectTenantId;
+  await pollUntil(async () => (await api<{ status: string }>(distAdmin, 'GET', `/tenants/${whoTenantId}`)).json.status === 'ACTIVE',
+    'wholesaler ACTIVE');
+  const whoAdminUsername = sagaAdminUsername(whoName, whoView.caseNo);
+  const whoAdmin = await signIn(browser, 'wholesaler admin', '/wholesaler', whoAdminUsername, PERSON_PASS);
+  const whoChecker = await signIn(browser, 'wholesaler checker', '/wholesaler', `checker-${whoAdminUsername}`, PERSON_PASS);
+  await pollUntil(async () => (await api(whoAdmin, 'GET', '/plugins/kyc/master-values?category=ENTITY_TYPE')).status === 200,
+    'kyc plugin readiness on the wholesaler');
+
+  /* ── SCENE 6b · wholesaler onboards the MERCHANT (the leaf) ── */
   const merName = `Namib Fresh Produce ${s} (Pty) Ltd`;
-  const merCaseId = await fileKycUi(distAdmin, 'distributor', 'MERCHANT', merName);
-  await approveKycUi(distChecker, 'distributor', merCaseId);
-  const { json: merView } = await api<{ caseNo: string; subjectTenantId: string }>(distAdmin, 'GET', `/plugins/kyc/cases/${merCaseId}`);
+  const merCaseId = await fileKycUi(whoAdmin, 'wholesaler', 'MERCHANT', merName);
+  await approveKycUi(whoChecker, 'wholesaler', merCaseId);
+  const { json: merView } = await api<{ caseNo: string; subjectTenantId: string }>(whoAdmin, 'GET', `/plugins/kyc/cases/${merCaseId}`);
   const merTenantId = merView.subjectTenantId;
-  await pollUntil(async () => (await api<{ status: string }>(distAdmin, 'GET', `/tenants/${merTenantId}`)).json.status === 'ACTIVE',
+  await pollUntil(async () => (await api<{ status: string }>(whoAdmin, 'GET', `/tenants/${merTenantId}`)).json.status === 'ACTIVE',
     'merchant ACTIVE');
   const merAdminUsername = sagaAdminUsername(merName, merView.caseNo);
 

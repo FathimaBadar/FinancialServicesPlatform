@@ -106,6 +106,27 @@ public class TenantService {
         return view(t);
     }
 
+    private static final java.util.Set<String> CHILD_SORTS = java.util.Set.of("legalName", "status", "createdAt", "subType");
+
+    /** Paged, sorted, searched children (AGENTS §2.7): bounded size, allow-listed sort, DB-side filter. */
+    public TenantDtos.ChildPage childrenPage(UUID tenantId, Actor actor, Integer page, Integer size, String q, String sort) {
+        requireReachable(actor, tenantId);
+        int p = page == null || page < 0 ? 0 : page;
+        int n = size == null ? 25 : Math.max(1, Math.min(size, 100));
+        String[] parts = sort == null ? new String[0] : sort.split(",");
+        String key = parts.length > 0 && CHILD_SORTS.contains(parts[0].trim()) ? parts[0].trim() : "legalName";
+        boolean desc = parts.length > 1 && "desc".equalsIgnoreCase(parts[1].trim());
+        var pageable = org.springframework.data.domain.PageRequest.of(p, n,
+            org.springframework.data.domain.Sort.by(desc ? org.springframework.data.domain.Sort.Direction.DESC
+                : org.springframework.data.domain.Sort.Direction.ASC, key).and(org.springframework.data.domain.Sort.by("id")));
+        String text = q == null || q.trim().length() < 2 ? null : q.trim();
+        var rows = text == null
+            ? tenantRepository.findByParentTenantId(tenantId, pageable)
+            : tenantRepository.findByParentTenantIdAndLegalNameContainingIgnoreCase(tenantId, text, pageable);
+        return new TenantDtos.ChildPage(rows.getContent().stream().map(TenantService::view).toList(),
+            p, n, rows.hasNext(), key + "," + (desc ? "desc" : "asc"), text);
+    }
+
     public List<TenantDtos.TenantView> children(UUID tenantId, Actor actor) {
         requireReachable(actor, tenantId);
         return tenantRepository.findByParentTenantId(tenantId).stream().map(TenantService::view).toList();
@@ -119,6 +140,6 @@ public class TenantService {
 
     private static TenantDtos.TenantView view(Tenant t) {
         return new TenantDtos.TenantView(t.id, t.parentTenantId, t.hierarchyPath, t.depth, t.type,
-            t.subType, t.status, t.verificationStatus, t.legalName, t.createdAt);
+            t.subType, t.status, t.verificationStatus, t.legalName, t.createdAt, TenantLadder.childSubTypeOf(t));
     }
 }

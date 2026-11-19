@@ -48,12 +48,27 @@ public class PermissionService {
     /** Effective permission keys for the actor relative to a target tenant (chain-aware). */
     public Set<String> effectiveKeys(Actor actor, UUID targetTenantId) {
         requireActor(actor);
-        // Acting (DELEGATED) is capped by the target tenant's ceiling — the settled D5 rule of
+        // Acting (ACTING) is capped by the target tenant's ceiling — the settled D5 rule of
         // plans/act-as-tenant-plan.md §3.4. ActAsFilter stores the home tenant in the correlation
-        // context; no home tenant means the DELEGATED actor did not arrive through act-as
-        // (a plugin's machine actor shares the type) and resolves like any other person.
+        // context; an ACTING actor without one did not come through ActAsFilter → holds nothing.
+        if (Actor.ActorType.ACTING == actor.type()) {
+            UUID home = RequestCorrelation.homeTenantId();
+            if (home == null) {
+                log.warn("permission_denied_acting_without_home personId={}", actor.personId());
+                return Set.of();
+            }
+            return effectiveKeysForActing(actor, home, targetTenantId);
+        }
+        // MACHINE actors hold client_grants (kind MACHINE/ON_BEHALF), never person RBAC — the
+        // FspOperationInterceptor routes them to requireClient; service-level re-checks must not
+        // crash on actor.personId()==null by falling through to the person branch.
+        if (Actor.ActorType.MACHINE == actor.type()) {
+            return effectiveKeysForClient(actor.clientId(), targetTenantId);
+        }
+        // A plugin acting for a person who is themselves acting (session verified on the
+        // on-behalf path, ActorAssertionService): the person side is capped the same way.
         if (Actor.ActorType.DELEGATED == actor.type()
-            && actor.clientId() == null && RequestCorrelation.homeTenantId() != null) {
+            && RequestCorrelation.actSessionId() != null && RequestCorrelation.homeTenantId() != null) {
             return effectiveKeysForActing(actor, RequestCorrelation.homeTenantId(), targetTenantId);
         }
         Tenant target = tenantRepository.findById(targetTenantId)
@@ -140,7 +155,7 @@ public class PermissionService {
             return Set.of();
         }
         // Holds at target + holds at home. The copies are PERSON-type so the inner effectiveKeys
-        // never re-enters the acting branch (the actor itself is DELEGATED).
+        // never re-enters the acting branch (the actor itself is ACTING).
         Set<String> atTarget = effectiveKeys(
             new Actor(actor.personId(), actor.username(), targetTenantId, Actor.ActorType.PERSON, null),
             targetTenantId);

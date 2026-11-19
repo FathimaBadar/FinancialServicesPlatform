@@ -17,13 +17,15 @@ export interface UserDetailsProps {
   onActivate: () => void;
   onRemove: () => void;
   onReload: () => void;
+  /** viewing another org without acting as it: show the record, offer no lifecycle action */
+  readOnly?: boolean;
 }
 
 type Pending = 'deactivate' | 'remove' | null;
 
 /** Read-only view of one user + every lifecycle action available from its current state. */
 export function UserDetails({
-  user, isMe, busy, problem, onEdit, onDeactivate, onActivate, onRemove, onReload,
+  user, isMe, busy, problem, onEdit, onDeactivate, onActivate, onRemove, onReload, readOnly = false,
 }: UserDetailsProps) {
   const [pending, setPending] = useState<Pending>(null);
   const removed = user.status === 'ARCHIVED';
@@ -134,7 +136,7 @@ export function UserDetails({
         )}
       </div>
 
-      {!removed && (
+      {!removed && !readOnly && (
         <div className="flex flex-wrap items-center gap-2 border-t border-line p-4">
           <Button variant="primary" onClick={onEdit} disabled={busy}>
             Edit

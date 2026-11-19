@@ -18,7 +18,11 @@
     "widgets:gen": "bun run tools/widgets.ts gen",
     "widgets:register": "bun run tools/widgets.ts register",
     "workbench": "bunx --bun vite --host --open /widget-workbench/",
-    "widgets:skill": "bun run tools/widget-pack/build-skill.ts"
+    "widgets:skill": "bun run tools/widget-pack/build-skill.ts",
+    "portal:check": "bun run tools/portal-trust.ts check",
+    "portal:pin": "bun run tools/portal-trust.ts pin",
+    "portal:publish": "bun run tools/portal-trust.ts publish",
+    "portal:republish": "bun run tools/portal-trust.ts republish"
   },
   "dependencies": {
     "@fontsource/figtree": "^5.3.0",

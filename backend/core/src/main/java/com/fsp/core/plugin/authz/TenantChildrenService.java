@@ -48,8 +48,8 @@ public class TenantChildrenService {
     @Transactional
     public Tenant createChild(UUID parentTenantId, String legalName, String subType,
                               String adminUsername, String adminFullName, Actor actor) {
-        // Actor must be DELEGATED (person acting through plugin) or PERSON
-        if (actor.type() != Actor.ActorType.DELEGATED && actor.type() != Actor.ActorType.PERSON) {
+        // Actor must be DELEGATED (person acting through plugin), PERSON, or ACTING (act-as)
+        if (actor.type() != Actor.ActorType.DELEGATED && !actor.isHumanPlane()) {
             throw ApiException.forbidden("ACTOR_TYPE_REJECTED",
                 "Only person or delegated actors can create child tenants");
         }
@@ -67,14 +67,29 @@ public class TenantChildrenService {
             throw ApiException.badRequest("TENANT_FIELDS", "legalName is required");
         }
 
-        String st = (subType == null ? "MERCHANT" : subType).toUpperCase();
+        // the ladder (TenantLadder): an org onboards only the next level down; the default is that level
+        String allowed = com.fsp.core.tenant.TenantLadder.childSubTypeOf(parent);
+        if (allowed == null) {
+            log.warn("tenant_child_refused_leaf parentId={} parentSubType={} maker={}",
+                parent.id, parent.subType, actor.personId());
+            throw ApiException.conflict("CHILD_NOT_ALLOWED",
+                "%s organizations can't onboard organizations below them".formatted(
+                    parent.subType == null ? "These" : parent.subType.charAt(0) + parent.subType.substring(1).toLowerCase()));
+        }
+        String st = subType == null || subType.isBlank() ? allowed : subType.trim().toUpperCase();
+        if (!allowed.equals(st)) {
+            log.warn("tenant_child_refused_rung parentId={} asked={} allowed={} maker={}",
+                parent.id, st, allowed, actor.personId());
+            throw ApiException.badRequest("CHILD_SUBTYPE_NOT_ALLOWED",
+                "Below this organization you can only onboard a " + allowed.toLowerCase());
+        }
 
         Tenant child = new Tenant();
         child.id = UUID.randomUUID();
         child.parentTenantId = parent.id;
         child.depth = parent.depth + 1;
         child.hierarchyPath = parent.hierarchyPath + "/" + child.id;
-        child.type = "TENANT";
+        child.type = "PLATFORM".equals(parent.type) ? "PSP" : "TENANT";
         child.subType = st;
         child.status = "PENDING";
         child.verificationStatus = "PENDING";

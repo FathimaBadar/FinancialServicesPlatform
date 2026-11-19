@@ -84,13 +84,13 @@ export function orgListParams(q: OrgListQuery): Record<string, string> {
 
 export const orgKeys = {
   all: ['onboard', 'orgs'] as const,
-  list: (q: OrgListQuery) => ['onboard', 'orgs', 'list', q] as const,
+  list: (q: OrgListQuery, orgId: string | null) => ['onboard', 'orgs', 'list', orgId ?? '', q] as const,
 };
 
 /** One page of organizations, server-side. */
 export function useOrgPage(port: WidgetDataPortLike, q: OrgListQuery, orgId: string | null) {
   return useQuery({
-    queryKey: orgKeys.list(q),
+    queryKey: orgKeys.list(q, orgId),
     queryFn: () => port.request<OrgPage>('onboard.orgs.list', { tenantId: orgId ?? '', ...orgListParams(q) }),
     enabled: orgId !== '',
     placeholderData: (prev) => prev,
@@ -120,13 +120,13 @@ export function kycListParams(q: KycListQuery): Record<string, string> {
 
 export const kycKeys = {
   all: ['kyc', 'cases'] as const,
-  list: (q: KycListQuery) => ['kyc', 'cases', 'list', q] as const,
+  list: (q: KycListQuery, orgId: string | null) => ['kyc', 'cases', 'list', orgId ?? '', q] as const,
 };
 
 /** One page of KYC cases, server-side. */
 export function useKycCasePage(port: WidgetDataPortLike, q: KycListQuery, orgId: string | null) {
   return useQuery({
-    queryKey: kycKeys.list(q),
+    queryKey: kycKeys.list(q, orgId),
     queryFn: () => port.request<{ items: KycCaseSummary[]; page: number; size: number; hasNext: boolean }>(
       'kyc.cases.page',
       { tenantId: orgId ?? '', ...kycListParams(q) },

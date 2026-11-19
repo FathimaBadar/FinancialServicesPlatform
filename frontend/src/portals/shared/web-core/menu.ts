@@ -24,7 +24,8 @@ export type MenuWidget =
   | 'rbac.matrix' | 'permissions.catalogue' | 'plugins.governance'
   | 'users.organization'
   | 'ledger.accounts' | 'period.control' | 'bank.accounts'
-  | 'overview.tiles';
+  | 'overview.tiles'
+  | 'menu.placeholder';
 
 export interface MenuItem {
   id: string;
@@ -39,6 +40,10 @@ export interface MenuItem {
   group?: string;
   portals: PortalId[];
   widgets: MenuWidget[];
+  /** Per-widget config for THIS screen (seeded into the layout; validated by each widget's schema). */
+  config?: Partial<Record<MenuWidget, Record<string, unknown>>>;
+  /** Per-widget column spans for THIS screen (clamped to each widget's min..max). */
+  span?: Partial<Record<MenuWidget, Partial<Record<'xs' | 'sm' | 'md' | 'lg', number>>>>;
 }
 
 /** The approvals queue's gate: every checker permission (OR). One list for both portals. */
@@ -46,18 +51,37 @@ const APPROVALS_PERMS = ['kyc.approve', 'kyc.reject', 'je.approve', 'org.approve
   'gl.account.approve', 'user.manage', 'role.manage', 'plugin.manage', 'ui.layout.manage'];
 
 export const MENU_ITEMS: MenuItem[] = [
-  // ================= platform (admin console) — ONLY the menus the admin sidebar spec shows,
-  // limited to features FSP actually has (no Reset Password / Customer / Component /
-  // Sub Component / Branch / Department: there is nothing behind them to render).
-  // Approvals stays: user and role changes are four-eyes and are decided only there.
+  // ================= platform (admin console) — the admin sidebar spec, menu for menu:
+  //   User Management → Back Office User, Reset Password, Customer, Organization
+  //   Role Management → Component, Sub Component, Branch, Department, Role
+  // plus Onboarding and Approvals (user and role changes are four-eyes and are decided only there).
+  // Reset Password / Customer / Component / Sub Component / Branch / Department have no feature
+  // behind them yet: they land on menu.placeholder, gated by the key their feature will need.
   { id: 'back-office-users', label: 'Back Office User', icon: '☰', link: '/users',
     perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['users.organization'] },
-  // the organization directory + PSP creation (rule 4: gated by the union of its widgets)
+  { id: 'reset-password', label: 'Reset Password', icon: '⚷', link: '/reset-password',
+    perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['menu.placeholder'] },
+  { id: 'customers', label: 'Customer', icon: '☺', link: '/customers',
+    perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['menu.placeholder'] },
+  // the organization directory (rule 4: gated by the union of its widgets). Picking an org shows
+  // ITS users and onboarding beside the list (read-only until you act as its admin).
   { id: 'organizations', label: 'Organization', icon: '◈', link: '/organizations',
     perm: ['kyc.review', 'org.create'], portals: ['platform'], group: 'User Management',
-    widgets: ['kyc.orgs', 'onboard.psp', 'onboard.list'] },
+    // PSPs are created by "New onboarding" with the platform picked (the ladder's first rung)
+    widgets: ['kyc.orgs', 'users.organization', 'onboard.list'],
+    config: { 'users.organization': { scope: 'selected' }, 'onboard.list': { scope: 'selected' } },
+    // list + the picked org's users side by side (SME list/detail page)
+    span: { 'users.organization': { md: 6, lg: 8 } } },
   { id: 'onboarding', label: 'Onboarding', icon: '⇲', link: '/onboarding',
     perm: ['org.create'], portals: ['platform'], group: 'Onboarding', widgets: ['onboard.list'] },
+  { id: 'components', label: 'Component', icon: '▦', link: '/components',
+    perm: ['role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['menu.placeholder'] },
+  { id: 'sub-components', label: 'Sub Component', icon: '▤', link: '/sub-components',
+    perm: ['role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['menu.placeholder'] },
+  { id: 'branches', label: 'Branch', icon: '⌂', link: '/branches',
+    perm: ['role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['menu.placeholder'] },
+  { id: 'departments', label: 'Department', icon: '⊞', link: '/departments',
+    perm: ['role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['menu.placeholder'] },
   { id: 'roles', label: 'Role', icon: '⚿', link: '/rbac',
     perm: ['role.view', 'role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['rbac.matrix'] },
   { id: 'platform-approvals', label: 'Approvals', icon: '✓', link: '/approvals',

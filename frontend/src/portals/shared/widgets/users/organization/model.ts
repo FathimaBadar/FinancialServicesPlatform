@@ -160,7 +160,10 @@ export function useUserList(port: WidgetDataPortLike, orgId: string, q: UserList
   return useQuery({
     queryKey: userKeys.list(orgId, q),
     queryFn: () => port.request<UserPage>('users.list', listParams(orgId, q)),
-    placeholderData: (prev) => prev,
+    // no org yet (a "selected org" screen before the pick) → no request to /tenants//users
+    enabled: Boolean(orgId),
+    // keep the previous page while paging the SAME org; never show one org's users under another
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[2] === orgId ? prev : undefined),
   });
 }
 

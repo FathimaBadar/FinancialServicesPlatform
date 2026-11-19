@@ -152,7 +152,9 @@ export function defineWidget<C>(def: WidgetDef<C>): WidgetDef<C> {
  */
 export function requiresMet(def: WidgetDef, held: readonly string[]): boolean {
   const r = def.requires;
-  const first = Array.isArray(r) ? r.some((k) => held.includes(k)) : r.all.every((k) => held.includes(k));
+  const first = Array.isArray(r)
+    ? (r.length === 0 || r.some((k) => held.includes(k))) // empty wants = visible to everyone
+    : (r.all.length === 0 || r.all.every((k) => held.includes(k)));
   return first && (def.requiresAll?.all ?? []).every((k) => held.includes(k));
 }
 

@@ -171,14 +171,14 @@ class PermissionServiceActingCeilingTest {
     /* ------------------------------------------------- effectiveKeys wiring (ActAsFilter path) */
 
     @Test
-    void effectiveKeysCapsADelegatedActorThatArrivedThroughActAs() {
-        // ActAsFilter replaces the principal with DELEGATED + records the home tenant —
+    void effectiveKeysCapsAnActingActorThatArrivedThroughActAs() {
+        // ActAsFilter replaces the principal with ACTING + records the home tenant —
         // effectiveKeys must route that actor through the ceiling cap.
         Role tenantOps = role(ROLE_TENANT_OPS, TARGET, "TENANT_OPS", "TENANT");
         when(roleRepository.findByTenantId(TARGET)).thenReturn(List.of(tenantOps));
         when(rbacRepository.permissionKeysForRole(ROLE_TENANT_OPS))
             .thenReturn(List.of("je.create", "je.view"));
-        Actor acting = new Actor(PERSON, "ravi", TARGET, Actor.ActorType.DELEGATED, null);
+        Actor acting = new Actor(PERSON, "ravi", TARGET, Actor.ActorType.ACTING, null);
         try {
             RequestCorrelation.setHomeTenantId(PLATFORM);
             Set<String> keys = service.effectiveKeys(acting, TARGET);
@@ -189,12 +189,52 @@ class PermissionServiceActingCeilingTest {
     }
 
     @Test
-    void effectiveKeysDoesNotCapADelegatedActorWithoutAnActAsSession() {
-        // DELEGATED also names a plugin acting FOR a person (clientId set) — that actor never
-        // went through ActAsFilter, so no home tenant is recorded and the ceiling does not apply.
+    void effectiveKeysDoesNotCapAPluginDelegatedActor() {
+        // DELEGATED names a plugin acting FOR a person (clientId set) — not act-as, so the
+        // ceiling does not apply and it resolves like the person.
         Actor pluginDelegated = new Actor(PERSON, "ravi", TARGET, Actor.ActorType.DELEGATED, "kyc-plugin");
         RequestCorrelation.clear();
         Set<String> keys = service.effectiveKeys(pluginDelegated, TARGET);
         assertThat(keys).containsExactlyInAnyOrder("tenant.act_as", "org.create", "je.create");
+    }
+
+    @Test
+    void anActingActorWithoutAnActAsHomeHoldsNothing() {
+        // ACTING only ever comes from ActAsFilter, which records the home tenant; without it the
+        // actor is forged or mis-wired — fail closed instead of resolving as a plain person.
+        Actor acting = new Actor(PERSON, "ravi", TARGET, Actor.ActorType.ACTING, null);
+        RequestCorrelation.clear();
+        assertThat(service.effectiveKeys(acting, TARGET)).isEmpty();
+    }
+
+    @Test
+    void aPluginDelegatedActorWithAStrayHomeTenantIsNotTreatedAsActing() {
+        // the pre-fix rule keyed act-as off (DELEGATED, clientId null, home set); a plugin actor
+        // must never be routed through the act-as branch just because a home tenant is present.
+        Actor pluginDelegated = new Actor(PERSON, "ravi", TARGET, Actor.ActorType.DELEGATED, "kyc-plugin");
+        try {
+            RequestCorrelation.setHomeTenantId(PLATFORM);
+            assertThat(service.effectiveKeys(pluginDelegated, TARGET))
+                .containsExactlyInAnyOrder("tenant.act_as", "org.create", "je.create");
+        } finally {
+            RequestCorrelation.clear();
+        }
+    }
+
+    @Test
+    void aPluginActingForAnActingPersonIsCappedByTheTargetCeiling() {
+        // act-as through a plugin: core verified the session on the on-behalf path and recorded
+        // home + session — the person side of the DELEGATED actor is capped like ACTING
+        Role tenantOps = role(ROLE_TENANT_OPS, TARGET, "TENANT_OPS", "TENANT");
+        when(roleRepository.findByTenantId(TARGET)).thenReturn(List.of(tenantOps));
+        when(rbacRepository.permissionKeysForRole(ROLE_TENANT_OPS)).thenReturn(List.of("je.create", "je.view"));
+        Actor plugin = new Actor(PERSON, "ravi", TARGET, Actor.ActorType.DELEGATED, "plugin-kyc");
+        try {
+            RequestCorrelation.setHomeTenantId(PLATFORM);
+            RequestCorrelation.setActSessionId("sess-1");
+            assertThat(service.effectiveKeys(plugin, TARGET)).containsExactly("je.create");
+        } finally {
+            RequestCorrelation.clear();
+        }
     }
 }

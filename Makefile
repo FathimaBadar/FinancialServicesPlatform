@@ -86,6 +86,12 @@ backend-bff:
 backend-plugin-kyc:
 	@cd backend/plugins/kyc && ../../gradlew bootRun
 
+backend-plugin-inventory:
+	@cd backend/plugins/inventory && ../../gradlew bootRun
+
+backend-plugin-dbs:
+	@./infrastructure/bin/init-plugin-dbs.sh
+
 frontend-dev:
 	@cd frontend && bun run dev
 

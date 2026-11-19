@@ -398,7 +398,7 @@ export const STEPS = [
   { id: 'company', label: 'Company' },
   { id: 'business', label: 'Business' },
   { id: 'addresses', label: 'Addresses' },
-  { id: 'owners', label: 'Owners' },
+  { id: 'owners', label: 'UBO' },
   { id: 'banking', label: 'Bank accounts' },
 ] as const;
 export type StepId = (typeof STEPS)[number]['id'];
@@ -639,4 +639,21 @@ export function reviewDue(iso: string | null): 'overdue' | 'soon' | null {
   if (!iso) return null;
   const days = (new Date(iso).getTime() - Date.now()) / 86_400_000;
   return days < 0 ? 'overdue' : days < 30 ? 'soon' : null;
+}
+
+/**
+ * The only organization type `orgId` may onboard — core's ladder (TenantLadder:
+ * Platform → Manufacturer → Distributor → Wholesaler → Merchant). null = it onboards none.
+ * Core re-decides on create; this only fixes the form so a wrong type is never filed
+ * (the KYC case would otherwise be saved before core refuses the org).
+ */
+export function useNextLevel(port: WidgetDataPortLike, orgId: string) {
+  const q = useQuery({
+    queryKey: ['tenant', 'next-level', orgId],
+    queryFn: () => port.request<{ legalName?: string; childSubType?: string | null }>('kyc.orgs.self', { tenantId: orgId }),
+    enabled: orgId !== '',
+  });
+  const childSubType = (q.data?.childSubType ?? null) as CaseFormValues['subType'] | null;
+  const label = childSubType ? childSubType.charAt(0) + childSubType.slice(1).toLowerCase() : null;
+  return { childSubType, label, orgName: q.data?.legalName ?? 'this organization', loaded: q.isSuccess };
 }

@@ -174,7 +174,7 @@ public class IdpClient {
             Instant.now().plusSeconds(expiresIn), oauthState);
 
         // Minimal authorization URL (FAPI 2.0 §5.3.2): only client_id + request_uri
-        String authzUrl = props.getGateway().getBaseUrl() + "/idp/authorize"
+        String authzUrl = props.getAuthorizeUrlBase() + "/idp/authorize"
             + "?client_id=" + CLIENT_ID
             + "&request_uri=" + java.net.URLEncoder.encode(requestUri, java.nio.charset.StandardCharsets.UTF_8);
 

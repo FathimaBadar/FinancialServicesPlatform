@@ -13,7 +13,7 @@ export const TABS = [
   { id: 'company', label: 'Company' },
   { id: 'business', label: 'Business' },
   { id: 'addresses', label: 'Addresses' },
-  { id: 'owners', label: 'Owners' },
+  { id: 'owners', label: 'UBO' },
   { id: 'bank', label: 'Bank accounts' },
   { id: 'screening', label: 'Screening' },
   { id: 'history', label: 'History' },

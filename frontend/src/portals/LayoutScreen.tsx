@@ -13,12 +13,14 @@ import { LayoutGrid } from './shared/widgets/core/LayoutGrid';
 import type { LayoutGridCell } from './shared/widgets/core/LayoutGrid';
 import { WidgetHost } from './shared/widgets/core/host';
 import { getWidget } from './shared/widgets/registry';
+import { usePageSelection } from './shared/widgets/core/page-selection';
 import { placedDef, screenVisible, signedSpan, useSignedLayout } from './signed/signed-layout';
 
 export function LayoutScreen() {
   const { menuId, screenId } = useParams();
   const { status, permissions, eligible } = useSession();
   const layout = useSignedLayout();
+  const { selection, onSelect } = usePageSelection();
 
   if (status === 'loading') return <FullscreenSpinner label="Restoring session" />;
   if (status === 'anon') return <Navigate to="/login" replace />;
@@ -39,7 +41,11 @@ export function LayoutScreen() {
     cells.push({
       key: placed.id,
       span: (tier) => signedSpan(def, placed, tier),
-      render: () => <WidgetHost def={def} config={placed.config} />,
+      render: () => (
+        <div data-widget={def.id} className="min-w-0">
+          <WidgetHost def={def} config={placed.config} selection={selection} onSelect={onSelect} />
+        </div>
+      ),
     });
   }
 

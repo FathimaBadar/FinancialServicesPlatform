@@ -34,7 +34,7 @@ function GuardedScreen({ portalId, item }: { portalId: PortalId; item: MenuItem 
   if (!eligible) return <Navigate to="/no-access" replace />;
   if (!can(permissions, permsForRoute(portalId, item.link))) return <Navigate to="/no-access" replace />;
   const Screen = SCREENS[item.link] ?? SCREENS['*'];
-  return <Screen portalId={portalId} link={item.link} widgets={item.widgets} label={item.label} />;
+  return <Screen portalId={portalId} link={item.link} widgets={item.widgets} label={item.label} config={item.config} span={item.span} />;
 }
 
 /* --------------------------------------------------------------- login route */

@@ -3,10 +3,13 @@
  * deactivate · activate · remove, URL-backed state per ui-std §7.
  * The list is ONE server page: search, status filter, sort and paging run in core (AGENTS §2.7).
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useWidgetRuntime } from '../../core/runtime';
-import { useSession } from '../../../web-core/session-core';
+import type { WidgetRuntimeProps } from '../../core/manifest';
+import { can as canAny, useSession } from '../../../web-core/session-core';
+import { readProblem } from '../../../web-core/api';
+import type { UsersOrganizationConfig } from './index';
 import { Alert, Button, EmptyState, Panel, PageHeader } from '../../../ui/atoms';
 import { UserDetails } from './UserDetails';
 import { Drawer } from '../../kit/Drawer';
@@ -37,12 +40,31 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
-export function UsersOrganization() {
+export function UsersOrganization(props: WidgetRuntimeProps<UsersOrganizationConfig>) {
   const { port, context } = useWidgetRuntime();
   const session = useSession();
   const meId = session.user?.userId ?? null;
-  // ONE org: the signed-in org, or the org being acted as (the host swaps context.orgId)
-  const orgId = context.orgId ?? '';
+  // "own": the signed-in org, or the org being acted as (the host swaps context.orgId).
+  // "selected": the org picked on this screen (?org=); while acting, the acted-as org is the default.
+  const scope = props.config?.scope ?? 'own';
+  const workingOrg = context.orgId ?? '';
+  const picked = scope === 'selected' ? (context.selection.orgId ?? (session.actAs ? workingOrg : '')) : '';
+  const orgId = scope === 'selected' ? picked : workingOrg;
+  // Another org's users, not stepped into: read-only. Changing them means acting as that org's
+  // admin — core then decides as the acting principal and audits every change as the REAL person.
+  const readOnly = orgId !== '' && orgId !== workingOrg;
+  const maySudo = readOnly && canAny(session.permissions, ['tenant.act_as']);
+  const [startingActAs, setStartingActAs] = useState(false);
+
+  // A pick on the screen "takes you to" that org's users: on narrow tiers the list sits above
+  // this panel, so bring it into view (not on first render — a linked ?org= keeps its place).
+  const topRef = useRef<HTMLDivElement>(null);
+  const lastPicked = useRef(picked);
+  useEffect(() => {
+    if (scope !== 'selected' || !picked || lastPicked.current === picked) return;
+    lastPicked.current = picked;
+    topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [scope, picked]);
 
   // ---- URL state: ?q= &status= &sort= &page= &size= &user=<id|new> &edit=1
   const [params, setParams] = useSearchParams();
@@ -80,7 +102,7 @@ export function UsersOrganization() {
     [page, size, debouncedQuery, status, sort],
   );
   const list = useUserList(port, orgId, listQuery);
-  const formOpen = openId === 'new' || editing;
+  const formOpen = !readOnly && (openId === 'new' || editing);
   const roles = useRoleOptions(port, orgId, formOpen);
   const cmd = useUserCommand(port, orgId);
 
@@ -97,7 +119,20 @@ export function UsersOrganization() {
   const pageRow = openId && openId !== 'new' ? users.find((u) => u.id === openId) : undefined;
   const one = useUser(port, orgId, openId, pageRow);
   const openUser: UserRow | undefined = openId && openId !== 'new' ? one.data : undefined;
-  const orgName = list.data?.org?.legalName ?? session.actAs?.targetTenantName ?? session.user?.tenantName ?? 'this organization';
+  const orgName = list.data?.org?.legalName
+    ?? (readOnly ? 'this organization' : session.actAs?.targetTenantName ?? session.user?.tenantName ?? 'this organization');
+
+  const actAs = async () => {
+    setStartingActAs(true);
+    try {
+      await session.startActAs(orgId);
+      say('ok', `You are acting as ${orgName}'s admin — every change is recorded as you.`);
+    } catch (e) {
+      say('bad', `Couldn’t act as ${orgName} — ${readProblem(e).detail}`);
+    } finally {
+      setStartingActAs(false);
+    }
+  };
 
   // ---- drawer navigation
   const open = (u: UserRow) => {
@@ -175,6 +210,9 @@ export function UsersOrganization() {
   const filtersActive = query.trim() !== '' || status !== 'current';
   const searching = query.trim() !== debouncedQuery;
 
+  // a "selected" screen shows nothing until an organization is picked in the list above
+  if (scope === 'selected' && !orgId) return null;
+
   let body;
   if (list.isPending) {
     body = <UserListSkeleton />;
@@ -238,17 +276,33 @@ export function UsersOrganization() {
     : orgName;
 
   return (
+    <div ref={topRef} className="min-w-0 scroll-mt-4">
     <Panel className="min-w-0 p-4 sm:p-5">
       <PageHeader
         title="Users"
         subtitle={summary}
         actions={
-          <Button variant="primary" onClick={() => { cmd.reset(); patch({ user: 'new', edit: null }); }}>
-            + Add user
-          </Button>
+          readOnly ? (
+            maySudo ? (
+              <Button variant="primary" data-action="act-as" onClick={() => void actAs()} disabled={startingActAs} aria-busy={startingActAs}>
+                {startingActAs ? 'Starting…' : `Act as ${orgName} admin`}
+              </Button>
+            ) : undefined
+          ) : (
+            <Button variant="primary" onClick={() => { cmd.reset(); patch({ user: 'new', edit: null }); }}>
+              + Add user
+            </Button>
+          )
         }
       />
       <NoticeBar notice={notice} onDismiss={dismissNotice} />
+      {readOnly && (
+        <p className="text-dim mb-3 text-[12px]">
+          {maySudo
+            ? `Viewing ${orgName}’s users. Act as its admin to add or change them — every change is recorded as you.`
+            : `Viewing ${orgName}’s users (read-only).`}
+        </p>
+      )}
       <UserToolbar
         query={query}
         onQuery={(q) => patch({ q, page: null })}
@@ -267,7 +321,7 @@ export function UsersOrganization() {
 
       {openId && (
         <Drawer
-          title={openId === 'new' ? 'Add user' : editing ? 'Edit user' : openUser?.fullName ?? 'User'}
+          title={openId === 'new' && !readOnly ? 'Add user' : editing && !readOnly ? 'Edit user' : openUser?.fullName ?? 'User'}
           subtitle={openId === 'new' ? `New member of ${orgName}` : openUser ? `@${openUser.username} · ${orgName}` : undefined}
           onClose={requestClose}
           banner={
@@ -280,7 +334,7 @@ export function UsersOrganization() {
             ) : undefined
           }
         >
-          {openId === 'new' ? (
+          {openId === 'new' && !readOnly ? (
             <UserForm
               key="new"
               mode="create"
@@ -301,7 +355,7 @@ export function UsersOrganization() {
                 <EmptyState title="User not found" hint="They may have been moved or you may have lost access." />
               </div>
             )
-          ) : editing ? (
+          ) : editing && !readOnly ? (
             <UserForm
               key={`${openUser.id}:${openUser.version}`}
               mode="edit"
@@ -327,10 +381,12 @@ export function UsersOrganization() {
               onActivate={() => activate(openUser)}
               onRemove={() => remove(openUser)}
               onReload={reload}
+              readOnly={readOnly}
             />
           )}
         </Drawer>
       )}
     </Panel>
+    </div>
   );
 }

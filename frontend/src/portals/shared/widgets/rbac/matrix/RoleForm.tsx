@@ -8,10 +8,13 @@ import { PermissionMatrix } from './PermissionMatrix';
 import { SectionHeading } from './SectionHeading';
 import { newRoleSchema } from './model';
 import type { NewRoleValues, PermissionDef, RoleView } from './model';
+import type { PortalId } from '../../../web-core/menu';
 
 export interface RoleFormProps {
   /** absent = create a new role */
   role: RoleView | null;
+  /** whose sidebar the permissions matrix mirrors */
+  portal: PortalId;
   catalog: PermissionDef[];
   held: ReadonlySet<string>;
   canManage: boolean;
@@ -29,7 +32,7 @@ type Errors = Partial<Record<keyof NewRoleValues, string>>;
  * Maker surface for one role (create or edit): Role Details + Permissions Matrix. Nothing applies
  * until a checker approves in Approvals — there is no approve control here (ui-std §5.2).
  */
-export function RoleForm({ role, catalog, held, canManage, busy, problem, onCancel, onCreate, onRequestChange, onRequestDelete }: RoleFormProps) {
+export function RoleForm({ role, portal, catalog, held, canManage, busy, problem, onCancel, onCreate, onRequestChange, onRequestDelete }: RoleFormProps) {
   const creating = role === null;
   const [values, setValues] = useState<NewRoleValues>({ key: role?.key ?? '', name: role?.name ?? '' });
   const [errors, setErrors] = useState<Errors>({});
@@ -98,8 +101,8 @@ export function RoleForm({ role, catalog, held, canManage, busy, problem, onCanc
       </section>
 
       <section aria-labelledby="role-matrix">
-        <SectionHeading id="role-matrix" title="Permissions Matrix" subtitle="Grant granular access to system components and subcomponents." />
-        <PermissionMatrix catalog={catalog} selected={draft} held={held} editable={editable} onChange={setDraft} />
+        <SectionHeading id="role-matrix" title="Permissions Matrix" subtitle="One row per menu link. Active shows the link in the menu; the other boxes grant what it can do." />
+        <PermissionMatrix portal={portal} catalog={catalog} selected={draft} held={held} editable={editable} onChange={setDraft} />
       </section>
 
       {problem && <Alert kind="bad">{problem}</Alert>}

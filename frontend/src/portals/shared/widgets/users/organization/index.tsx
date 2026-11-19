@@ -11,9 +11,14 @@ import { defineWidget } from '../../core/manifest';
 import { span } from '../../core/grid';
 import { UsersOrganization } from './widget';
 
-const usersOrganizationWidget = defineWidget({
+export interface UsersOrganizationConfig {
+  /** own: the signed-in org (or the org acted as). selected: the org picked on the page (?org=). */
+  scope: 'own' | 'selected';
+}
+
+const usersOrganizationWidget = defineWidget<UsersOrganizationConfig>({
   id: 'users.organization',
-  version: '2.0.0',
+  version: '2.2.0',
   label: 'User management',
   description: 'List, view, add, modify, deactivate, activate and remove the users of an organization.',
   category: 'Access',
@@ -35,8 +40,15 @@ const usersOrganizationWidget = defineWidget({
     'user.activate': 'modify',
     'user.remove': 'modify',
   },
-  size: { xs: span.xs(4), sm: span.sm(8), md: span.md(12), lg: span.lg(12) },
+  // full width by default; may sit beside a list (min 6 of 12) as the detail of a picked org
+  size: { xs: span.xs(4), sm: span.sm(8), md: span.md(6, 12), lg: span.lg(6, 12) },
   hideOn: ['forbidden'],
+  config: {
+    scope: {
+      type: 'enum', options: ['own', 'selected'] as const, default: 'own', label: 'Organization',
+      help: "own: the signed-in org (or the one acted as). selected: the org picked on this screen — read-only until you act as its admin.",
+    },
+  },
   render: UsersOrganization,
 });
 

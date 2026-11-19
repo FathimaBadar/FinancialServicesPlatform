@@ -83,6 +83,31 @@ echo "==> 6/8 idp token-signing key (RS256; gateway verifies via /idp/jwks)"
 [ -f ui-builder-signing.pem ] || openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out ui-builder-signing.pem >/dev/null 2>&1
 [ -f ui-builder-signing-pub.pem ] || openssl ec -in ui-builder-signing.pem -pubout -out ui-builder-signing-pub.pem >/dev/null 2>&1
 
+echo "==> 6c/8 portal trust store (re)generation from ui-builder public key"
+# The SPA verifies signed bundles against frontend/src/portals/signed/trust-store.json.
+# This step (re)generates it from the actual PEM so the pin always matches this machine's key.
+# It's safe to overwrite the committed file — on a fresh clone the key is generated here first.
+TRUST_STORE="$DIR/../../frontend/src/portals/signed/trust-store.json"
+KID="ui-builder-dev-1"
+ALG="ES256"
+CRV="P-256"
+X=$(openssl ec -in ui-builder-signing-pub.pem -pubin -text -noout 2>/dev/null | sed -n '/pub:/,/ASN1/p' | grep -E '^[[:space:]]*[0-9a-f]{2}(:[0-9a-f]{2})*:?$' | tr -d ' :\n' | cut -c3-66)
+Y=$(openssl ec -in ui-builder-signing-pub.pem -pubin -text -noout 2>/dev/null | sed -n '/pub:/,/ASN1/p' | grep -E '^[[:space:]]*[0-9a-f]{2}(:[0-9a-f]{2})*:?$' | tr -d ' :\n' | cut -c67-130)
+B64U() { python3 -c "import base64,sys; print(base64.urlsafe_b64encode(bytes.fromhex(sys.argv[1])).rstrip(b'=').decode())" "$1"; }
+XB64=$(B64U "$X")
+YB64=$(B64U "$Y")
+cat > "$TRUST_STORE" <<EOF
+{
+  "_comment": "Build-pinned JWKS for signed portal delivery (plans/signed-portal-delivery-plan.md §2.3). This file IS the browser trust anchor: the running portal accepts only kids listed here, discovered at RUNTIME keys are never trusted. Rotate by adding a new kid here, shipping an overlap build, then removing the old kid. Never put private keys in this file.",
+  "pinnedAt": "$(date +%F)",
+  "keys": [
+    { "kid": "$KID", "alg": "$ALG", "kty": "EC", "crv": "$CRV",
+      "x": "$XB64", "y": "$YB64" }
+  ]
+}
+EOF
+echo "    updated $TRUST_STORE (kid=$KID, alg=$ALG, crv=$CRV)"
+
 echo "==> 7/8 PKCS12 keystores (Spring server.ssl)"
 # server identities
 for S in core bff idp gateway; do

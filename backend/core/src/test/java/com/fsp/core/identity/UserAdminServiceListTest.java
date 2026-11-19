@@ -61,6 +61,11 @@ class UserAdminServiceListTest {
         PermissionService permissions = mock(PermissionService.class);
 
         lenient().when(tenants.existsById(TENANT)).thenReturn(true);
+        com.fsp.core.tenant.Tenant org = new com.fsp.core.tenant.Tenant();
+        org.id = TENANT;
+        org.legalName = "Acme";
+        org.type = "TENANT";
+        lenient().when(tenants.findById(TENANT)).thenReturn(java.util.Optional.of(org));
         lenient().doNothing().when(permissions).require(any(Actor.class), anyString(), eq(TENANT));
         lenient().when(roles.findByTenantId(TENANT)).thenReturn(List.of());
         lenient().when(rbac.findByPersonIdIn(any())).thenReturn(List.of());

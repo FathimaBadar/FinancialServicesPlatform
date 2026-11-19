@@ -13,6 +13,7 @@ import com.fsp.core.rbac.Role;
 import com.fsp.core.rbac.RoleRepository;
 import com.fsp.core.rbac.RoleTemplates;
 import com.fsp.core.rbac.UserRole;
+import com.fsp.core.tenant.Tenant;
 import com.fsp.core.tenant.TenantRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -116,8 +117,38 @@ public class UserAdminService {
         Map<UUID, List<UserDtos.RoleRef>> roleMap = rolesFor(rows.getContent().stream().map(pr -> pr.id).toList(), tenantId);
         List<UserDtos.UserView> items = rows.getContent().stream()
             .map(pr -> view(pr, roleMap.getOrDefault(pr.id, List.of()))).toList();
+        Tenant org = tenants.findById(tenantId)
+            .orElseThrow(() -> ApiException.notFound("TENANT_NOT_FOUND", "Organization not found"));
         return new UserDtos.UserPage(items, pageNum, s, rows.getTotalElements(), rows.getTotalPages(),
-            rows.hasNext(), sortKey, statusCounts(tenantId));
+            rows.hasNext(), sortKey, statusCounts(tenantId),
+            new UserDtos.OrgRef(org.id, org.legalName, org.type, org.subType, org.depth));
+    }
+
+    /**
+     * The organizations below {@code tenantId} (its whole subtree, by {@code hierarchy_path} prefix),
+     * paged and searchable by legal name in PostgreSQL. Each row says whether user.manage reaches
+     * it for this actor — computed per row of the bounded page, never by filtering after paging.
+     */
+    @Transactional(readOnly = true)
+    public UserDtos.OrgPage orgs(UUID tenantId, Actor actor, String q, Integer page, Integer size) {
+        requireOrg(actor, tenantId);
+        Tenant root = tenants.findById(tenantId)
+            .orElseThrow(() -> ApiException.notFound("TENANT_NOT_FOUND", "Organization not found"));
+        int pageNum = page == null || page < 0 ? 0 : page;
+        int s = size == null || size < 1 ? DEFAULT_PAGE_SIZE : Math.min(size, MAX_PAGE_SIZE);
+        String below = root.hierarchyPath + "/%";
+        String like = likePattern(q);
+        Specification<Tenant> spec = (t, query, cb) -> like == null
+            ? cb.like(t.<String>get("hierarchyPath"), below)
+            : cb.and(cb.like(t.<String>get("hierarchyPath"), below),
+                cb.like(cb.lower(cb.coalesce(t.<String>get("legalName"), "")), like, '\\'));
+        Page<Tenant> rows = tenants.findAll(spec,
+            PageRequest.of(pageNum, s, Sort.by("depth").and(Sort.by("legalName")).and(Sort.by("id"))));
+        List<UserDtos.OrgOption> items = rows.getContent().stream()
+            .map(t -> new UserDtos.OrgOption(t.id, t.parentTenantId, t.legalName, t.type, t.subType, t.depth,
+                t.status, permissions.effectiveKeys(actor, t.id).contains(PERMISSION)))
+            .toList();
+        return new UserDtos.OrgPage(items, pageNum, s, rows.getTotalElements(), rows.getTotalPages(), rows.hasNext());
     }
 
     /** Sort safelist: wire field → entity property. Anything else is refused, never passed through. */

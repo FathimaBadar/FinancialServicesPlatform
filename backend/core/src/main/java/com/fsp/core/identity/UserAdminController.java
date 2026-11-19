@@ -50,6 +50,16 @@ public class UserAdminController {
         return service.get(tenantId, personId, actor(request));
     }
 
+    @FspOperation(id = "user.org.options", component = "identity", permission = UserAdminService.PERMISSION,
+        title = "Organizations below this one, for user administration")
+    @GetMapping("/v1/tenants/{tenantId}/user-orgs")
+    public UserDtos.OrgPage orgOptions(HttpServletRequest request, @PathVariable("tenantId") UUID tenantId,
+                                       @RequestParam(value = "q", required = false) String q,
+                                       @RequestParam(value = "page", required = false) Integer page,
+                                       @RequestParam(value = "size", required = false) Integer size) {
+        return service.orgs(tenantId, actor(request), q, page, size);
+    }
+
     @FspOperation(id = "user.role.options", component = "identity", permission = UserAdminService.PERMISSION,
         title = "Roles assignable to organization users")
     @GetMapping("/v1/tenants/{tenantId}/user-roles")

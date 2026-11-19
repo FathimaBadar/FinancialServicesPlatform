@@ -19,7 +19,7 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import {
-  api, approveKycUi, BOOT_PASS, clearActAs, ensureKycPlugin, fileKycUi, NO_ACCESS_WALL, PERSON_PASS,
+  api, approveKycUi, approveVia, BOOT_PASS, clearActAs, ensureKycPlugin, fileKycUi, NO_ACCESS_WALL, PERSON_PASS,
   PLATFORM_TENANT_ID, pendingApproval, pollUntil, sagaAdminUsername, sessionUser, signIn, suffix, type Session,
 } from './support';
 
@@ -200,6 +200,63 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   const bookId = books.find((b) => b.status === 'ACTIVE')!.id;
   await merAdmin.page.goto(`/merchant/journal?entry=${entryId}`);
   await expect(merAdmin.page.locator('[data-posting-state="FINALIZED"]').first()).toBeVisible();
+
+  /* ── SCENE 8.5 · settlement bank accounts (F-10): maker files in the UI, checker approves ── */
+  // [UI] the merchant admin (maker, bank.account.create) files the org's payout account.
+  const bankPage = merAdmin.page;
+  await bankPage.goto('/merchant/bank-accounts');
+  await expect(bankPage.getByRole('heading', { name: 'Settlement bank accounts' })).toBeVisible();
+  await bankPage.locator('[data-action="bank.account.file"]').click();
+  await bankPage.getByTestId('bank-holder').fill('Namib Fresh Produce (Pty) Ltd');
+  await bankPage.getByTestId('bank-code').selectOption({ label: 'First National Bank Namibia' });
+  await bankPage.getByTestId('bank-branch').fill('280172');
+  await bankPage.getByTestId('bank-account-number').fill(`9900${s}77`.replace(/[^0-9]/g, '').padEnd(8, '7').slice(0, 16));
+  await bankPage.getByTestId('bank-account-type').selectOption('SETTLEMENT');
+  await bankPage.locator('[data-action="bank.account.request"]').click();
+  await expect(bankPage.getByTestId('bank-row-pending')).toBeVisible({ timeout: 30_000 });
+  await expect(bankPage.getByTestId('bank-pending-banner')).toBeVisible(); // explicit pending path (ui-std §5.1)
+  // the wire never carries the full number — masked to last 4 everywhere (AGENTS §2c)
+  const { json: bankList } = await api<{ items: Array<{ id: string; status: string; maskedAccountNumber: string }> }>(
+    merAdmin, 'GET', `/tenants/${merTenantId}/bank-accounts`);
+  const filed = bankList.items.find((b) => b.status === 'PENDING');
+  expect(filed, 'a PENDING bank account exists').toBeDefined();
+  expect(filed!.maskedAccountNumber.length, 'account number is masked on the wire').toBeLessThanOrEqual(10);
+  const bankAccountId = filed!.id;
+
+  // [API] four-eyes: the maker cannot approve their own filing (explicit refusal, not silence).
+  const makerOwnBank = await pendingApproval(merAdmin, merTenantId, 'BANK_ACCOUNT_CREATE');
+  expect(makerOwnBank, "the maker's filing is a four-eyes approval").toBeDefined();
+  const selfBank = await api(merAdmin, 'POST', `/approvals/${makerOwnBank!.id}/approve`, { reason: 'e2e: self' });
+  expect(selfBank.status, 'maker self-approve refused').toBe(403);
+
+  // [UI] the merchant checker (bank.account.approve) decides it in Approvals — one click.
+  const bankApproval = await pendingApproval(merChecker, merTenantId, 'BANK_ACCOUNT_CREATE');
+  await approveInUi(merChecker, '/merchant', bankApproval!.id, 'e2e: settlement bank account');
+  await pollUntil(async () =>
+    (await api<{ items: Array<{ id: string; status: string }> }>(merAdmin, 'GET', `/tenants/${merTenantId}/bank-accounts`))
+      .json.items.some((b) => b.id === bankAccountId && b.status === 'ACTIVE'),
+    'merchant settlement bank account ACTIVE');
+  await bankPage.reload();
+  await expect(bankPage.getByTestId('bank-row-active')).toBeVisible();
+  await expect(bankPage.getByTestId('bank-pending-banner')).toHaveCount(0); // the pending path cleared
+
+  // [API] the PLATFORM ROOT's own account: filed by a platform admin, approved by the
+  // platform team's checker (different person) — same machinery at the root tenant.
+  const rootFile = await api<{ status: string }>(maker, 'POST', `/tenants/${PLATFORM_TENANT_ID}/bank-accounts`, {
+    holderName: 'FSP Platform (Pty) Ltd', bankCode: 'BANK_WINDHOEK', branchCode: '481972',
+    accountNumber: '2000000000123456'.slice(0, 16), accountType: 'SETTLEMENT', currency: 'NAD',
+  });
+  if (rootFile.status === 201 || rootFile.status === 200) {
+    await approveVia(checker, PLATFORM_TENANT_ID, 'BANK_ACCOUNT_CREATE', 'platform settlement bank account');
+    const { json: rootList } = await api<{ items: Array<{ status: string }> }>(
+      maker, 'GET', `/tenants/${PLATFORM_TENANT_ID}/bank-accounts`);
+    expect(rootList.items.some((b) => b.status === 'ACTIVE'), 'platform root has an ACTIVE settlement account').toBe(true);
+  } else {
+    // idempotent across runs: an ACTIVE root account already exists — nothing to approve
+    const { json: rootList } = await api<{ items: Array<{ status: string }> }>(
+      maker, 'GET', `/tenants/${PLATFORM_TENANT_ID}/bank-accounts`);
+    expect(rootList.items.some((b) => b.status === 'ACTIVE'), 'platform root already has an ACTIVE account').toBe(true);
+  }
 
   /* ── SCENE 9 · curtain call ── */
   console.log('\n=== ONBOARDING CHAIN COMPLETE ===\n', JSON.stringify({

@@ -23,7 +23,7 @@ export type MenuWidget =
   | 'approvals.queue' | 'journal.entry' | 'audit.trail'
   | 'rbac.matrix' | 'permissions.catalogue' | 'plugins.governance'
   | 'users.organization'
-  | 'ledger.accounts' | 'period.control'
+  | 'ledger.accounts' | 'period.control' | 'bank.accounts'
   | 'overview.tiles';
 
 export interface MenuItem {
@@ -69,6 +69,8 @@ export const MENU_ITEMS: MenuItem[] = [
     perm: ['kyc.approve', 'kyc.reject', 'je.approve', 'org.approve_child', 'bank.account.approve', 'gl.account.approve',
       'user.manage', 'role.manage', 'plugin.manage', 'ui.layout.manage'],
     portals: ['platform', 'org'], group: 'Operations', widgets: ['approvals.queue'] },
+  { id: 'bank-accounts', label: 'Bank accounts', icon: '₪', link: '/bank-accounts',
+    perm: ['bank.account.view'], portals: ['platform', 'org'], group: 'Operations', widgets: ['bank.accounts'] },
   { id: 'journal', label: 'Journal entries', icon: '⇄', link: '/journal',
     perm: ['je.view', 'je.create', 'je.approve'], portals: ['platform', 'org'],
     group: 'Operations', widgets: ['journal.entry'] },

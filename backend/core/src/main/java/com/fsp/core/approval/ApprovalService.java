@@ -187,6 +187,7 @@ public class ApprovalService {
             case ApprovalRequest.OpType.ROLE_CREATE,
                  ApprovalRequest.OpType.ROLE_UPDATE,
                  ApprovalRequest.OpType.ROLE_DELETE -> "role.manage";
+            case ApprovalRequest.OpType.BANK_ACCOUNT_CREATE -> "bank.account.approve";
             default -> "user.manage";
         };
         permissions.require(checker, perm, row.tenantId);
@@ -208,6 +209,7 @@ public class ApprovalService {
             case ApprovalRequest.OpType.PLUGIN_REGISTER, ApprovalRequest.OpType.PLUGIN_INSTALL -> "plugin.manage";
             case ApprovalRequest.OpType.ROLE_CREATE, ApprovalRequest.OpType.ROLE_UPDATE,
                  ApprovalRequest.OpType.ROLE_DELETE -> "role.manage";
+            case ApprovalRequest.OpType.BANK_ACCOUNT_CREATE -> "bank.account.approve";
             default -> "user.manage";
         };
     }
@@ -379,6 +381,7 @@ public class ApprovalService {
             case ApprovalRequest.OpType.ROLE_CREATE -> ApprovalRequest.OpType.ROLE_CREATE;
             case ApprovalRequest.OpType.ROLE_UPDATE -> ApprovalRequest.OpType.ROLE_UPDATE;
             case ApprovalRequest.OpType.ROLE_DELETE -> ApprovalRequest.OpType.ROLE_DELETE;
+            case ApprovalRequest.OpType.BANK_ACCOUNT_CREATE -> ApprovalRequest.OpType.BANK_ACCOUNT_CREATE;
             default -> ApprovalRequest.OpType.GENERIC;
         };
     }

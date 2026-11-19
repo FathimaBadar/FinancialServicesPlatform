@@ -33,6 +33,8 @@ public class ApprovalRequest {
         public static final String ROLE_CREATE = "ROLE_CREATE";
         public static final String ROLE_UPDATE = "ROLE_UPDATE";
         public static final String ROLE_DELETE = "ROLE_DELETE";
+        /** Settlement bank account filing (F-10); checker needs bank.account.approve. */
+        public static final String BANK_ACCOUNT_CREATE = "BANK_ACCOUNT_CREATE";
         /** Plugin platform op types pass through via the PLUGIN: prefix (canonicalOpType). */
         public static final String PLUGIN_REGISTER = "PLUGIN_REGISTER";
         public static final String PLUGIN_INSTALL = "PLUGIN_INSTALL";

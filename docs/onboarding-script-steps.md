@@ -289,8 +289,9 @@ decision legs are now UI-driven too — Scenes 4/6 file through the kyc.manage f
 (`fileKycUi`) and the checker approves in the real decision panel on `/kyc/reviews`
 (`approveKycUi`); only the twin's REQUEST_INFO/REJECT legs remain API-lane (negative paths
 assert the API contract directly). Period open/close has no API yet (`period.control` is
-read-only and says so). F-8 password change, F-10 bank accounts, F-12 checker notifications
-are unchanged backlog. F-9 is done (see the happy-twin note below).
+read-only and says so). F-10 is done (Sc 8.5 — maker files in the UI, checker approves in the UI,
+platform-root files its own account). F-8 password change, F-12 checker notifications remain
+backlog. F-9 is done (see the happy-twin note below).
 
 ### How to verify
 
@@ -321,7 +322,7 @@ flips those steps to `[UI]` automatically.
 | F-7 | **Staging/approval affordance in the users widget** (PENDING banner + “awaiting <checker>” pointer) | **✅ done** | frontend | GAP-8 (Sc 7.2) | the maker sees the staged user and who must act next |
 | F-8 | **Password reset / first-login change** for API-created persons (today they all share `$FSP_PERSON_PASSWORD`) | **⬜ open** | core + IdP | Sc 9 note (credentials hygiene) | each new person changes their own password at first sign-in |
 | F-9 | **Adverse-path E2E coverage**: KYC `REJECT`/`REQUEST_INFO`, maker self-approve → explicit refusal + `MAKER_CANNOT_APPROVE` block state, stalled `TENANT_PENDING` recovery (KycRecoveryService) | **✅ done** (`tests/e2e/unhappy-twin.spec.ts` — scenes A–D) | tests + UI states | beyond happy path | the chain's unhappy twin passes with explicit UI states per ui-std §5.2; note: born-role makers never hold `kyc.approve`, so the KYC maker-block surfaces as `PERMISSION_DENIED` + server `block=MAKER` (the person-level `MAKER_CANNOT_APPROVE` is asserted on the USER_CREATE lane) |
-| F-10 | **Bank account management screen** (`bank.account.create`/`approve` are seeded permissions; no surface exists) | **⬜ open** | frontend | first-money depth | a merchant adds/verifies its own bank account in the UI |
+| F-10 | **Bank account management screen** (`bank.account.create`/`approve` seeded + new `bank.account.view` READ key) | **✅ done** (`widgets/bank/accounts`, Sc 8.5) | backend (core ledger) + frontend | first-money depth | the org's ADMIN files its settlement account (7 Namibian banks registered) → `BANK_ACCOUNT_CREATE` four-eyes approval → checker approves → PENDING→ACTIVE (one ACTIVE per tenant, partial unique index; full number only in DB, `maskAccountNumber` last-4 on the wire); maker self-approve refused 403; platform-root files its own account (platform checker approves); E2E asserts masked numbers on the wire and UI pending banner + ACTIVE state |
 | F-11 | **Ledger/period screens** (`ledger.accounts`, `period.control` widgets exist as ids only) | **✅ done — ledger.accounts driven by the chain (provision + table); period.control read-only** | frontend | Sc 8 depth | CoA and period state are visible, not assumed |
 | F-12 | **Checker inbox/notification** (today a checker must poll the queue) | **⬜ open** | backend + frontend | every four-eyes step | a checker is pointed at pending work without polling |
 

@@ -162,13 +162,20 @@ class RoleAdminServiceTest {
     }
 
     @Test
-    void checkerMustAlsoHoldTheKeysTheyApprove() throws Exception {
-        when(permissions.effectiveKeys(eq(CHECKER), eq(TENANT))).thenReturn(Set.of("role.manage", "je.approve", "kyc.approve"));
+    void checkerNeedNotHoldTheKeysTheyApprove() throws Exception {
+        // settled design (4a99164): requireHeld applies at PROPOSAL time only — a checker who
+        // doesn't yet hold a key may still approve granting it (otherwise legitimate role
+        // upgrades would deadlock: no checker could hold period.open to approve adding it).
+        when(permissions.effectiveKeys(eq(CHECKER), eq(TENANT))).thenReturn(Set.of("role.manage", "je.approve"));
+        when(roles.bumpVersion(checkerRole.id, 3L, "Tenant Checker")).thenReturn(1);
         ApprovalRequest a = approval(ApprovalRequest.OpType.ROLE_UPDATE,
-            new RoleDtos.RoleProposal("TENANT_CHECKER", "Tenant Checker", List.of("je.approve", "kyc.approve", "period.open"), 3L));
-        assertThatThrownBy(() -> svc.applyUpdate(a, CHECKER))
-            .isInstanceOf(ApiException.class)
-            .satisfies(e -> assertThat(((ApiException) e).getCode()).isEqualTo("ROLE_NOT_ASSIGNABLE"));
+            new RoleDtos.RoleProposal("TENANT_CHECKER", "Tenant Checker", List.of("je.approve", "period.open"), 3L));
+
+        svc.applyUpdate(a, CHECKER);
+
+        ArgumentCaptor<RolePermission> granted = ArgumentCaptor.forClass(RolePermission.class);
+        verify(rolePermissions).save(granted.capture());
+        assertThat(granted.getValue().permissionKey).isEqualTo("period.open");
     }
 
     private ApprovalRequest approval(String op, RoleDtos.RoleProposal p) throws Exception {

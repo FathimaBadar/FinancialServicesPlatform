@@ -36,6 +36,7 @@ const OP_LABEL: Record<string, string> = {
   ROLE_UPDATE: 'Role permission change',
   ROLE_DELETE: 'Delete role',
   JE_POSTING: 'Journal entry posting',
+  BANK_ACCOUNT_CREATE: 'New settlement bank account',
   KYC_TENANT_ACTIVATION: 'Organization activation',
   PLUGIN_REGISTER: 'Plugin registration',
   PLUGIN_INSTALL: 'Plugin installation',
@@ -58,6 +59,7 @@ export function subjectLink(row: QueueRow): { to: string; label: string } | null
   if (row.operationType.startsWith('USER_')) return { to: `/users?user=${t}`, label: 'Open the user' };
   if (row.operationType === 'ROLE_UPDATE' || row.operationType === 'ROLE_DELETE') return { to: `/rbac?role=${t}`, label: 'Open the role' };
   if (row.operationType === 'JE_POSTING') return { to: `/journal?entry=${t}`, label: 'Open the journal entry' };
+  if (row.operationType === 'BANK_ACCOUNT_CREATE') return { to: `/bank-accounts?account=${t}`, label: 'Open the bank accounts' };
   return null;
 }
 

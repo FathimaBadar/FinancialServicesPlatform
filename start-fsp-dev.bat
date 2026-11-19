@@ -5,5 +5,5 @@
 chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
-powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0start-fsp-dev.ps1"
+powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0scripts\dev-windows.ps1" dev
 endlocal

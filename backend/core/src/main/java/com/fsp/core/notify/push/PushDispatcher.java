@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -32,12 +33,22 @@ public class PushDispatcher {
     private final PushSubscriptionRepository subscriptions;
     private final Map<String, PushPublisher> publishers = new HashMap<>();
 
+    private final TransactionTemplate txWrite;
+
     public PushDispatcher(NotificationRepository notifications,
                           PushSubscriptionRepository subscriptions,
-                          List<PushPublisher> publisherList) {
+                          List<PushPublisher> publisherList,
+                          TransactionTemplate txWrite) {
         this.notifications = notifications;
         this.subscriptions = subscriptions;
+        this.txWrite = txWrite;
         for (PushPublisher p : publisherList) publishers.put(p.platform(), p);
+    }
+
+    /** Every @Modifying update below needs an active transaction (Spring 7 fails fast otherwise).
+     *  Short per-row transactions only — device sends happen OUTSIDE any DB transaction. */
+    private void runWrite(Runnable write) {
+        txWrite.executeWithoutResult(status -> write.run());
     }
 
     /** One sweep, serial. Single-instance in Phase-0; multi-replica hardening = claim-before-send. */
@@ -71,11 +82,11 @@ public class PushDispatcher {
             switch (outcome) {
                 case PushWire.PublishOutcome.Delivered d -> {
                     if (deliveredVia == null) deliveredVia = s.platform;
-                    subscriptions.touch(s.id, Instant.now());
+                    runWrite(() -> subscriptions.touch(s.id, Instant.now()));
                 }
                 case PushWire.PublishOutcome.Unreachable u -> {
                     if (u.definitive()) {
-                        subscriptions.retire(s.id, Instant.now());
+                        runWrite(() -> subscriptions.retire(s.id, Instant.now()));
                         log.warn("push_subscription_retired platform={} person={}" +
                             " reason={}", s.platform, s.personId, u.reason());
                     } else {
@@ -92,13 +103,13 @@ public class PushDispatcher {
         if (deliveredVia != null) {
             claim(n, deliveredVia);
         } else if (credentialledChannelAlive) {
-            notifications.bumpAttempts(n.id);
+            runWrite(() -> notifications.bumpAttempts(n.id));
         } else {
             claim(n, "NONE"); // nothing subscribed, or only credential-less channels
         }
     }
 
     private void claim(Notification n, String via) {
-        notifications.claimPushed(n.id, Instant.now(), via);
+        runWrite(() -> notifications.claimPushed(n.id, Instant.now(), via));
     }
 }

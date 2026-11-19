@@ -155,31 +155,61 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   expect((await sessionUser(tulonga)).username).toBe(named);
   await expect(tulonga.page.getByText(NO_ACCESS_WALL)).toHaveCount(0);
 
-  /* ── SCENE 8 · first money: CoA → balanced JE → four-eyes → FINALIZED ── */
+  /* ── SCENE 8 · first money: CoA → balanced JE → four-eyes → FINALIZED (real clicks) ── */
+  // [UI] ledger.accounts screen provisions the default chart on the ACTIVE book.
+  const ledgerPage = merAdmin.page;
+  await ledgerPage.goto('/merchant/ledger');
+  await expect(ledgerPage.getByRole('heading', { name: 'Chart of accounts' })).toBeVisible();
+  const provision = ledgerPage.locator('[data-action="coa.provision"]');
+  // empty book → the provision offer; already-provisioned book → the accounts table
+  await expect(provision.or(ledgerPage.getByRole('table'))).toBeVisible({ timeout: 60_000 });
+  if (await provision.isVisible().catch(() => false)) {
+    await provision.click(); // fresh merchant → empty book → the offer is shown
+  }
+  await expect(ledgerPage.getByRole('table').locator('tbody tr')).not.toHaveCount(0, { timeout: 90_000 });
+
+  // [UI] maker creates the balanced DRAFT entry in the journal.entry form (today: open period).
+  const jePage = merAdmin.page;
+  await jePage.goto('/merchant/journal');
+  await jePage.getByRole('button', { name: 'New entry' }).click();
+  const line = (n: 1 | 2) => jePage.locator('fieldset', { hasText: `Line ${n}` });
+  const accountsSelect = line(1).getByLabel('Account');
+  const optionCount = await accountsSelect.locator('option').count(); // includes the “Choose an account” placeholder
+  expect(optionCount, 'the default chart is postable-ready').toBeGreaterThanOrEqual(3);
+  await line(1).getByLabel('Account').selectOption({ index: 1 }); // lowest postable code (asset side)
+  await line(1).getByLabel('Side').selectOption('DEBIT');
+  await line(1).getByLabel(/^Amount \(/).fill('2500.00');
+  await line(2).getByLabel('Account').selectOption({ index: optionCount - 1 }); // highest code (revenue side)
+  await line(2).getByLabel('Side').selectOption('CREDIT');
+  await line(2).getByLabel(/^Amount \(/).fill('2500.00');
+  await jePage.getByLabel('Description').fill('Opening float');
+  await jePage.getByLabel(/Reference/).fill(`e2e-${randomUUID().slice(0, 8)}`);
+  await jePage.getByRole('button', { name: 'Save draft' }).click();
+  // create returns the entry selected in the URL → the detail panel opens as DRAFT
+  await expect(jePage.locator('[data-posting-state="DRAFT"]').first()).toBeVisible({ timeout: 60_000 });
+  const entryId = new URL(jePage.url()).searchParams.get('entry');
+  expect(entryId, 'draft creation selects the new entry').toBeTruthy();
+
+  // [UI] maker submits for checker approval.
+  await jePage.locator('[data-action="je.submit"]').click();
+  await expect(jePage.locator('[data-posting-state="PENDING_CHECKER"]').first()).toBeVisible({ timeout: 60_000 });
+
+  // [UI] merchant auto-checker (four-eyes, different person) approves and posts.
+  const checkerPage = merChecker.page;
+  await checkerPage.goto('/merchant/journal?status=PENDING_CHECKER');
+  await checkerPage.getByRole('button', { name: /Opening float/ }).click();
+  await checkerPage.locator('[data-action="je.approve"]').click();
+  await checkerPage.getByRole('alertdialog').getByRole('button', { name: 'Approve and post' }).click();
+  await pollUntil(async () => (await api<{ status: string }>(merChecker, 'GET', `/tenants/${merTenantId}/journal-entries/${entryId}`)).json.status === 'FINALIZED',
+    'merchant JE FINALIZED (ledger commit confirmed)');
   const { json: books } = await api<{ id: string; status: string }[]>(merAdmin, 'GET', `/tenants/${merTenantId}/books`);
   const bookId = books.find((b) => b.status === 'ACTIVE')!.id;
-  expect((await api(merAdmin, 'POST', `/tenants/${merTenantId}/books/${bookId}/provision-default-coa`, {})).status).toBe(200);
-  const { json: gl } = await api<{ id: string }[]>(merAdmin, 'GET', `/tenants/${merTenantId}/books/${bookId}/gl-accounts`);
-  // Post inside the OPEN accounting period (provision opens the current month).
-  const day = new Date(Date.now() + 60_000).toISOString().slice(0, 10);
-  const je = await api<{ entryId: string }>(merAdmin, 'POST', `/tenants/${merTenantId}/journal-entries`, {
-    bookId, postingDate: day, valueDate: day, description: 'Opening float', reference: `e2e-${randomUUID().slice(0, 8)}`,
-    lines: [
-      { glAccountId: gl[0].id, direction: 'DEBIT', amount: '250000', memo: 'cash in' },
-      { glAccountId: gl[gl.length - 1].id, direction: 'CREDIT', amount: '250000', memo: 'revenue' },
-    ],
-  });
-  expect(je.status, `balanced JE created (status=${je.status}): ${JSON.stringify(je.json)}`).toBeLessThan(300);
-  expect((await api(merAdmin, 'POST', `/tenants/${merTenantId}/journal-entries/${je.json.entryId}/submit-for-approval`, {})).status).toBe(200);
-  expect((await api(merChecker, 'POST', `/tenants/${merTenantId}/journal-entries/${je.json.entryId}/approve`, {})).status).toBe(200);
-  const { json: entry } = await api<{ status: string }>(merAdmin, 'GET', `/tenants/${merTenantId}/journal-entries/${je.json.entryId}`);
-  expect(entry.status, 'commit confirmed → FINALIZED').toBe('FINALIZED');
-  await merAdmin.page.goto(`/merchant/journal?entry=${je.json.entryId}`);
+  await merAdmin.page.goto(`/merchant/journal?entry=${entryId}`);
   await expect(merAdmin.page.locator('[data-posting-state="FINALIZED"]').first()).toBeVisible();
 
   /* ── SCENE 9 · curtain call ── */
   console.log('\n=== ONBOARDING CHAIN COMPLETE ===\n', JSON.stringify({
-    manufacturer: mfrTenantId, distributor: distTenantId, merchant: merTenantId, book: bookId, entry: je.json.entryId,
+    manufacturer: mfrTenantId, distributor: distTenantId, merchant: merTenantId, book: bookId, entry: entryId,
     users: { mfrAdminUsername, mfrCheckerUsername, distAdminUsername, merAdminUsername, named },
   }, null, 2));
   await merAdmin.page.screenshot({ path: 'test-results/chain-final.png', fullPage: true });

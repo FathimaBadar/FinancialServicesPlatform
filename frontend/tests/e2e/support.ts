@@ -180,6 +180,87 @@ export const UNREGISTERED_WIDGET = /not registered yet/i;
 export const NO_ACCESS_WALL = 'No access to this portal';
 
 /**
+ * File a KYC application through the REAL filing form — the kyc.manage “New application”
+ * drawer: five steps (Company · Business · Addresses · Owners · Bank accounts), validation
+ * on Next/Submit, selects fed by the plugin's master values. Equivalent data to kycApplication.
+ * Returns the created case id, read off the drawer's ?case= deep link.
+ */
+export async function fileKycUi(
+  session: Session, portal: 'manufacturer' | 'distributor',
+  subType: 'DISTRIBUTOR' | 'MERCHANT', legalName: string,
+): Promise<string> {
+  const page = session.page;
+  const regNo = `${100000 + Math.floor(Math.random() * 300000)}`;
+  const taxId = `${10000000 + Math.floor(Math.random() * 90000000)}`;
+  const accountNo = `1${String(Math.floor(Math.random() * 10_000_000)).padStart(8, '0')}`;
+  await page.goto(`/${portal}/onboarding`);
+  await page.getByRole('button', { name: 'New application' }).click();
+
+  // Company — the master values (entity type) load async with the drawer; wait for options.
+  const entityType = page.getByLabel('Entity type');
+  await expect(entityType.locator('option')).not.toHaveCount(0, { timeout: 30_000 });
+  await page.getByLabel('Organization type').selectOption({ label: subType === 'DISTRIBUTOR' ? 'Distributor' : 'Merchant' });
+  await entityType.selectOption({ label: 'Private Limited / LLC' });
+  await page.getByLabel('Registered name').fill(legalName);
+  await page.getByLabel('BIPA registration no.').fill(regNo);
+  await page.getByLabel('Tax ID (TIN)').fill(taxId);
+  await page.getByLabel('Incorporation date').fill('2018-06-01');
+
+  // Business — volume/avg ticket are major units in the form (the widget converts to minor).
+  await page.getByRole('button', { name: 'Next ›' }).click();
+  await page.getByLabel('Merchant category').selectOption({ label: 'Grocery Stores' });
+  await page.getByLabel('Expected monthly volume (NAD)').fill('500000');
+  await page.getByLabel('Average ticket (NAD)').fill('2500');
+
+  // Addresses — operating address defaults to “same as registered”.
+  await page.getByRole('button', { name: 'Next ›' }).click();
+  await page.getByLabel('Street address').fill(`St ${suffix()}, Windhoek`);
+  await page.getByLabel('Town / city').fill('Windhoek');
+  await page.getByLabel('Region').selectOption({ label: 'Khomas' });
+  // postal code is optional — left empty
+
+  // Owners — one UBO at 100 %.
+  await page.getByRole('button', { name: 'Next ›' }).click();
+  const owner = page.locator('fieldset', { hasText: 'Owner 1' });
+  await owner.getByLabel('Full name').fill('Elsi Hove');
+  await owner.getByLabel('ID document').selectOption({ label: 'National ID' });
+  await owner.getByLabel('ID number').fill('80021400123');
+  await owner.getByLabel('Date of birth').fill('1980-02-14');
+  await owner.getByLabel('Nationality').selectOption({ label: 'Namibia' });
+  await owner.getByLabel('Ownership %').fill('100');
+
+  // Bank accounts — one settlement account.
+  await page.getByRole('button', { name: 'Next ›' }).click();
+  const bank = page.locator('fieldset', { hasText: 'Account 1' });
+  await bank.getByLabel('Account holder').fill(legalName);
+  await bank.getByLabel('Bank').selectOption({ label: 'Bank Windhoek' });
+  await bank.getByLabel('Branch code').fill('481972');
+  await bank.getByLabel('Account number').fill(accountNo);
+  await bank.getByLabel('Account type').selectOption({ label: 'Current / cheque' });
+
+  await page.getByRole('button', { name: 'Submit application' }).click();
+  await expect(page.getByText(`${legalName} was submitted for review as `)).toBeVisible({ timeout: 10_000 });
+  const url = new URL(page.url());
+  expect(url.searchParams.get('case'), 'drawer deep-links to the created case').toMatch(/^[0-9a-f-]+$/);
+  return url.searchParams.get('case')!;
+}
+
+/**
+ * Approve a pending KYC case through the REAL decision panel (kyc.manage case drawer):
+ * Approve → confirm in the alertdialog → wait for the decided state.
+ */
+export async function approveKycUi(session: Session, portal: 'manufacturer' | 'distributor', caseId: string): Promise<void> {
+  const page = session.page;
+  // /kyc/reviews is the checker's screen (kyc.approve gate) — /onboarding is maker-only.
+  await page.goto(`/${portal}/kyc/reviews?case=${caseId}`);
+  await expect(page.getByText(NO_ACCESS_WALL)).toHaveCount(0, { timeout: 10_000 });
+  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  const confirm = page.getByRole('alertdialog', { name: 'Approve this application?' });
+  await confirm.getByRole('button', { name: 'Approve', exact: true }).click();
+  await expect(page.getByText('approved — the organization is now active')).toBeVisible({ timeout: 10_000 });
+}
+
+/**
  * The applicant admin username the KYC saga provisions — mirrors
  * KycOnboardingSagaService.adminUsername (slug of the legal name, ≤40 chars, + case-number tail).
  */

@@ -19,8 +19,8 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import {
-  api, BOOT_PASS, clearActAs, ensureKycPlugin, kycApplication, NO_ACCESS_WALL, PERSON_PASS, PLATFORM_TENANT_ID,
-  pendingApproval, pollUntil, sagaAdminUsername, sessionUser, signIn, suffix, type Session,
+  api, approveKycUi, BOOT_PASS, clearActAs, ensureKycPlugin, fileKycUi, NO_ACCESS_WALL, PERSON_PASS,
+  PLATFORM_TENANT_ID, pendingApproval, pollUntil, sagaAdminUsername, sessionUser, signIn, suffix, type Session,
 } from './support';
 
 test.describe.configure({ mode: 'serial' });
@@ -103,19 +103,16 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
     'kyc plugin readiness on the manufacturer');
 
   /* ── SCENE 4 · manufacturer onboards the DISTRIBUTOR (KYC saga; no SQL shim) ── */
-  await mfrAdmin.page.goto('/manufacturer/onboarding');
-  await expect(mfrAdmin.page.getByRole('button', { name: 'New application' })).toBeVisible(); // [UI] screen exists (GAP-2)
+  // [UI] filing goes through the real five-step form (Company · Business · Addresses ·
+  // Owners · Bank accounts), and the checker approves in the real decision panel.
   const distName = `Sunrise Distribution ${s} (Pty) Ltd`;
-  const dist = await api<{ caseId: string; caseNo: string; subjectTenantId: string }>(mfrAdmin, 'POST', '/plugins/kyc/cases',
-    kycApplication('DISTRIBUTOR', distName));
-  expect(dist.status, `distributor case opened: ${JSON.stringify(dist.json)}`).toBe(201);
-  const decided = await api(mfrChecker, 'POST', `/plugins/kyc/cases/${dist.json.caseId}/decisions`,
-    { decision: 'APPROVE', reason: 'screening clean, UBO verified', expectedVersion: null });
-  expect(decided.status, `distributor case approved: ${JSON.stringify(decided.json)}`).toBe(200);
-  const distTenantId = dist.json.subjectTenantId;
+  const distCaseId = await fileKycUi(mfrAdmin, 'manufacturer', 'DISTRIBUTOR', distName);
+  await approveKycUi(mfrChecker, 'manufacturer', distCaseId);
+  const { json: distView } = await api<{ caseNo: string; subjectTenantId: string }>(mfrAdmin, 'GET', `/plugins/kyc/cases/${distCaseId}`);
+  const distTenantId = distView.subjectTenantId;
   await pollUntil(async () => (await api<{ status: string }>(mfrAdmin, 'GET', `/tenants/${distTenantId}`)).json.status === 'ACTIVE',
     'distributor ACTIVE');
-  const distAdminUsername = sagaAdminUsername(distName, dist.json.caseNo);
+  const distAdminUsername = sagaAdminUsername(distName, distView.caseNo);
 
   /* ── SCENE 5 · distributor portal, fully rendered ── */
   const distAdmin = await signIn(browser, 'distributor admin', '/distributor', distAdminUsername, PERSON_PASS);
@@ -123,18 +120,15 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   await distAdmin.page.goto('/distributor/network');
   await expect(distAdmin.page.locator('[data-widget="kyc.orgs"]')).toBeVisible();
 
-  /* ── SCENE 6 · distributor onboards the MERCHANT ── */
+  /* ── SCENE 6 · distributor onboards the MERCHANT (real form + decision panel) ── */
   const merName = `Namib Fresh Produce ${s} (Pty) Ltd`;
-  const mer = await api<{ caseId: string; caseNo: string; subjectTenantId: string }>(distAdmin, 'POST', '/plugins/kyc/cases',
-    kycApplication('MERCHANT', merName));
-  expect(mer.status, `merchant case opened: ${JSON.stringify(mer.json)}`).toBe(201);
-  const merDecided = await api(distChecker, 'POST', `/plugins/kyc/cases/${mer.json.caseId}/decisions`,
-    { decision: 'APPROVE', reason: 'screening clean', expectedVersion: null });
-  expect(merDecided.status).toBe(200);
-  const merTenantId = mer.json.subjectTenantId;
+  const merCaseId = await fileKycUi(distAdmin, 'distributor', 'MERCHANT', merName);
+  await approveKycUi(distChecker, 'distributor', merCaseId);
+  const { json: merView } = await api<{ caseNo: string; subjectTenantId: string }>(distAdmin, 'GET', `/plugins/kyc/cases/${merCaseId}`);
+  const merTenantId = merView.subjectTenantId;
   await pollUntil(async () => (await api<{ status: string }>(distAdmin, 'GET', `/tenants/${merTenantId}`)).json.status === 'ACTIVE',
     'merchant ACTIVE');
-  const merAdminUsername = sagaAdminUsername(merName, mer.json.caseNo);
+  const merAdminUsername = sagaAdminUsername(merName, merView.caseNo);
 
   /* ── SCENE 7 · inside the merchant: a NAMED checker user, four-eyes, in the merchant portal ── */
   const merAdmin = await signIn(browser, 'merchant admin', '/merchant', merAdminUsername, PERSON_PASS);

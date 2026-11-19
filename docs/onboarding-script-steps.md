@@ -284,11 +284,13 @@ it after: `frontend/tests/e2e/gap-probes.spec.ts` (live stack) and
 | GAP-14 | The original spec itself was broken: `/bff/session` read as `{username}` (it is `{authenticated,user}`), one CSRF token shared by all personas, manifest path pointed outside the repo, polling without delay; Playwright under `--bun` cannot resolve relative request URLs. | `tests/e2e/support.ts`; `make test-e2e` runs Playwright on Node (still launched by `bunx`). |
 
 **Still open (honest list):** Scene 8 is now fully click-driven (CoA provision + JE create/
-submit/approve via the journal.entry and ledger.accounts widgets). The KYC application 5-tab
-FORM and the decision buttons are the last chain legs still riding the plugin API. Period
-open/close has no API yet (`period.control` is read-only and says so). F-8 password
-change, F-10 bank accounts, F-12 checker notifications are unchanged backlog. F-9 is done
-(see the happy-twin note below).
+submit/approve via the journal.entry and ledger.accounts widgets). The chain's filing and
+decision legs are now UI-driven too — Scenes 4/6 file through the kyc.manage five-step form
+(`fileKycUi`) and the checker approves in the real decision panel on `/kyc/reviews`
+(`approveKycUi`); only the twin's REQUEST_INFO/REJECT legs remain API-lane (negative paths
+assert the API contract directly). Period open/close has no API yet (`period.control` is
+read-only and says so). F-8 password change, F-10 bank accounts, F-12 checker notifications
+are unchanged backlog. F-9 is done (see the happy-twin note below).
 
 ### How to verify
 
@@ -311,7 +313,7 @@ flips those steps to `[UI]` automatically.
 | # | Missing feature | Status | Type | Unblocks (scene → step) | Acceptance: the script is UI-only here when… |
 |---|-----------------|--------|------|--------------------------|----------------------------------------------|
 | F-1 | **Roles & permissions CRUD** + a “grant right” screen (four-eyes grant) | **✅ done** | core API + portal screen | GAP-1 shims (Sc 2.7, 4.5, 6.4) | the TENANT_ADMIN of a fresh tenant already holds `org.onboard_child`/`org.create`/`kyc.*`/`user.manage`, or an admin grants them via a screen |
-| F-2 | **Register + route the onboarding widgets** (`onboard.child`, `kyc.tasks`, `kyc.application`, `kyc.decisions` — or wire `kyc.manage` into the org menu) | **✅ done — filing form remains API-lane** | frontend | GAP-2 (Sc 4.1–4.3, Sc 6.1–6.2) | a maker files the KYC case and a checker decides it by clicking |
+| F-2 | **Register + route the onboarding widgets** (`onboard.child`, `kyc.tasks`, `kyc.application`, `kyc.decisions` — or wire `kyc.manage` into the org menu) | **✅ done — chain filing/decision now click-driven** (Scenes 4/6 via the five-step form + `/kyc/reviews` decision panel, `fileKycUi`/`approveKycUi`) | frontend | GAP-2 (Sc 4.1–4.3, Sc 6.1–6.2) | a maker files the KYC case and a checker decides it by clicking |
 | F-3 | **Approvals queue screen** (`approvals.queue` widget: list, approve, reject+reason across USER_*/PLUGIN_*/KYC) | **✅ done** | frontend | GAP-3, GAP-8 (Sc 7.3) | every four-eyes checker half is a click in a screen |
 | F-4 | **Plugin governance screen** (types: register; per tenant: install/uninstall, readiness state) | **✅ done** | frontend | GAP-4 (Sc 2.1–2.6) | platform admins register/install the plugin by clicking |
 | F-5 | **Portal eligibility fix + merchant portal entry** (stamp PSP subType or type-aware eligibility; add `merchant.html` identity) | **✅ done** | frontend + core | GAP-5, GAP-6 (Sc 3.2, Sc 7.1) | manufacturer and merchant personnel land in a rendered portal, not the wall |

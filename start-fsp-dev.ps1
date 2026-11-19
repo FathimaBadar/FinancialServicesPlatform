@@ -39,8 +39,8 @@ Write-Host "Repo root: $SCRIPT_DIR" -ForegroundColor Cyan
 
 if ($NoStack) {
     Write-Host "Launching SPA only..." -ForegroundColor Yellow
-    & powershell -NoExit -Command "Set-Location -Path '$SCRIPT_DIR\frontend'; bun run dev"
+    Start-Process powershell -ArgumentList '-NoExit', '-Command', "Set-Location -Path '$SCRIPT_DIR\frontend'; bun run dev" -WindowStyle Normal
 } else {
     Write-Host "Launching full dev stack (infra + TigerBeetle + 5 services + SPA)..." -ForegroundColor Yellow
-    & powershell -NoExit -Command "& '$SCRIPT_DIR\scripts\dev-windows.ps1' dev"
+    & "$SCRIPT_DIR\scripts\dev-windows.ps1" dev
 }

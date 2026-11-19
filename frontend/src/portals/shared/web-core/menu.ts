@@ -57,7 +57,7 @@ export const MENU_ITEMS: MenuItem[] = [
     perm: ['kyc.review', 'org.create'], portals: ['platform'], group: 'User Management',
     widgets: ['kyc.orgs', 'onboard.psp', 'onboard.list'] },
   { id: 'onboarding', label: 'Onboarding', icon: '⇲', link: '/onboarding',
-    perm: ['org.create'], portals: ['platform'], group: 'Onboarding', widgets: ['onboard.list', 'onboard.psp'] },
+    perm: ['org.create'], portals: ['platform'], group: 'Onboarding', widgets: ['onboard.list'] },
   { id: 'roles', label: 'Role', icon: '⚿', link: '/rbac',
     perm: ['role.view', 'role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['rbac.matrix'] },
   { id: 'platform-approvals', label: 'Approvals', icon: '✓', link: '/approvals',

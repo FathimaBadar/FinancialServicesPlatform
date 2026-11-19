@@ -3,8 +3,11 @@
  * Shows onboarded organizations with their KYC standing:
  *   - paginated, server-side searchable + sortable org directory
  *   - each org shows its KYC case status (case no., status, risk, submitted)
- *   - "New onboarding" opens the KYC create form (/kyc/reviews?case=new)
- *   - clicking an org opens its KYC case (/kyc/reviews?case=<caseId>)
+ *   - "New onboarding" opens the KYC add form (the kyc.manage CaseForm) in a
+ *     drawer — URL state onew=1 (the /kyc/reviews route is org-portal only, so
+ *     the platform portal must not navigate there)
+ *   - clicking an org without a KYC case opens the same add form; an org with
+ *     a case opens it in the review queue (/kyc/reviews?case=<caseId>)
  */
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -13,11 +16,19 @@ import { clsx } from 'clsx';
 import { useWidgetRuntime } from '../../core/runtime';
 import { Button, Chip, EmptyState, Input, PageHeader, Panel, StatusBadge } from '../../../ui/atoms';
 import { StatePanel } from '../../kit/StatePanel';
+import { Drawer } from '../../kit/Drawer';
+import { NoticeBar } from '../../kit/Notice';
+import type { Notice } from '../../kit/Notice';
 import { isForbidden, toProblem } from '../../kit/problem';
+import { can as canAny, useSession } from '../../../web-core/session-core';
+import { readProblem } from '../../../web-core/api';
 import {
   useOrgPage, useKycCasePage, joinOrgsToKyc, DEFAULT_QUERY, PAGE_SIZES,
   type OrgListQuery, type OrgWithKyc, type KycListQuery, KYC_DEFAULT_QUERY,
 } from './model';
+import { emptyForm, useCaseCommand, useMasterValues } from '../../kyc/manage/model';
+import type { CaseFormValues } from '../../kyc/manage/model';
+import { CaseForm } from '../../kyc/manage/CaseForm';
 
 const SORT_KEYS = ['legalName', 'status', 'createdAt', 'subType'] as const;
 
@@ -31,9 +42,11 @@ interface OrgTableProps {
   query: OrgListQuery;
   onSort: (key: string) => void;
   onOpen: (row: OrgWithKyc) => void;
+  /** set when the viewer holds tenant.act_as: "Act as" per ACTIVE row (core re-decides on start) */
+  actAs?: { busyId: string | null; onActAs: (row: OrgWithKyc) => void };
 }
 
-function OrgTable({ rows, query, onSort, onOpen }: OrgTableProps) {
+function OrgTable({ rows, query, onSort, onOpen, actAs }: OrgTableProps) {
   const { key: sortKey, dir } = parseSort(query.sort);
   return (
     <div className="overflow-x-auto">
@@ -68,6 +81,7 @@ function OrgTable({ rows, query, onSort, onOpen }: OrgTableProps) {
                 </th>
               );
             })}
+            {actAs && <th scope="col" className="border-b border-line px-3 py-2 text-right font-bold"><span className="sr-only">Actions</span></th>}
           </tr>
         </thead>
         <tbody>
@@ -101,6 +115,24 @@ function OrgTable({ rows, query, onSort, onOpen }: OrgTableProps) {
                 {r.kycRiskRating ? <Chip tone={r.kycRiskRating === 'HIGH' ? 'warn' : 'neutral'}>{r.kycRiskRating}</Chip> : '—'}
               </td>
               <td className="text-dim whitespace-nowrap border-b border-line px-3 py-2.5 text-right text-xs tabular-nums">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}</td>
+              {actAs && (
+                <td className="whitespace-nowrap border-b border-line px-3 py-2.5 text-right">
+                  {r.status === 'ACTIVE' && (
+                    <Button
+                      variant="ghost"
+                      data-action="act-as"
+                      disabled={actAs.busyId !== null}
+                      aria-busy={actAs.busyId === r.id}
+                      aria-label={`Act as ${r.legalName ?? r.id}`}
+                      title="Work as this organization — manage its users, roles and onboarding. Audited as you."
+                      onClick={(e) => { e.stopPropagation(); actAs.onActAs(r); }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      {actAs.busyId === r.id ? 'Starting…' : 'Act as'}
+                    </Button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -184,6 +216,82 @@ export function OnboardList() {
   const orgPage = useOrgPage(port, query, context.orgId);
   const kycPage = useKycCasePage(port, kycQuery, context.orgId);
 
+  // ---- "New onboarding": the KYC add form in a drawer (URL state onew=1, ui-std §7)
+  // creating a KYC application is the plugin's org.onboard_child operation —
+  // core + the plugin re-decide every call; the held permission only shapes affordances.
+  const canCreate = context.permissions.includes('org.onboard_child');
+  const formOpen = params.get('onew') === '1';
+  const master = useMasterValues(port, formOpen);
+  const cmd = useCaseCommand(port);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const say = useCallback((kind: Notice['kind'], text: string) => setNotice({ id: Date.now(), kind, text }), []);
+
+  // ---- "Act as" (plans/act-as-tenant-plan.md): step into an org below yours and work as it —
+  // its users, roles, onboarding. Core decides (tenant.act_as at HOME, strictly below, ACTIVE)
+  // and audits every action as the real person; the banner + Exit live in the app shell.
+  const session = useSession();
+  const maySudo = canAny(session.permissions, ['tenant.act_as']);
+  const [actingId, setActingId] = useState<string | null>(null);
+  const actAs = useCallback(async (r: OrgWithKyc) => {
+    setActingId(r.id);
+    setNotice(null);
+    try {
+      await session.startActAs(r.id);
+      navigate('/users');
+    } catch (e) {
+      say('bad', `Couldn’t act as ${r.legalName ?? 'this organization'} — ${readProblem(e).detail}`);
+    } finally {
+      setActingId(null);
+    }
+  }, [session, navigate, say]);
+
+  const closeForm = useCallback(() => {
+    setDirty(false);
+    setConfirmDiscard(false);
+    cmd.reset();
+    patch({ onew: null });
+  }, [cmd, patch]);
+  const requestClose = useCallback(
+    () => (dirty ? setConfirmDiscard(true) : closeForm()),
+    [dirty, closeForm],
+  );
+  const openForm = useCallback(() => {
+    cmd.reset();
+    setDirty(false);
+    setConfirmDiscard(false);
+    patch({ onew: '1' });
+  }, [cmd, patch]);
+
+  const submitForm = useCallback((values: CaseFormValues) => {
+    cmd.mutate({ kind: 'create', values }, {
+      onSuccess: (saved) => {
+        setDirty(false);
+        closeForm();
+        say('ok', `${saved.legalName} was submitted for review as ${saved.caseNo}.`);
+      },
+    });
+  }, [cmd, closeForm, say]);
+
+  const onSort = useCallback((key: string) => {
+    const cur = parseSort(query.sort);
+    const nextDir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc';
+    setQuery({ sort: `${key},${nextDir}`, page: 0 });
+  }, [query.sort, setQuery]);
+
+  const onOpen = useCallback((r: OrgWithKyc) => {
+    if (r.hasKyc && r.kycCaseId) {
+      navigate(`/kyc/reviews?case=${r.kycCaseId}`);
+    } else {
+      openForm();
+    }
+  }, [navigate, openForm]);
+
+  const onNewOnboarding = useCallback(() => {
+    openForm();
+  }, [openForm]);
+
   if (orgPage.isPending || kycPage.isPending) return <StatePanel kind="loading" title="Loading organizations" />;
   if (orgPage.isError) {
     if (isForbidden(orgPage.error)) {
@@ -202,24 +310,6 @@ export function OnboardList() {
   const shown = rows.length;
   const hasNext = orgPage.data?.hasNext ?? false;
 
-  const onSort = useCallback((key: string) => {
-    const cur = parseSort(query.sort);
-    const nextDir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc';
-    setQuery({ sort: `${key},${nextDir}`, page: 0 });
-  }, [query.sort, setQuery]);
-
-  const onOpen = useCallback((r: OrgWithKyc) => {
-    if (r.hasKyc && r.kycCaseId) {
-      navigate(`/kyc/reviews?case=${r.kycCaseId}`);
-    } else {
-      navigate('/kyc/reviews?case=new');
-    }
-  }, [navigate]);
-
-  const onNewOnboarding = useCallback(() => {
-    navigate('/kyc/reviews?case=new');
-  }, [navigate]);
-
   // Always-visible header + search, even when there are 0 orgs
   const header = (
     <PageHeader
@@ -231,6 +321,43 @@ export function OnboardList() {
         </Button>
       }
     />
+  );
+
+  const formDrawer = formOpen && (
+    <Drawer
+      wide
+      title="New KYC application"
+      subtitle="Onboard an organization"
+      onClose={requestClose}
+      banner={
+        confirmDiscard ? (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line bg-raised px-5 py-3 text-[13px]">
+            <span className="flex-1">Discard your unsaved changes?</span>
+            <Button variant="ghost" onClick={() => setConfirmDiscard(false)}>Keep editing</Button>
+            <Button variant="danger" onClick={closeForm}>Discard</Button>
+          </div>
+        ) : undefined
+      }
+    >
+      {canCreate ? (
+        <CaseForm
+          key="new"
+          mode="create"
+          initial={emptyForm()}
+          master={master.data}
+          masterLoading={master.isPending}
+          busy={cmd.isPending}
+          problem={cmd.error ? toProblem(cmd.error) : null}
+          onSubmit={submitForm}
+          onCancel={requestClose}
+          onDirtyChange={setDirty}
+        />
+      ) : (
+        <div className="p-5">
+          <EmptyState title="You can’t start applications" hint="Starting a KYC application needs the org.onboard_child permission." />
+        </div>
+      )}
+    </Drawer>
   );
 
   const searchBox = (
@@ -279,6 +406,8 @@ export function OnboardList() {
         {header}
         {searchBox}
         <EmptyState title="No organizations match" hint="Try a different search." />
+        <NoticeBar notice={notice} onDismiss={() => setNotice(null)} />
+        {formDrawer}
       </Panel>
     );
   }
@@ -288,6 +417,8 @@ export function OnboardList() {
         {header}
         {searchBox}
         <EmptyState title="No organizations yet" hint="Start with “New onboarding” to create one." />
+        <NoticeBar notice={notice} onDismiss={() => setNotice(null)} />
+        {formDrawer}
       </Panel>
     );
   }
@@ -296,8 +427,15 @@ export function OnboardList() {
     <Panel className="p-4">
       {header}
       {searchBox}
+      <NoticeBar notice={notice} onDismiss={() => setNotice(null)} />
       <div aria-busy={orgPage.isFetching} className={orgPage.isFetching && !orgPage.isPending ? 'opacity-70 transition-opacity' : undefined}>
-        <OrgTable rows={rows} query={query} onSort={onSort} onOpen={onOpen} />
+        <OrgTable
+          rows={rows}
+          query={query}
+          onSort={onSort}
+          onOpen={onOpen}
+          actAs={maySudo ? { busyId: actingId, onActAs: (r) => void actAs(r) } : undefined}
+        />
       </div>
       <OrgPager
         page={query.page}
@@ -310,7 +448,9 @@ export function OnboardList() {
       />
       <p className="text-dim mt-3 text-xs">
         Click an organization to view its KYC case · “New onboarding” creates a new case
+        {maySudo && ' · “Act as” lets you work as an organization — manage its users and roles'}
       </p>
+      {formDrawer}
     </Panel>
   );
 }

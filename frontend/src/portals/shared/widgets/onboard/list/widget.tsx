@@ -202,45 +202,6 @@ export function OnboardList() {
   const shown = rows.length;
   const hasNext = orgPage.data?.hasNext ?? false;
 
-  if (rows.length === 0 && query.q.trim().length >= 2) {
-    return (
-      <Panel className="p-4">
-        <PageHeader title="Organizations" subtitle="Onboarding directory" />
-        <div className="mb-4">
-          <label className="relative block">
-            <span className="sr-only">Search organizations</span>
-            <Input
-              type="search"
-              placeholder="Search by legal name"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-            />
-          </label>
-        </div>
-        <EmptyState title="No organizations match" hint="Try a different search." />
-      </Panel>
-    );
-  }
-  if (rows.length === 0) {
-    return (
-      <Panel className="p-4">
-        <PageHeader title="Organizations" subtitle="Onboarding directory" />
-        <div className="mb-4">
-          <label className="relative block">
-            <span className="sr-only">Search organizations</span>
-            <Input
-              type="search"
-              placeholder="Search by legal name"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-            />
-          </label>
-        </div>
-        <EmptyState title="No organizations yet" hint="Start with “New onboarding” to create one." />
-      </Panel>
-    );
-  }
-
   const onSort = useCallback((key: string) => {
     const cur = parseSort(query.sort);
     const nextDir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc';
@@ -259,54 +220,82 @@ export function OnboardList() {
     navigate('/kyc/reviews?case=new');
   }, [navigate]);
 
+  // Always-visible header + search, even when there are 0 orgs
+  const header = (
+    <PageHeader
+      title="Onboarding"
+      subtitle={`Organizations · ${rows.length} onboarded`}
+      actions={
+        <Button variant="primary" data-action="org.onboard" onClick={onNewOnboarding}>
+          New onboarding
+        </Button>
+      }
+    />
+  );
+
+  const searchBox = (
+    <div className="mb-4 grid gap-3">
+      <label className="relative block">
+        <span className="sr-only">Search organizations</span>
+        <Input
+          type="search"
+          placeholder="Search by legal name"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          onBlur={(e) => {
+            const t = e.target.value.trim();
+            if (t.length >= 2) setQuery({ q: t, page: 0 });
+            else if (t.length === 0 && query.q.length > 0) setQuery({ q: '', page: 0 });
+          }}
+        />
+      </label>
+      <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+        <span className="text-dim">Sort:</span>
+        {SORT_KEYS.map((k) => {
+          const cur = parseSort(query.sort);
+          const active = cur.key === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onSort(k)}
+              className={clsx(
+                'rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors',
+                active ? 'border-transparent bg-accent text-invert' : 'border-line text-dim hover:border-line-strong',
+              )}
+            >
+              {k} {active && (cur.dir === 'asc' ? '▲' : '▼')}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  if (rows.length === 0 && query.q.trim().length >= 2) {
+    return (
+      <Panel className="p-4">
+        {header}
+        {searchBox}
+        <EmptyState title="No organizations match" hint="Try a different search." />
+      </Panel>
+    );
+  }
+  if (rows.length === 0) {
+    return (
+      <Panel className="p-4">
+        {header}
+        {searchBox}
+        <EmptyState title="No organizations yet" hint="Start with “New onboarding” to create one." />
+      </Panel>
+    );
+  }
+
   return (
     <Panel className="p-4">
-      <PageHeader
-        title="Onboarding"
-        subtitle={`Organizations · ${rows.length} onboarded`}
-        actions={
-          <Button variant="primary" data-action="org.onboard" onClick={onNewOnboarding}>
-            New onboarding
-          </Button>
-        }
-      />
-      <div className="mb-4 grid gap-3">
-        <label className="relative block">
-          <span className="sr-only">Search organizations</span>
-          <Input
-            type="search"
-            placeholder="Search by legal name"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            onBlur={(e) => {
-              const t = e.target.value.trim();
-              if (t.length >= 2) setQuery({ q: t, page: 0 });
-              else if (t.length === 0 && query.q.length > 0) setQuery({ q: '', page: 0 });
-            }}
-          />
-        </label>
-        <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
-          <span className="text-dim">Sort:</span>
-          {SORT_KEYS.map((k) => {
-            const cur = parseSort(query.sort);
-            const active = cur.key === k;
-            return (
-              <button
-                key={k}
-                type="button"
-                aria-pressed={active}
-                onClick={() => onSort(k)}
-                className={clsx(
-                  'rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors',
-                  active ? 'border-transparent bg-accent text-invert' : 'border-line text-dim hover:border-line-strong',
-                )}
-              >
-                {k} {active && (cur.dir === 'asc' ? '▲' : '▼')}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {header}
+      {searchBox}
       <div aria-busy={orgPage.isFetching} className={orgPage.isFetching && !orgPage.isPending ? 'opacity-70 transition-opacity' : undefined}>
         <OrgTable rows={rows} query={query} onSort={onSort} onOpen={onOpen} />
       </div>

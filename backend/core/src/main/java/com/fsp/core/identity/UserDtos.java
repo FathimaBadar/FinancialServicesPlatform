@@ -29,16 +29,6 @@ public final class UserDtos {
     /** The organization a users page lists — named here so the page needs no tenant-detail read. */
     public record OrgRef(UUID id, String legalName, String type, String subType, int depth) {}
 
-    /**
-     * An organization below the actor's org, for the users page's org picker. {@code manageable}
-     * is core's decision (user.manage reaches it); the SPA only shows it.
-     */
-    public record OrgOption(UUID id, UUID parentTenantId, String legalName, String type, String subType,
-                            int depth, String status, boolean manageable) {}
-
-    /** One page of {@link OrgOption}s (AGENTS §2f envelope). */
-    public record OrgPage(List<OrgOption> items, int page, int size, long totalElements, int totalPages,
-                          boolean hasNext) {}
 
     /** A role the organization defines, plus whether THIS actor may grant/revoke it. */
     public record RoleOption(UUID id, String key, String name, String scope, int permissionCount,

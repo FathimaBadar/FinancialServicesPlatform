@@ -34,8 +34,6 @@ export const SOURCES: DataSources = {
   'users.list':      { '*': { method: 'GET', path: '/api/tenants/{tenantId}/users', query: ['page', 'size', 'q', 'status', 'sort'] } },
   'users.get':       { '*': { method: 'GET', path: '/api/tenants/{tenantId}/users/{personId}' } },
   'users.roles':     { '*': { method: 'GET', path: '/api/tenants/{tenantId}/user-roles' } },
-  'users.org':       { '*': { method: 'GET', path: '/api/tenants/{tenantId}' } },
-  'users.org.children': { '*': { method: 'GET', path: '/api/tenants/{tenantId}/children' } },
   'kyc.case.get':    { '*': { method: 'GET', path: '/api/tenants/{tenantId}/kyc' } },
   'kyc.tasks.get':   { '*': { method: 'GET', path: '/api/approvals?tenantId={tenantId}' } },
   'permissions.all': { '*': { method: 'GET', path: '/api/permissions' } },

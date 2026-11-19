@@ -18,7 +18,7 @@ import { Pager } from '../../kit/Pager';
 import type { Notice } from '../../kit/Notice';
 import { UserToolbar } from './UserToolbar';
 import {
-  DEFAULT_PAGE_SIZE, DEFAULT_SORT, PAGE_SIZES, SORT_OPTIONS, STATUS_FILTERS, toProblem, useOrgOptions, useRoleOptions,
+  DEFAULT_PAGE_SIZE, DEFAULT_SORT, PAGE_SIZES, SORT_OPTIONS, STATUS_FILTERS, toProblem, useRoleOptions,
   useUser, useUserCommand, useUserList,
 } from './model';
 import type { SortId, StatusFilter, UserCommand, UserFormValues, UserListQuery, UserRow } from './model';
@@ -41,11 +41,11 @@ export function UsersOrganization() {
   const { port, context } = useWidgetRuntime();
   const session = useSession();
   const meId = session.user?.userId ?? null;
-  const rootOrgId = context.orgId ?? '';
+  // ONE org: the signed-in org, or the org being acted as (the host swaps context.orgId)
+  const orgId = context.orgId ?? '';
 
-  // ---- URL state: ?org= &q= &status= &sort= &page= &size= &user=<id|new> &edit=1
+  // ---- URL state: ?q= &status= &sort= &page= &size= &user=<id|new> &edit=1
   const [params, setParams] = useSearchParams();
-  const orgId = params.get('org') ?? rootOrgId;
   const query = params.get('q') ?? '';
   const statusParam = params.get('status') as StatusFilter | null;
   const status: StatusFilter = statusParam && STATUS_IDS.includes(statusParam) ? statusParam : 'current';
@@ -74,7 +74,6 @@ export function UsersOrganization() {
   );
 
   // ---- server state
-  const orgs = useOrgOptions(port, rootOrgId);
   const debouncedQuery = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS);
   const listQuery: UserListQuery = useMemo(
     () => ({ page, size, q: debouncedQuery, status, sort }),
@@ -98,7 +97,7 @@ export function UsersOrganization() {
   const pageRow = openId && openId !== 'new' ? users.find((u) => u.id === openId) : undefined;
   const one = useUser(port, orgId, openId, pageRow);
   const openUser: UserRow | undefined = openId && openId !== 'new' ? one.data : undefined;
-  const orgName = orgs.data?.find((o) => o.id === orgId)?.legalName ?? session.user?.tenantName ?? 'this organization';
+  const orgName = list.data?.org?.legalName ?? session.actAs?.targetTenantName ?? session.user?.tenantName ?? 'this organization';
 
   // ---- drawer navigation
   const open = (u: UserRow) => {
@@ -251,9 +250,6 @@ export function UsersOrganization() {
       />
       <NoticeBar notice={notice} onDismiss={dismissNotice} />
       <UserToolbar
-        orgs={orgs.data}
-        orgId={orgId}
-        onOrg={(id) => patch({ org: id === rootOrgId ? null : id, user: null, edit: null, page: null })}
         query={query}
         onQuery={(q) => patch({ q, page: null })}
         status={status}

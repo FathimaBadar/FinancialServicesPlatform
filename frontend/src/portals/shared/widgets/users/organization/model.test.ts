@@ -12,6 +12,7 @@ import { FIXTURES } from '../../fixtures';
 import type { FixtureRequest } from '../../core/ports';
 import { listParams, SORT_OPTIONS, STATUS_FILTERS } from './model';
 import type { UserPage } from './model';
+import usersOrganizationWidget from './index';
 
 const T = '11111111-1111-1111-1111-111111111111';
 
@@ -45,6 +46,7 @@ describe('users.list is a server-side page', () => {
     const page: UserPage = {
       items: [], page: 0, size: 20, totalElements: 0, totalPages: 0, hasNext: false, sort: 'username,asc',
       counts: { CURRENT: 0, PENDING: 0, ACTIVE: 0, DISABLED: 0, ARCHIVED: 0 },
+      org: { id: T, legalName: 'Acme', type: 'TENANT', subType: null, depth: 2 },
     };
     for (const f of STATUS_FILTERS) expect(page.counts[f.countKey], f.id).toBe(0);
   });
@@ -71,5 +73,19 @@ describe('users.list fixture plays the paged server', () => {
   it('searches and filters', () => {
     expect(call({ tenantId: T, q: 'maria' }).items.map((u) => u.username)).toEqual(['maria.nghipondoka']);
     expect(call({ tenantId: T, status: 'ARCHIVED' }).items.map((u) => u.username)).toEqual(['old.account']);
+  });
+});
+
+describe('one org per users page — other orgs are reached by acting as them', () => {
+  it('no longer fans out over /children to build an org switcher (N+1, unbounded)', () => {
+    expect(usersOrganizationWidget.sources).not.toContain('users.org.children');
+    expect(usersOrganizationWidget.sources).not.toContain('users.org');
+    expect(SOURCES['users.org.children']).toBeUndefined();
+  });
+
+  it('the page names the org it lists (own org, or the one being acted as)', () => {
+    const call = FIXTURES['users.list'].default as (r: FixtureRequest) => UserPage;
+    const p = call({ params: { tenantId: T }, body: undefined, permissions: [], scenario: 'default' });
+    expect(p.org.legalName).toBeTruthy();
   });
 });

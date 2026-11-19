@@ -4,7 +4,7 @@
  *
  * Every action is gated server-side by `user.manage` on the target org (core
  * UserAdminController); self-lockout and role escalation are refused by core and
- * pre-empted here. List filters, the selected org and the open user live in the URL
+ * pre-empted here. List filters and the open user live in the URL
  * (ui-std §7) so a view can be linked and survives reload.
  */
 import { defineWidget } from '../../core/manifest';
@@ -19,7 +19,7 @@ const usersOrganizationWidget = defineWidget({
   category: 'Access',
   contexts: ['ANY'],
   requires: ['user.manage'],
-  sources: ['users.list', 'users.roles', 'users.org', 'users.org.children'],
+  sources: ['users.list', 'users.get', 'users.roles'],
   commands: ['user.create', 'user.update', 'user.deactivate', 'user.activate', 'user.remove'],
   actions: [
     { id: 'user.create', label: 'Add user', cell: 'user.manage', command: 'user.create', kind: 'primary' },

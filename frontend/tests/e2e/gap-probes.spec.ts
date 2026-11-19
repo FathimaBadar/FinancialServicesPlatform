@@ -16,7 +16,7 @@
 import { expect, test, type Browser } from '@playwright/test';
 import {
   api, BOOT_PASS, createManufacturer, ensureKycPlugin, NO_ACCESS_WALL, PERSON_PASS, PLATFORM_TENANT_ID,
-  pendingApproval, sessionUser, signIn, suffix, UNREGISTERED_WIDGET,
+  clearActAs, pendingApproval, sessionUser, signIn, suffix, UNREGISTERED_WIDGET,
   type PspFixture, type Session,
 } from './support';
 
@@ -230,6 +230,32 @@ test('USERS-PAGE · the users list is a server page: user #21+ is reachable and 
   await expect(page.getByText('1–20 of 21 users')).toBeVisible();
   await page.getByRole('button', { name: 'Next ›' }).click();
   await expect(page.getByText(names[20])).toBeVisible();
+});
+
+/* ─────── USERS-ACT-AS · another org's users are reached by acting as it (no cross-org switcher) ─────── */
+
+test('USERS-ACT-AS · platform admin acts as an org from Organization and lands on ITS users', async () => {
+  const { json: org } = await api<{ legalName: string }>(platformMaker, 'GET', `/tenants/${psp.tenantId}`);
+  const page = platformMaker.page;
+  await clearActAs(platformMaker); // one live session per person; a failed run may have left one
+
+  // Back Office User is the platform org's own staff: no org switcher, the PSP's admin is not listed
+  await page.goto(`/admin/users?q=${psp.adminUsername}`);
+  await expect(page.getByRole('combobox', { name: 'Organization' })).toHaveCount(0);
+  await expect(page.getByText('No users match')).toBeVisible();
+
+  // Organization → "Act as" on the PSP row → its users page, under the act-as banner
+  await page.goto(`/admin/organizations?oq=${encodeURIComponent(org.legalName)}`);
+  await page.getByRole('button', { name: `Act as ${org.legalName}` }).first().click();
+  await expect(page).toHaveURL(/\/admin\/users/);
+  await expect(page.getByTestId('act-as-banner')).toContainText(org.legalName);
+  await expect(page.locator('[data-widget="users.organization"]')).toContainText(org.legalName);
+  await expect(page.getByText(psp.adminUsername).first()).toBeVisible();
+
+  // Exit returns to the platform's own users
+  await page.getByTestId('act-as-exit').click();
+  await expect(page.getByTestId('act-as-banner')).toHaveCount(0);
+  await clearActAs(platformMaker);
 });
 
 test('GAP-3 · the checker approves a staged user from the Approvals screen (click, not API)', async () => {

@@ -47,6 +47,16 @@ export interface UserPage {
   sort: string;
   /** whole-org counts per status (+ CURRENT = not removed), independent of page / search / filter */
   counts: Record<StatusCountKey, number>;
+  /** the org this page lists — the signed-in org, or the org being acted as */
+  org: OrgRef;
+}
+
+export interface OrgRef {
+  id: string;
+  legalName: string | null;
+  type: string;
+  subType: string | null;
+  depth: number;
 }
 
 export type StatusCountKey = 'CURRENT' | 'PENDING' | 'ACTIVE' | 'DISABLED' | 'ARCHIVED';
@@ -58,14 +68,6 @@ export interface RoleOption {
   scope: string;
   permissionCount: number;
   assignable: boolean;
-}
-
-export interface OrgRow {
-  id: string;
-  legalName: string;
-  depth: number;
-  type: string;
-  parentTenantId: string | null;
 }
 
 /* ------------------------------------------------------------ validation */
@@ -129,7 +131,6 @@ export const userKeys = {
   list: (orgId: string, q: UserListQuery) => ['users', 'org', orgId, 'list', q] as const,
   user: (orgId: string, id: string) => ['users', 'org', orgId, 'user', id] as const,
   roles: (orgId: string) => ['users', 'org', orgId, 'roles'] as const,
-  orgs: (rootOrgId: string) => ['users', 'orgs', rootOrgId] as const,
 };
 
 /* ------------------------------------------------------------------ reads */
@@ -183,33 +184,6 @@ export function useRoleOptions(port: WidgetDataPortLike, orgId: string, enabled:
     queryFn: () => port.request<RoleOption[]>('users.roles', { tenantId: orgId }),
     enabled,
     staleTime: 5 * 60_000,
-  });
-}
-
-/**
- * The organizations this actor can administer: own org + up to two levels below
- * (Phase-0 hierarchy depth). Branches the actor cannot read are silently skipped.
- */
-export function useOrgOptions(port: WidgetDataPortLike, rootOrgId: string) {
-  return useQuery({
-    queryKey: userKeys.orgs(rootOrgId),
-    staleTime: 5 * 60_000,
-    queryFn: async (): Promise<OrgRow[]> => {
-      const root = await port.request<OrgRow>('users.org', { tenantId: rootOrgId });
-      const children = await port
-        .request<OrgRow[]>('users.org.children', { tenantId: rootOrgId })
-        .catch(() => [] as OrgRow[]);
-      const grand = await Promise.all(
-        children.map((c) =>
-          port.request<OrgRow[]>('users.org.children', { tenantId: c.id }).catch(() => [] as OrgRow[]),
-        ),
-      );
-      const out: OrgRow[] = [root];
-      children.forEach((c, i) => {
-        out.push(c, ...(grand[i] ?? []));
-      });
-      return out;
-    },
   });
 }
 

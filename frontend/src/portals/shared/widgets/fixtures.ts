@@ -63,6 +63,7 @@ function fixtureUserPage(all: WbUser[], params: Record<string, string>) {
   return {
     items: rows.slice(page * size, page * size + size), page, size, totalElements: rows.length, totalPages,
     hasNext: page + 1 < totalPages, sort: params.sort || 'username,asc', counts,
+    org: { id: WB_ORG, legalName: 'Namibia Coffee Roasters (Pty) Ltd', type: 'TENANT', subType: 'MANUFACTURER', depth: 2 },
   };
 }
 
@@ -91,12 +92,6 @@ export const FIXTURES: FixtureSet = {
     empty: [],
     error: null,
   },
-  'users.org': {
-    default: { id: WB_ORG, legalName: 'Namibia Coffee Roasters (Pty) Ltd', depth: 2, type: 'TENANT', parentTenantId: null },
-    empty: { id: WB_ORG, legalName: 'Namibia Coffee Roasters (Pty) Ltd', depth: 2, type: 'TENANT', parentTenantId: null },
-    error: null,
-  },
-  'users.org.children': { default: [], empty: [], error: null },
   'users.roles': {
     default: [
       { id: '00000000-0000-0000-0000-0000000003a1', key: 'org-admin', name: 'Organization admin', scope: 'TENANT', permissionCount: 9, assignable: true },

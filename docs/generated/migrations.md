@@ -18,6 +18,7 @@ timeline
     V15 : plugin types columns
     V16 : person checker flag
     V19 : roles governance
+    V20 : psp plugin consent
 
-**Next free migration number: V20.**
+**Next free migration number: V21.**
 ```

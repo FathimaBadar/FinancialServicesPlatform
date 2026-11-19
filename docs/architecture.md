@@ -62,6 +62,7 @@ Every service, plugin, and UI surface MUST conform to these non-negotiable invar
 6. **Outbox & Audit:** DB mutation + Outbox event in same transaction. Append-only audit record carrying `correlation_id` and channel context at all core boundaries.
 7. **Plugin Process & Schema Isolation:** Every plugin MUST run as a **separate OS process** with its **own dedicated database schema / database** and independent Flyway migration history. No shared DB access.
 8. **REST Collection Standard:** Every REST endpoint fetching collections/data (Core & Plugins) MUST support **pagination**, **server-side sorting**, and **server-side search / filtering** by default. Unbounded queries are forbidden.
+9. **Concurrency & Deadlock Prevention:** Every backend modification MUST be audited to guarantee no race conditions or deadlocks occur in PostgreSQL or the JVM. Requires optimistic locking (`@Version`), deterministic row-lock ordering (sort IDs), state preconditions, and zero remote I/O during open DB transactions or in-memory locks.
 
 ---
 
@@ -82,6 +83,7 @@ For detailed specifications, sequence flows, and schemas, read the modular chapt
 | [09. Frontend & Portals](file:///home/arun/FinancialServicesPlatform/docs/architecture/09-frontend-portals.md) | Portals & Widget Harness | 5 portal apps from one SPA codebase, session hydration, widget codegen (`bun widgets:*`), and UI standards. |
 | [10. Data Model](file:///home/arun/FinancialServicesPlatform/docs/architecture/10-data-model.md) | Schemas & Migrations | ER diagram, Flyway migration ledger (next V20), and system vs demo seed rules. |
 | [11. Operations & Live Docs](file:///home/arun/FinancialServicesPlatform/docs/architecture/11-operations-and-live-docs.md) | Ops, Tests & Maintenance | Dev happy path make targets, test pyramid, two-tier live doc update workflow (`refresh.cjs`), and glossary. |
+| [12. Notifications & Push](file:///home/arun/FinancialServicesPlatform/docs/architecture/12-notifications-and-push.md) | Inbox & Push Spine | Queue-shaped notifications, one push contract for Web Push/APNs/FCM (credential-gated adapters), data-minimized payloads under FAPI, and unread badge plumbing. |
 
 ---
 
@@ -96,7 +98,7 @@ The one-page checklist every change is measured against:
 | 3 | One-line structured logs for every incident; MDC correlation; secrets never logged | log pattern + `AuditService` |
 | 4 | Optimistic `@Version` + state preconditions + `KeyLocks` dispatch serialization; never `synchronized` on singletons | `KeyLocks` |
 | 5 | Idempotency key on every `/v1` mutation; insert-first semantics; 5xx not cached | `IdempotencyFilter` |
-| 6 | Demo data only under `client-demo` seed; migrations immutable; next migration = V20 | Flyway layout |
+| 6 | Demo data only under `client-demo` seed; migrations immutable; next migration = V24 | Flyway layout |
 | 7 | Four-eyes at person_id; machines can never make/check | service preconditions |
 | 8 | Minor units (`long`, `NUMERIC(20,0)`, string on wire); TB ledger id = ISO-4217 numeric | `Amount` contract |
 | 9 | Balanced JE ≥ 2 lines; direct debit-credit matching; deterministic uuid5 transfer ids; linked chain except final leg | `PostingPlanner` |
@@ -106,6 +108,7 @@ The one-page checklist every change is measured against:
 | 13 | Errors = RFC-7807 problem+json with stable code + correlationId | `common/ApiException` |
 | 14 | Out-of-process plugins with own process & DB schema; no shared tables | `plans/plugin-platform-plan.md` |
 | 15 | Every REST collection endpoint supports server-side pagination, sorting & search | Chapter 8 |
+| 16 | Concurrency safety: sorted row lock order, no remote I/O in DB tx, zero synchronized on singletons | `backend/AGENTS.md` §2d |
 
 ---
 

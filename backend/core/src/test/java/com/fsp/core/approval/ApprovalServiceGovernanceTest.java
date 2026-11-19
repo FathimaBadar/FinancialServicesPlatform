@@ -44,7 +44,8 @@ class ApprovalServiceGovernanceTest {
         permissions = mock(PermissionService.class);
         persons = mock(PersonRepository.class);
         svc = new ApprovalService(repo, permissions, new KeyLocks(), mock(AuditService.class), mock(OutboxService.class),
-            List.of(), persons, mock(PluginTypeRepository.class), mock(PlatformTransactionManager.class));
+            List.of(), persons, mock(PluginTypeRepository.class), mock(PlatformTransactionManager.class),
+            mock(com.fsp.core.notify.NotificationService.class));
         when(persons.findById(MAKER_ID)).thenReturn(Optional.of(person(MAKER_ID, "maker", false)));
         when(persons.findById(CHECKER_ID)).thenReturn(Optional.of(person(CHECKER_ID, "checker", true)));
         when(permissions.effectiveKeys(any(), any())).thenReturn(Set.of("user.manage", "role.manage"));
@@ -101,7 +102,8 @@ class ApprovalServiceGovernanceTest {
             @Override public void apply(ApprovalRequest a, boolean ok, Actor c, String r) { }
         };
         ApprovalService withJe = new ApprovalService(repo, permissions, new KeyLocks(), mock(AuditService.class),
-            mock(OutboxService.class), List.of(je), persons, mock(PluginTypeRepository.class), txm);
+            mock(OutboxService.class), List.of(je), persons, mock(PluginTypeRepository.class), txm,
+            mock(com.fsp.core.notify.NotificationService.class));
         ApprovalRequest row = row(ApprovalRequest.OpType.JE_POSTING);
         when(repo.findById(row.id)).thenReturn(Optional.of(row));
         when(permissions.effectiveKeys(any(), any())).thenReturn(Set.of("je.approve"));
@@ -122,7 +124,8 @@ class ApprovalServiceGovernanceTest {
             @Override public boolean atomicWithResolution() { return true; }
         };
         ApprovalService withRole = new ApprovalService(repo, permissions, new KeyLocks(), mock(AuditService.class),
-            mock(OutboxService.class), List.of(role), persons, mock(PluginTypeRepository.class), txm);
+            mock(OutboxService.class), List.of(role), persons, mock(PluginTypeRepository.class), txm,
+            mock(com.fsp.core.notify.NotificationService.class));
         ApprovalRequest row = row(ApprovalRequest.OpType.ROLE_UPDATE);
         when(repo.findById(row.id)).thenReturn(Optional.of(row));
 

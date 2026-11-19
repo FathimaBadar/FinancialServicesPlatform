@@ -12,7 +12,8 @@ import { can, doLogout, useSession } from './session-core';
 import type { PortalConfig } from '../../portal-config';
 import { layoutNavEntries, useSignedLayout } from '../../signed/signed-layout';
 import { getWidget } from '../widgets/registry';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { onUnread } from './push-core';
 
 export function AppShell({
   portal,
@@ -30,6 +31,9 @@ export function AppShell({
   void children;
   const { user, permissions, actAs, exitActAs } = useSession();
   const [exiting, setExiting] = useState(false);
+  // F-12 unread badge: pushed from push-core's poll (30s) + Web Push-driven refreshes
+  const [unread, setUnread] = useState<number | null>(null);
+  useEffect(() => onUnread(setUnread), []);
 
   const layout = useSignedLayout();
   // a verified, published layout draws the sidebar; otherwise the build-time menu registry
@@ -131,6 +135,15 @@ export function AppShell({
               >
                 <span className="mr-2" aria-hidden>{n.icon}</span>
                 {n.label}
+                {n.link === '/approvals' && unread !== null && unread > 0 && (
+                  <span
+                    data-testid="approvals-badge"
+                    aria-label={unread + ' pending approvals'}
+                    className="ml-2 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-invert"
+                  >
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                )}
               </NavLink>
             ),
           )}

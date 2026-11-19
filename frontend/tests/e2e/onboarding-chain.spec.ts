@@ -229,6 +229,23 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   const selfBank = await api(merAdmin, 'POST', `/approvals/${makerOwnBank!.id}/approve`, { reason: 'e2e: self' });
   expect(selfBank.status, 'maker self-approve refused').toBe(403);
 
+  // ── SCENE 8.6 · checker notifications (F-12): an open approval PUSHES to the checker ──
+  // [API] the checker plane was notified on open — one deduped pointer per checker, generic copy.
+  const notifUnread = await api<{ unread: number }>(merChecker, 'GET', '/notifications/unread-count');
+  expect(notifUnread.json.unread, 'the checker has unread approval notifications').toBeGreaterThanOrEqual(1);
+  const notifBox = await api<{ items: Array<{ type: string; opType: string; body: string; link: string }> }>(
+    merChecker, 'GET', '/notifications');
+  const bankNotif = notifBox.json.items.find((n) =>
+    n.type === 'APPROVAL_OPEN' && n.opType === 'BANK_ACCOUNT_CREATE');
+  expect(bankNotif, 'an APPROVAL_OPEN notification points at the bank filing').toBeDefined();
+  expect(bankNotif!.body.toLowerCase()).toContain('bank');
+  expect(bankNotif!.body, 'no account digits leak into the notification (AGENTS §2c)')
+    .not.toMatch(new RegExp(filed!.maskedAccountNumber.slice(-4)));
+  // [UI] the badge on the Approvals nav item is visible without visiting the queue.
+  const merCheckerShell = merChecker.page;
+  await merCheckerShell.goto('/merchant/approvals');
+  await expect(merCheckerShell.getByTestId('approvals-badge')).toBeVisible({ timeout: 15_000 });
+
   // [UI] the merchant checker (bank.account.approve) decides it in Approvals — one click.
   const bankApproval = await pendingApproval(merChecker, merTenantId, 'BANK_ACCOUNT_CREATE');
   await approveInUi(merChecker, '/merchant', bankApproval!.id, 'e2e: settlement bank account');
@@ -239,6 +256,14 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   await bankPage.reload();
   await expect(bankPage.getByTestId('bank-row-active')).toBeVisible();
   await expect(bankPage.getByTestId('bank-pending-banner')).toHaveCount(0); // the pending path cleared
+
+  // [API/UI] F-12 tail: the checker clears the inbox → the badge goes away on the next poll.
+  const clearInbox = await api(merChecker, 'POST', '/notifications/read-all');
+  expect(clearInbox.status, 'inbox marked read').toBeLessThan(300);
+  const unreadCleared = await api<{ unread: number }>(merChecker, 'GET', '/notifications/unread-count');
+  expect(unreadCleared.json.unread).toBe(0);
+  await merCheckerShell.reload();
+  await expect(merCheckerShell.getByTestId('approvals-badge')).toHaveCount(0);
 
   // [API] the PLATFORM ROOT's own account: filed by a platform admin, approved by the
   // platform team's checker (different person) — same machinery at the root tenant.

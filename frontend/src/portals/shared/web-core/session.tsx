@@ -14,11 +14,13 @@ import { ApiError } from './api';
 import { SessionCtx, NO_SESSION } from './session-core';
 import { exitActAs as endActAsSession, fetchActAs, fetchWho, loadTenant, loadPermissions, portalEligible, startActAs as beginActAs } from './session-core';
 import type { ActAsView, SessionCtl, SessionState } from './session-core';
+import { onSessionAuthed, stopUnreadPolling } from './push-core';
 import type { PortalConfig } from '../../portal-config';
 
 export function SessionProvider({ portal, children }: { portal: PortalConfig; children: ReactNode }) {
   const [state, setState] = useState<SessionState>(NO_SESSION);
   const [eligible, setEligible] = useState<boolean | undefined>(undefined);
+  const [authedOnce, setAuthedOnce] = useState(false);
 
   const refresh = useCallback(async () => {
     const user = await fetchWho();
@@ -49,6 +51,20 @@ export function SessionProvider({ portal, children }: { portal: PortalConfig; ch
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // F-12: on the FIRST authed hydration of this page load, start the unread badge poll and
+  // (best-effort, deferred) enable Web Push for this device. Cleared on session loss.
+  useEffect(() => {
+    if (state.status === 'authed') {
+      if (!authedOnce) {
+        setAuthedOnce(true);
+        onSessionAuthed();
+      }
+    } else if (state.status !== 'loading' && authedOnce) {
+      setAuthedOnce(false);
+      stopUnreadPolling();
+    }
+  }, [state.status, authedOnce]);
 
   const value = useMemo<SessionCtl>(
     () => ({

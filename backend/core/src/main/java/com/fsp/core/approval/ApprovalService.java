@@ -34,6 +34,7 @@ public class ApprovalService {
     private final com.fsp.core.plugin.registry.PluginTypeRepository pluginTypes;
     private final Map<String, ApprovalHandler> handlers = new HashMap<>();
     private final org.springframework.transaction.support.TransactionTemplate tx;
+    private final com.fsp.core.notify.NotificationService notifications;
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public ApprovalService(ApprovalRequestRepository repository, PermissionService permissions,
@@ -41,7 +42,8 @@ public class ApprovalService {
                            OutboxService outbox, List<ApprovalHandler> handlerList,
                            com.fsp.core.identity.PersonRepository persons,
                            com.fsp.core.plugin.registry.PluginTypeRepository pluginTypes,
-                           org.springframework.transaction.PlatformTransactionManager txManager) {
+                           org.springframework.transaction.PlatformTransactionManager txManager,
+                           com.fsp.core.notify.NotificationService notifications) {
         this.repository = repository;
         this.permissions = permissions;
         this.keyLocks = keyLocks;
@@ -49,6 +51,7 @@ public class ApprovalService {
         this.outbox = outbox;
         this.persons = persons;
         this.pluginTypes = pluginTypes;
+        this.notifications = notifications;
         this.tx = new org.springframework.transaction.support.TransactionTemplate(txManager);
         for (ApprovalHandler h : handlerList) handlers.put(h.operationType(), h);
     }
@@ -105,7 +108,21 @@ public class ApprovalService {
             row.id, opType, targetResourceId, makerId, tenantId);
         outbox.record("ApprovalRequest", row.id, "Approval.Requested",
             "{\"approvalId\":\"%s\",\"type\":\"%s\",\"target\":\"%s\"}".formatted(row.id, opType, targetResourceId));
+        notifyCheckers(row, makerId);
         return row;
+    }
+
+    /** F-12: point the tenant's checker plane at this open approval (same transaction, deduped inside). */
+    private void notifyCheckers(ApprovalRequest row, UUID makerId) {
+        try {
+            String perm = checkerPermissionOf(row);
+            if (perm != null) {
+                notifications.notifyCheckers(row.tenantId, row.operationType, perm,
+                    row.id, makerId);
+            }
+        } catch (com.fsp.core.common.ApiException denied) {
+            log.debug("approval_notify_skipped approvalId={} reason={}", row.id, denied.getMessage());
+        }
     }
 
     // ---------- resolve (checker side) ----------

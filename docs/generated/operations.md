@@ -1,6 +1,8 @@
 
 # Auto-generated — every @FspOperation declared in core (routed only if listed here).
 | Operation id | Permission | Risk | Source |
+| bank.account.create | bank.account.create | FOUR_EYES | `BankAccountController.java` |
+| bank.account.list | bank.account.view | READ | `BankAccountController.java` |
 | journal.entry.approve | je.approve | FOUR_EYES | `JournalController.java` |
 | journal.entry.check_status | je.approve | FOUR_EYES | `JournalController.java` |
 | journal.entry.create | je.create | WRITE | `JournalController.java` |
@@ -14,4 +16,10 @@
 | ledger.gl_account.get | gl.account.view | READ | `LedgerController.java` |
 | ledger.gl_account.list | gl.account.view | READ | `LedgerController.java` |
 | ledger.period.list | gl.account.view | READ | `LedgerController.java` |
+| notification.list | notification.view | — | `NotificationController.java` |
+| notification.push.config | notification.view | — | `NotificationController.java` |
+| notification.push.subscribe | notification.view | WRITE | `NotificationController.java` |
+| notification.push.unsubscribe | notification.view | WRITE | `NotificationController.java` |
+| notification.read-all | notification.view | WRITE | `NotificationController.java` |
+| notification.unread-count | notification.view | — | `NotificationController.java` |
 |---|---|---|---|

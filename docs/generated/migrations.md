@@ -19,6 +19,8 @@ timeline
     V16 : person checker flag
     V19 : roles governance
     V20 : psp plugin consent
+    V21 : bank accounts
+    V23 : notifications and push
 
-**Next free migration number: V21.**
+**Next free migration number: V24.**
 ```

@@ -290,8 +290,12 @@ decision legs are now UI-driven too — Scenes 4/6 file through the kyc.manage f
 (`approveKycUi`); only the twin's REQUEST_INFO/REJECT legs remain API-lane (negative paths
 assert the API contract directly). Period open/close has no API yet (`period.control` is
 read-only and says so). F-10 is done (Sc 8.5 — maker files in the UI, checker approves in the UI,
-platform-root files its own account). F-8 password change, F-12 checker notifications remain
-backlog. F-9 is done (see the happy-twin note below).
+platform-root files its own account). F-12 is done (Sc 8.6 — an open approval queues a
+deduped checker pointer + `Notification.PushRequired` outbox row, exposes the inbox and
+unread-count API, the SPA badge on the Approvals nav item lights up from a poll without
+visiting the queue, and a Web Push/APNs/FCM-capable spine dispatches data-minimized
+payloads once credentials are set — docs/architecture/12-notifications-and-push.md).
+F-8 password change remains backlog. F-9 is done (see the happy-twin note below).
 
 ### How to verify
 
@@ -324,7 +328,7 @@ flips those steps to `[UI]` automatically.
 | F-9 | **Adverse-path E2E coverage**: KYC `REJECT`/`REQUEST_INFO`, maker self-approve → explicit refusal + `MAKER_CANNOT_APPROVE` block state, stalled `TENANT_PENDING` recovery (KycRecoveryService) | **✅ done** (`tests/e2e/unhappy-twin.spec.ts` — scenes A–D) | tests + UI states | beyond happy path | the chain's unhappy twin passes with explicit UI states per ui-std §5.2; note: born-role makers never hold `kyc.approve`, so the KYC maker-block surfaces as `PERMISSION_DENIED` + server `block=MAKER` (the person-level `MAKER_CANNOT_APPROVE` is asserted on the USER_CREATE lane) |
 | F-10 | **Bank account management screen** (`bank.account.create`/`approve` seeded + new `bank.account.view` READ key) | **✅ done** (`widgets/bank/accounts`, Sc 8.5) | backend (core ledger) + frontend | first-money depth | the org's ADMIN files its settlement account (7 Namibian banks registered) → `BANK_ACCOUNT_CREATE` four-eyes approval → checker approves → PENDING→ACTIVE (one ACTIVE per tenant, partial unique index; full number only in DB, `maskAccountNumber` last-4 on the wire); maker self-approve refused 403; platform-root files its own account (platform checker approves); E2E asserts masked numbers on the wire and UI pending banner + ACTIVE state |
 | F-11 | **Ledger/period screens** (`ledger.accounts`, `period.control` widgets exist as ids only) | **✅ done — ledger.accounts driven by the chain (provision + table); period.control read-only** | frontend | Sc 8 depth | CoA and period state are visible, not assumed |
-| F-12 | **Checker inbox/notification** (today a checker must poll the queue) | **⬜ open** | backend + frontend | every four-eyes step | a checker is pointed at pending work without polling |
+| F-12 | **Checker inbox/notification** (today a checker must poll the queue) | **✅ done** (`notify/` spine + `web-core/push-core.ts`, Sc 8.6) | backend (core notify + outbox) + frontend | every four-eyes step | an APPROVAL_OPEN notification row is written in the open transaction (maker excluded, one per checker per resource, generic PII-free copy), `GET /v1/notifications` + `/unread-count` + `/read-all` serve the inbox, the Approvals nav badge lights up from a 30 s poll without visiting the queue, and the credential-gated push spine (Web Push w/ RFC 8291+VAPID, APNs, FCM) dispatches once `FSP_PUSH_*` env credentials are set; E2E asserts unread ≥1, no digits in the notification body, and badge cleared after `read-all` |
 
 **Priority reading of the table:** F-1 + F-2 + F-3 collapse most of the script’s
 API legs (Scenes 2/4/6/7 become clicks). F-5/F-6 fix *what the user sees*. F-8

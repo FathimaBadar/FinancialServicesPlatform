@@ -3,6 +3,7 @@
 **Scope:** `frontend/` SPA, widgets, portals, and UI components.
 **Parent Rule:** [AGENTS.md](file:///home/arun/FinancialServicesPlatform/AGENTS.md) (Universal Invariants & FAPI 2.0 Compliance).
 **Normative Standard:** [ui-std.md](file:///home/arun/FinancialServicesPlatform/ui-std.md) (Complete Design System & React Guide).
+**Architecture Reference:** [docs/architecture/09-frontend-portals.md](file:///home/arun/FinancialServicesPlatform/docs/architecture/09-frontend-portals.md).
 
 ---
 
@@ -65,3 +66,42 @@
 7. **Forms & validation (`ui-std.md` §8):**
    - Zod schemas per endpoint.
    - Validation occurs on blur and submit per §8 of `ui-std.md`.
+
+---
+
+## 3. The Widget Pipeline, Portal Architecture & Menu Decision Rules
+
+Every portal screen is composed of **Widgets** hosted in a responsive grid. The agent must understand how portals are built and follow strict rules on when to engage with the widget pipeline and when to add menu items.
+
+### 3.1 Portal Generation Architecture
+- **5 Portal Applications:** `admin.html` (PLATFORM), `manufacturer.html` (MANUFACTURER/PSP), `distributor.html` (DISTRIBUTOR), `wholesaler.html` (WHOLESALER), and `merchant.html` (MERCHANT).
+- **Single SPA Codebase:** All portals share `OrgApp.tsx` and are configured via `portal-config.ts` (`tenantSubType`, `basePath`, `--portal-accent`, `storageKey`, `signedDelivery`).
+- **Dynamic Layouts:** Screens are NOT hardcoded templates. Screens are widget compositions rendered via `WidgetGrid` and `WidgetHost`.
+
+### 3.2 The Development Pipeline (How a Requirement becomes UI)
+1. **Controller Scan (`@FspOperation`):** Identify the backend endpoint, permission key, request/response DTOs, and risk level.
+2. **Permission Check:** Verify that the required permission key exists in `frontend/src/portals/shared/widgets/permission-catalogue.ts`.
+3. **Data Mapping:** Add the logical source/command endpoint in `frontend/src/portals/shared/widgets/core/sources.ts`.
+4. **Widget Pack Authoring:** Create `frontend/src/portals/shared/widgets/<area>/<name>/`:
+   - `index.tsx`: `defineWidget({ id, version, label, requires: [...], sources, commands, size, render })`.
+   - `widget.tsx`: Component adhering to `ui-std.md` (atoms, design tokens, skeletons).
+   - `data.ts`: TanStack Query hooks + offline mock fixtures (must render with 0 backend).
+5. **Validation & Registration:**
+   - Run `bun run widgets:check` (validates registry coherence and permission matches).
+   - Core registers widget via `PUT /v1/ui/widgets` (`bun run widgets:register <id>`).
+6. **Layout & Publishing:**
+   - Portal Builder UI (`/widget-workbench/builder`) arranges widgets into grid layouts.
+   - Submit layout (`POST /v1/ui/layouts/{portal}/submit`) -> four-eyes checker approval -> published layout signed via ES256 and served to portals.
+
+### 3.3 Agent Decision Matrix: When to Add a Menu Item (Implicit Requirements)
+When a user requirement describes a capability (e.g. *"add VAS airtime top-up"*, *"enable dispute management"*, *"inventory tracking for merchants"*), the agent must evaluate whether a new navigation item is required:
+
+1. **Rule 1: New Operational Capability / Standalone Domain -> ADD MENU ITEM**
+   - If the feature introduces a new operational screen or business domain gated by its own permission (e.g. `inventory.view`, `vas.purchase`, `disputes.manage`), the agent MUST proactively:
+     - Register the widget in `type MenuWidget` in `frontend/src/portals/shared/web-core/menu.ts`.
+     - Add a new `MenuItem` to `MENU_ITEMS` in `menu.ts` (with `id`, `label`, `icon`, `link`, `perm`, `portals`, `group`, and `widgets: [widgetId]`).
+     - Wire the route in `screens.tsx` using `WidgetScreen`.
+2. **Rule 2: Enhancement to Existing Domain -> ATTACH TO EXISTING SCREEN**
+   - If the feature adds a new summary tile, action panel, or sub-table to an existing workflow (e.g. adding a new KPI to Overview, or adding a transaction filter to Journal Entries), do NOT create a new menu item. Instead, register the widget in the existing screen's `widgets` array or enhance the existing widget.
+3. **Rule 3: Coherence Verification Gate**
+   - Always execute `bun run widgets:check` to ensure no widget, menu point, or permission key is orphan or mismatched.

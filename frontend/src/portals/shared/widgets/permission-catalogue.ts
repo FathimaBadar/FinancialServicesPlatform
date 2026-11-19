@@ -9,6 +9,7 @@ export const PERMISSION_CATALOGUE = [
   'audit.view',
   'bank.account.approve',
   'bank.account.create',
+  'bank.account.view',
   'gl.account.approve',
   'gl.account.create',
   'gl.account.view',

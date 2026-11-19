@@ -78,7 +78,7 @@ export const PORTAL_MERCHANT: PortalConfig = {
   tenantSubType: 'MERCHANT',
   basePath: '/merchant',
   label: 'Merchant',
-  accent: '#5ee0a0',
+  accent: '#f2c94c',
   storageKey: 'fsp.merchant.session',
   signedDelivery: false,
   deliveryKey: 'merchant',

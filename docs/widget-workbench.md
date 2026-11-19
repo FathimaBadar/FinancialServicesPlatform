@@ -55,7 +55,7 @@ session is the only credential path (AGENTS §4).
 ## 4. Way A — author a pack with an LLM (usual route)
 
 1. **Start the authoring skill.** In pi (or any agent that can read the repo):
-   load `docs/skills/fsp-widget-author/SKILL.md` and give it the requirement, e.g.
+   load `docs/skills/fsp-widget-author/SKILL.md` (or `.agents/skills/fsp-widget/SKILL.md`) and give it the requirement, e.g.
    *"a widget showing pending JE approvals for my tenant, with approve/reject"*.
    The skill answers with a **widget pack**: a `=== FSP-WIDGET-PACK v1 ===` block
    containing complete files (`index.tsx` manifest, `widget.tsx` component, `data.ts`
@@ -118,3 +118,30 @@ bun run widgets:skill      # regenerate docs/skills/fsp-widget-author/SKILL.md
 | Live sources return 401 | BFF session expired → re-login via the connection bar |
 | Register fails 400/404 | services down → full stack: `scripts\dev-windows.ps1 dev` (Windows) / make targets (Linux) |
 | Preview fine with fixtures, broken live | fixture shape drifted from the real response — fix `data.ts` mapping from the network table in the widget page |
+
+---
+
+## 9. Agent Decision Guide & Workflow (When to Engage & When to Add Menu Items)
+
+AI agents working on feature requests or tasks must follow these rules:
+
+### 9.1 When to Engage with the Widget Pipeline
+Engage with the widget pipeline whenever a requirement involves any user-facing screen, component, form, queue, or data panel. Portals are 100% widget-composed; never build standalone pages outside the widget harness.
+
+### 9.2 When to Add a Menu Item (Implicit vs. Explicit)
+When a requirement specifies a new business capability (e.g. *"add VAS top-up"*, *"create settlement reconciliation view"*, *"implement inventory tracking"*), the agent must determine whether it warrants a new menu point:
+
+1. **New Operational Screen (ADD MENU ITEM):**
+   - The capability represents a distinct operational workflow or business domain.
+   - It is gated by its own permission cell (e.g. `vas.purchase`, `inventory.view`).
+   - **Action:**
+     1. Create the widget folder in `frontend/src/portals/shared/widgets/<area>/<name>/`.
+     2. Ensure permission exists in `permission-catalogue.ts`.
+     3. Add widget ID to `type MenuWidget` in `frontend/src/portals/shared/web-core/menu.ts`.
+     4. Add a new `MenuItem` to `MENU_ITEMS` in `menu.ts` (assigning icon, label, link, permission, target portals, and group).
+     5. Mount in `screens.tsx` (using `WidgetScreen`).
+2. **Domain Extension (ATTACH TO EXISTING SCREEN):**
+   - The feature is an additional KPI tile, chart, action, or sub-view within an existing domain (e.g., adding an extra balance card to Overview, or adding a filter/export to Journal Entries).
+   - **Action:** Add the widget to the existing screen's `widgets` array in `menu.ts` or enhance the existing widget component directly without creating duplicate menu clutter.
+3. **Verification Gate:**
+   - Always run `bun run widgets:check` and `bun run typecheck`.

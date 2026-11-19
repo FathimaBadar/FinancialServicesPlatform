@@ -74,18 +74,38 @@ Never log secrets, passwords, tokens, or full identity numbers (mask to last 4).
 
 ---
 
-## 2d. Concurrency & locking mandate (no lost/duplicate transitions)
+## 2d. Concurrency, Race Condition & Deadlock Prevention Mandate
 
-Money paths must be safe under concurrent calls (two checkers clicking approve at once, double `check-status`, etc.). Three layers, in order of authority:
+Every backend system modification MUST explicitly evaluate whether it introduces race conditions, lost updates, or deadlocks in PostgreSQL or in the Java JVM.
 
-1. **DB is the source of truth:** every mutable aggregate carrying a state machine (`JournalEntry`, KYC case, tenant, approval request) uses JPA optimistic locking (`@Version` + `version` column bumped on write) **and** a status precondition inside the transition service. Wrong-from-state always fails with `JE_STATE`/`KYC_STATE` — never silently no-ops.
-2. **In-process critical sections (`common/KeyLocks`):** non-idempotent sections that must not interleave inside one JVM — TigerBeetle dispatch + terminalization of the SAME aggregate id — are wrapped in a fair `ReentrantLock` keyed by `domain:id` via `KeyLocks.withLock("je-approval", entryId, () -> ...)`. This stops concurrent double-dispatch of the same journal entry; without it two checkers racing both pass the DB precondition before either writes the new status.
-   - Always `withLock` (try/finally unlock inside the utility) — never call `lock()` manually.
-   - NEVER `synchronized` on shared singletons (`this` of a singleton bean, `static` monitors, string literals) — those are contention or deadlock traps. Striped fair locks by domain key only.
+Money paths and transactional workflows must be strictly safe under concurrent access (two checkers clicking approve simultaneously, duplicate callbacks, simultaneous batch operations, etc.). Three layers, in order of authority:
+
+### 1. Database-Level Protections (PostgreSQL)
+1. **Optimistic Locking by Default:** Every mutable aggregate carrying state machines (`JournalEntry`, KYC case, tenant, approval request) MUST use JPA optimistic locking (`@Version` + `version` column). Wrong-from-state or concurrent updates fail with `JE_STATE`/`KYC_STATE` or `OptimisticLockException` — never silently overwrite.
+2. **Deterministic Row Lock Ordering (Deadlock Prevention):**
+   - Whenever updating or locking multiple records across transactions (e.g. multiple GL accounts, transfer legs, or ledger balances), records MUST ALWAYS be locked/updated in **sorted primary key (UUID/ID) order** (e.g. `items.stream().sorted(Comparator.comparing(Item::getId))`).
+   - Updating rows in arbitrary or opposite order across concurrent transactions causes PostgreSQL deadlocks (`40P01: deadlock detected`).
+3. **Never Hold DB Transactions Across External I/O:**
+   - Keep `@Transactional` scope minimal.
+   - **NEVER execute external network calls** (TigerBeetle socket writes, external HTTP calls, slow I/O) inside an open database transaction.
+   - Holding row locks while awaiting network responses leads to database connection exhaustion and system-wide lock stalls.
+4. **Partial Unique Indexes for Invariant Exclusivity:**
+   - Business invariants like "only one active bank account per tenant" must be anchored in PostgreSQL schema via partial unique indexes (e.g. `CREATE UNIQUE INDEX ux_bank_accounts_one_active ON bank_accounts (tenant_id) WHERE status = 'ACTIVE';`), not in-memory Java validations alone.
+
+### 2. Java Process (In-Memory) Protections
+1. **No Shared Singleton Synchronization:**
+   - NEVER use `synchronized` on shared singletons (`this` of a Spring `@Service`, `static` monitors, string literals). These create severe throughput bottlenecks, thread contention, and deadlock traps.
+2. **In-Process Critical Sections (`common/KeyLocks`):**
+   - Non-idempotent sections that must not interleave inside one JVM — e.g. TigerBeetle dispatch + terminalization of the SAME entry ID — are wrapped in a fair `ReentrantLock` keyed by `domain:id` via `KeyLocks.withLock("domain", id, () -> ...)`.
+   - Always use `withLock` (try/finally unlock inside utility); never call `lock()` manually.
    - Locks guard **dispatch sections**, not read paths and not DB-only transitions (optimistic `@Version` handles those).
-3. **Cross-instance (future hardening slice):** when core runs as N replicas, replace the in-JVM stripe with Postgres advisory locks (`pg_advisory_xact_lock(hashtext(key))`) around the same dispatch sections; the `KeyLocks` API is built so only its backing implementation changes.
+3. **Zero Lock Inversion:**
+   - Avoid acquiring multiple `KeyLocks` in nested calls. If two locks must ever be held together, they must be acquired in strict deterministic key order to prevent circular wait deadlocks.
+4. **No Remote Calls or Long Sleeps Inside Locks:**
+   - Never hold a `KeyLocks` lock while waiting on slow remote client calls, webhooks, or inside an HTTP callback.
 
-Race-condition rules: never read-modify-write a balance or state field outside an optimistic-locked save; never dispatch to TigerBeetle twice for the same entry while uncertain — `COMMIT_UNKNOWN` resolution uses the ORIGINAL ids; never hold a `KeyLocks` lock while doing a remote client call other than the dispatch itself, and never inside an HTTP callback.
+### 3. Cross-Instance Synchronization
+When core runs across N replicas, the in-JVM `KeyLocks` stripe transitions to PostgreSQL transaction advisory locks (`pg_advisory_xact_lock(hashtext(key))`) around dispatch sections; the `KeyLocks` API is designed so only its backing implementation adapts.
 
 ---
 

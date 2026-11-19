@@ -45,13 +45,17 @@ public class IdpController {
     private final ParService parService;
     private final IdpProperties props;
     private final JdbcTemplate jdbc;
+    private final PPersonRepository persons;
+    private final org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder bcrypt =
+        new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
 
     public IdpController(IdpTokenService tokenService, ParService parService,
-                         IdpProperties props, JdbcTemplate jdbc) {
+                         IdpProperties props, JdbcTemplate jdbc, PPersonRepository persons) {
         this.tokenService = tokenService;
         this.parService = parService;
         this.jdbc = jdbc;
         this.props = props;
+        this.persons = persons;
     }
 
     // ========== FAPI 2.0: Pushed Authorization Request (PAR) ==========
@@ -164,7 +168,7 @@ public class IdpController {
 
     // POST only: credentials travel in the form body, never in the URL (history, logs, Referer)
     @PostMapping(value = "/authorize/callback", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    public RedirectView authorizeCallback(@RequestParam("request_uri") String requestUri,
+    public Object authorizeCallback(@RequestParam("request_uri") String requestUri,
                                            @RequestParam("username") String username,
                                            @RequestParam("password") String password) {
         // In a real implementation, this would be after the user authenticates at the hosted sign-in page
@@ -198,6 +202,16 @@ public class IdpController {
             log.info("idp_authorize_succeeded clientId={} username={}", parData.clientId(), username);
             return new RedirectView(redirectUri.toString());
         } catch (IdpProblemException e) {
+            // F-8: first sign-in with the bootstrap password → the person sets their own
+            // password AT the IdP (hosted surface), credentials never touch BFF/SPA.
+            if ("PASSWORD_CHANGE_REQUIRED".equals(e.problem().code())) {
+                PPerson person = persons.findByUsername(username).orElse(null);
+                if (person != null) {
+                    String ticket = parService.storePasswordChangeTicket(username, person.id, person.tenantId, parData);
+                    log.info("idp_password_change_page username={} clientId={}", username, parData.clientId());
+                    return changePage(ticket, "");
+                }
+            }
             // Business rejection (grantPassword already logged the credential detail); map to a page code
             String code = switch (e.problem().code()) {
                 case "INVALID_CREDENTIALS", "INVALID_REQUEST" -> "authentication_failed";
@@ -221,6 +235,96 @@ public class IdpController {
         }
         return raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;");
+    }
+
+    // ========== F-8: forced first-login password change (hosted at the IdP) ==========
+
+    private static final int PW_MIN_LENGTH = 10;
+    private static final int PW_MAX_LENGTH = 128;
+
+    /** Hosted change form: credentials and the replacement never leave the IdP origin. */
+    private String changePage(String ticket, String error) {
+        return """
+            <!doctype html><html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>FSP Identity Provider &middot; Set your password</title>
+            <style>
+              body { font-family: system-ui, sans-serif; background: #101418; color: #e8edf2;
+                     display: grid; place-items: center; min-height: 100dvh; margin: 0; }
+              .panel { background: #1a2029; border: 1px solid #2a323d; border-radius: 12px;
+                       padding: 2rem; width: min(92vw, 22rem); }
+              h1 { font-size: 1.05rem; margin: 0 0 .25rem; }
+              p.eyebrow { font-size: .7rem; letter-spacing: .12em; text-transform: uppercase;
+                          color: #f0a10e; margin: 0 0 .75rem; }
+              label { display: block; font-size: .75rem; margin: .75rem 0 .25rem; color: #9fb0c0; }
+              input { width: 100%%; box-sizing: border-box; padding: .55rem .7rem; border-radius: 8px;
+                      border: 1px solid #3a4450; background: #101418; color: #e8edf2; font: inherit; }
+              button { margin-top: 1.25rem; width: 100%%; padding: .6rem; border: 0; border-radius: 8px;
+                       background: #f0a10e; color: #101418; font-weight: 700; cursor: pointer; }
+              .hint { margin-top: 1rem; font-size: .7rem; color: #7a8a99; line-height: 1.5; }
+              .error { margin-top: 1rem; font-size: .75rem; color: #e5484d; }
+              .error:empty { display: none; }
+            </style></head><body><div class="panel">
+            <p class="eyebrow">FSP Identity Provider</p>
+            <h1>Set your own password</h1>
+            <form method="post" action="/idp/password/complete">
+              <input type="hidden" name="ticket" value="%s">
+              <label for="np">New password</label>
+              <input id="np" name="new_password" type="password" autocomplete="new-password" required autofocus>
+              <label for="npc">Confirm new password</label>
+              <input id="npc" name="confirm_password" type="password" autocomplete="new-password" required>
+              <button type="submit">Set new password</button>
+              <p class="error" id="chg-err">%s</p>
+            </form>
+            <p class="hint">At least %d characters. Your credentials never leave the Identity Provider.</p>
+            </div></body></html>
+            """.formatted(html(ticket), html(error), PW_MIN_LENGTH);
+    }
+
+    // POST only: the replacement secret travels in the form body, never the URL
+    @PostMapping(value = "/password/complete", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public Object passwordChangeComplete(@RequestParam("ticket") String ticket,
+                                         @RequestParam("new_password") String newPassword,
+                                         @RequestParam("confirm_password") String confirmPassword) {
+        ParService.PasswordChangeTicket t = parService.peekPasswordChangeTicket(ticket);
+        if (t == null) {
+            // Unknown/expired (already consumed, or the user sat on the form > 10 min)
+            log.warn("idp_password_change_failed reason=ticket_invalid");
+            return new RedirectView("/idp/error?code=request_uri_invalid");
+        }
+        if (newPassword == null || newPassword.length() < PW_MIN_LENGTH || newPassword.length() > PW_MAX_LENGTH) {
+            log.warn("idp_password_change_rejected username={} reason=policy_length", t.username());
+            return changePage(ticket, "Password must be %d–%d characters.".formatted(PW_MIN_LENGTH, PW_MAX_LENGTH));
+        }
+        if (!newPassword.equals(confirmPassword)) {
+            log.warn("idp_password_change_rejected username={} reason=confirmation_mismatch", t.username());
+            return changePage(ticket, "The two passwords do not match.");
+        }
+        PPerson person = persons.findById(t.personId()).orElse(null);
+        if (person == null) {
+            log.warn("idp_password_change_failed reason=person_missing username={}", t.username());
+            return new RedirectView("/idp/error?code=account_inactive");
+        }
+        if (bcrypt.matches(newPassword, person.passwordHash)) {
+            log.warn("idp_password_change_rejected username={} reason=same_as_current", t.username());
+            return changePage(ticket, "Choose a password you have not used here before.");
+        }
+        person.passwordHash = bcrypt.encode(newPassword);
+        person.mustChangePassword = false;
+        persons.save(person);
+        log.info("idp_password_changed personId={} username={}", person.id, t.username());
+
+        // Resume the parked sign-in: same PAR data, same client, same state
+        String authCode = parService.storeAuthCode(t.parData(), person.id, person.tenantId);
+        StringBuilder redirectUri = new StringBuilder(t.parData().redirectUri())
+            .append("?code=").append(URLEncoder.encode(authCode, StandardCharsets.UTF_8));
+        if (t.parData().state() != null) {
+            redirectUri.append("&state=").append(URLEncoder.encode(t.parData().state(), StandardCharsets.UTF_8));
+        }
+        redirectUri.append("&iss=").append(URLEncoder.encode(props.getIssuer(), StandardCharsets.UTF_8));
+        parService.consumePasswordChangeTicket(ticket);
+        log.info("idp_authorize_resumed clientId={} username={}", t.parData().clientId(), t.username());
+        return new RedirectView(redirectUri.toString());
     }
 
     // ========== Token Endpoint (ROPC - legacy + auth_code - FAPI 2.0) ==========

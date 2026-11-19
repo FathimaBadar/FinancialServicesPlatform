@@ -22,6 +22,9 @@ public class PPerson {
     public String fullName;
     @Column(name = "password_hash", nullable = false)
     public String passwordHash;
+    /** F-8: born with the bootstrap password → first sign-in must set a new one. */
+    @Column(name = "password_must_change", nullable = false)
+    public boolean mustChangePassword;
     @Column(nullable = false)
     public String status;
     @Column(name = "is_applicant", nullable = false)

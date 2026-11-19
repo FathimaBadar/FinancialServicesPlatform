@@ -25,10 +25,20 @@ export interface Session {
   csrf?: string;
 }
 
-/** Full browser login: portal /login → BFF PAR → hosted IdP page → back to the portal. */
 export const BASE_URL = process.env.FSP_SPA_URL ?? 'http://localhost:5173';
 
-export async function signIn(browser: Browser, name: string, portalPath: string, username: string, password: string): Promise<Session> {
+export interface SignInOpts {
+  /** Set a specific replacement password (else a generated one). */
+  password?: string;
+  /** Keep the forced-change page open (scenario asserts it manually). */
+  leaveChangePending?: boolean;
+}
+
+/** Full browser login: portal /login → BFF PAR → hosted IdP page → back to the portal.
+ *  F-8: persons born with the bootstrap password land on the IdP's forced change page
+ *  first — by default the helper transparently completes it with a fresh password so
+ *  scenario bodies stay linear; drive it manually via `leaveChangePending`. */
+export async function signIn(browser: Browser, name: string, portalPath: string, username: string, password: string, opts: SignInOpts = {}): Promise<Session> {
   const context = await browser.newContext({ baseURL: BASE_URL });
   const page = await context.newPage();
   await page.goto(`${portalPath}/login`);
@@ -36,9 +46,24 @@ export async function signIn(browser: Browser, name: string, portalPath: string,
   await page.fill('#u', username);
   await page.fill('#p', password);
   await page.click('button:has-text("Sign in")');
+  // F-8 branch: the IdP re-renders a change form (#np) instead of the code redirect.
+  const changeForm = page.locator('#np');
+  if (await changeForm.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    if (opts.leaveChangePending) {
+      return { name, username, context, page, request: context.request, pendingChange: true };
+    }
+    await completePasswordChange(page, opts.password ?? `E2e-${suffix()}!pw`);
+  }
   await page.waitForURL((u) => u.pathname.startsWith(portalPath), { timeout: 30_000 });
   await page.waitForLoadState('networkidle');
   return { name, username, context, page, request: context.request };
+}
+
+/** Complete the hosted IdP first-login change form (#np/#npc); sign-in then resumes. */
+export async function completePasswordChange(page: Page, newPassword: string, confirm = newPassword): Promise<void> {
+  await page.fill('#np', newPassword);
+  await page.fill('#npc', confirm);
+  await page.click('button:has-text("Set new password")');
 }
 
 export interface SessionUser { userId: string; username: string; tenantId: string; tenantType: string }

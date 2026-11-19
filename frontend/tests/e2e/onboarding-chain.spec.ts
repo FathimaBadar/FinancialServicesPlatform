@@ -19,7 +19,7 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import {
-  api, approveKycUi, approveVia, BOOT_PASS, clearActAs, ensureKycPlugin, fileKycUi, NO_ACCESS_WALL, PERSON_PASS,
+  api, approveKycUi, approveVia, BOOT_PASS, clearActAs, completePasswordChange, ensureKycPlugin, fileKycUi, NO_ACCESS_WALL, PERSON_PASS,
   PLATFORM_TENANT_ID, pendingApproval, pollUntil, sagaAdminUsername, sessionUser, signIn, suffix, type Session,
 } from './support';
 
@@ -153,7 +153,8 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   // [UI] ledger.accounts screen provisions the default chart on the ACTIVE book.
   const ledgerPage = merAdmin.page;
   await ledgerPage.goto('/merchant/ledger');
-  await expect(ledgerPage.getByRole('heading', { name: 'Chart of accounts' })).toBeVisible();
+  // the composed screen carries the widget's own header too — same accessible name twice
+  await expect(ledgerPage.getByRole('heading', { name: 'Chart of accounts' }).first()).toBeVisible();
   const provision = ledgerPage.locator('[data-action="coa.provision"]');
   // empty book → the provision offer; already-provisioned book → the accounts table
   await expect(provision.or(ledgerPage.getByRole('table'))).toBeVisible({ timeout: 60_000 });
@@ -282,6 +283,49 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
       maker, 'GET', `/tenants/${PLATFORM_TENANT_ID}/bank-accounts`);
     expect(rootList.items.some((b) => b.status === 'ACTIVE'), 'platform root already has an ACTIVE account').toBe(true);
   }
+
+  /* ── SCENE 8.7 · first-login password change (F-8): an API-created person sets their own ── */
+  // A person born with the bootstrap password is flagged `password_must_change` — the IdP
+  // hosted surface forces a change before any session is minted (credentials never leave the IdP,
+  // UI standard: no shared-secret survival). Honest setup: an API-created USER via four-eyes.
+  const pwdUsername = `pwd.chg.${s}`;
+  expect(roleOptions.length, 'merchant tenant offers assignable roles').toBeGreaterThanOrEqual(1);
+  const pwdCreate = await api<{ personId: string; username: string }>(merAdmin, 'POST', `/tenants/${merTenantId}/users`, {
+    fullName: 'Password Flow User', username: pwdUsername, roleIds: [roleOptions[0].id],
+  });
+  expect(pwdCreate.status, 'password-flow user staged').toBe(202);
+  await approveVia(merChecker, merTenantId, 'USER_CREATE', 'password-flow user');
+  // first sign-in with the bootstrap password lands on the IdP change form — no session yet
+  const pwdPage = await signIn(browser, 'password flow', '/merchant', pwdUsername, PERSON_PASS, { leaveChangePending: true });
+  expect(pwdPage.pendingChange, 'first sign-in lands on the IdP change-password form').toBe(true);
+  const chgPage = pwdPage.page;
+  const pwdNewPassword = `E2e-${s}!pw`;
+  await expect(chgPage.getByRole('heading', { name: 'Set your own password' })).toBeVisible();
+  // too short — rejected on the host, no code minted, the same ticket survives
+  await completePasswordChange(chgPage, 'short1');
+  await expect(chgPage.locator('#chg-err')).toContainText('10');
+  // mismatch — rejected
+  await completePasswordChange(chgPage, pwdNewPassword, pwdNewPassword + 'x');
+  await expect(chgPage.locator('#chg-err')).toContainText('not match');
+  // same as the temporary one — rejected
+  await completePasswordChange(chgPage, PERSON_PASS);
+  await expect(chgPage.locator('#chg-err')).toContainText('not used here');
+  // a real password — accepted; the parked sign-in resumes into the portal
+  await completePasswordChange(chgPage, pwdNewPassword);
+  await chgPage.waitForURL((u) => u.pathname.startsWith('/merchant'), { timeout: 30_000 });
+  // the bootstrap password is dead — re-signin fails explicitly at the IdP
+  // (fresh context: the change-completion above authenticated the parked one)
+  const staleContext = await browser.newContext({ baseURL: 'http://localhost:5173' });
+  const stale = await staleContext.newPage();
+  await stale.goto('/merchant/login');
+  await stale.waitForSelector('#u', { timeout: 30_000 });
+  await stale.fill('#u', pwdUsername);
+  await stale.fill('#p', PERSON_PASS);
+  await stale.click('button:has-text("Sign in")');
+  await stale.waitForURL((u) => u.search.includes('authentication_failed'), { timeout: 15_000 });
+  // and the replacement password signs in cleanly (fresh context, new session)
+  const reSignIn = await signIn(browser, 'password flow re-signin', '/merchant', pwdUsername, pwdNewPassword);
+  expect((await sessionUser(reSignIn)).username).toBe(pwdUsername);
 
   /* ── SCENE 9 · curtain call ── */
   console.log('\n=== ONBOARDING CHAIN COMPLETE ===\n', JSON.stringify({

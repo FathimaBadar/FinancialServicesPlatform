@@ -91,6 +91,14 @@ public class IdpTokenService {
             throw new IdpProblemException(new IdpDtos.IdpProblem(
                 "PERSON_INACTIVE", "Account is not active", 403));
         }
+        // F-8: persons born with the bootstrap password must set their own at first
+        // sign-in — the hosted surface (authorize callback) intercepts this code and
+        // renders the change page; a direct token grant simply gets the 403.
+        if (person.mustChangePassword) {
+            log.info("idp_password_change_required username={}", grant.username());
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "PASSWORD_CHANGE_REQUIRED", "Choose your own password to continue", 403));
+        }
 
         PTenant tenant = tenants.findById(person.tenantId)
             .orElseThrow(() -> new IdpProblemException(new IdpDtos.IdpProblem(

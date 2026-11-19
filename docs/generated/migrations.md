@@ -21,6 +21,7 @@ timeline
     V20 : psp plugin consent
     V21 : bank accounts
     V23 : notifications and push
+    V24 : person password must change
 
-**Next free migration number: V24.**
+**Next free migration number: V25.**
 ```

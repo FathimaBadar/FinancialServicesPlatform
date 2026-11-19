@@ -92,9 +92,9 @@ public class TenantChildrenService {
         // credentials belong to the IdP; the bootstrap password comes from config (FSP_PERSON_PASSWORD)
         String defaultPassword = props.getSecurity().getDefaultPersonPassword();
         var adminPerson = provisioning.createPerson(
-            child.id, adminUsername, adminFullName != null ? adminFullName : adminUsername, null, defaultPassword, true);
+            child.id, adminUsername, adminFullName != null ? adminFullName : adminUsername, null, defaultPassword, true, true);
         var checkerPerson = provisioning.createPerson(
-            child.id, "checker-" + adminUsername, "Checker for " + adminUsername, null, defaultPassword, true);
+            child.id, "checker-" + adminUsername, "Checker for " + adminUsername, null, defaultPassword, true, true);
         provisioning.assignRole(adminPerson.id, adminRole.id);
         provisioning.assignRole(checkerPerson.id, checkerRole.id);
         provisioning.designateChecker(checkerPerson);

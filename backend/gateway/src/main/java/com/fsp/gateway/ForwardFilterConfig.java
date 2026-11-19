@@ -123,6 +123,7 @@ public class ForwardFilterConfig {
                 || path.equals("/idp/introspect") || path.equals("/idp/par")
                 || path.equals("/idp/authorize") || path.equals("/idp/authorize/callback")
                 || path.equals("/idp/login") || path.equals("/idp/error")
+                || path.equals("/idp/password/complete")
                 || path.equals("/idp/policy") || path.startsWith("/idp/policy/")
                 || path.startsWith("/idp/.well-known");
             if (coreSide && idpSide) {

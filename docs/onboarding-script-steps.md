@@ -295,7 +295,10 @@ deduped checker pointer + `Notification.PushRequired` outbox row, exposes the in
 unread-count API, the SPA badge on the Approvals nav item lights up from a poll without
 visiting the queue, and a Web Push/APNs/FCM-capable spine dispatches data-minimized
 payloads once credentials are set — docs/architecture/12-notifications-and-push.md).
-F-8 password change remains backlog. F-9 is done (see the happy-twin note below).
+F-8 is done (Sc 8.7 — an API-created person born with the bootstrap password is forced
+through the IdP hosted change page at first sign-in: policy reject, confirm mismatch reject,
+same-password reject, then accept; the parked sign-in resumes into the portal, the bootstrap
+password is dead, and the replacement signs in cleanly — docs/architecture/02 §6). F-9 is done (see the happy-twin note below).
 
 ### How to verify
 
@@ -324,7 +327,7 @@ flips those steps to `[UI]` automatically.
 | F-5 | **Portal eligibility fix + merchant portal entry** (stamp PSP subType or type-aware eligibility; add `merchant.html` identity) | **✅ done** | frontend + core | GAP-5, GAP-6 (Sc 3.2, Sc 7.1) | manufacturer and merchant personnel land in a rendered portal, not the wall |
 | F-6 | **Signed admin bundle in dev** (seed a bundle or a `make portal-publish` target) | **✅ done** | infra/frontend | GAP-7 (Sc 1.4) | the admin console shell renders its real menu after sign-in |
 | F-7 | **Staging/approval affordance in the users widget** (PENDING banner + “awaiting <checker>” pointer) | **✅ done** | frontend | GAP-8 (Sc 7.2) | the maker sees the staged user and who must act next |
-| F-8 | **Password reset / first-login change** for API-created persons (today they all share `$FSP_PERSON_PASSWORD`) | **⬜ open** | core + IdP | Sc 9 note (credentials hygiene) | each new person changes their own password at first sign-in |
+| F-8 | **Password reset / first-login change** for API-created persons (today they all share `$FSP_PERSON_PASSWORD`) | **✅ done** (`persons.password_must_change` V24 + IdP hosted change, Sc 8.7) | IdP (credential owner) + core flag | Sc 9 note (credentials hygiene) | every person born with the bootstrap password (`persons.password_must_change`) is forced through the IdP hosted change form — credentials never leave the IdP origin, the PAR flow is parked in a 10-min single-use ticket and resumes with the standard auth code; direct token grants get `403 PASSWORD_CHANGE_REQUIRED`; E2E asserts policy/mismatch/same-password rejections, portal resumption, and that the bootstrap password is dead after the change |
 | F-9 | **Adverse-path E2E coverage**: KYC `REJECT`/`REQUEST_INFO`, maker self-approve → explicit refusal + `MAKER_CANNOT_APPROVE` block state, stalled `TENANT_PENDING` recovery (KycRecoveryService) | **✅ done** (`tests/e2e/unhappy-twin.spec.ts` — scenes A–D) | tests + UI states | beyond happy path | the chain's unhappy twin passes with explicit UI states per ui-std §5.2; note: born-role makers never hold `kyc.approve`, so the KYC maker-block surfaces as `PERMISSION_DENIED` + server `block=MAKER` (the person-level `MAKER_CANNOT_APPROVE` is asserted on the USER_CREATE lane) |
 | F-10 | **Bank account management screen** (`bank.account.create`/`approve` seeded + new `bank.account.view` READ key) | **✅ done** (`widgets/bank/accounts`, Sc 8.5) | backend (core ledger) + frontend | first-money depth | the org's ADMIN files its settlement account (7 Namibian banks registered) → `BANK_ACCOUNT_CREATE` four-eyes approval → checker approves → PENDING→ACTIVE (one ACTIVE per tenant, partial unique index; full number only in DB, `maskAccountNumber` last-4 on the wire); maker self-approve refused 403; platform-root files its own account (platform checker approves); E2E asserts masked numbers on the wire and UI pending banner + ACTIVE state |
 | F-11 | **Ledger/period screens** (`ledger.accounts`, `period.control` widgets exist as ids only) | **✅ done — ledger.accounts driven by the chain (provision + table); period.control read-only** | frontend | Sc 8 depth | CoA and period state are visible, not assumed |

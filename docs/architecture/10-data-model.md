@@ -33,7 +33,7 @@ erDiagram
 
 ```mermaid
 timeline
-    title Core DB migrations (next free number: V24 — seed folders own V17/V18/V22)
+    title Core DB migrations (next free number: V25 — seed folders own V17/V18/V22)
     V1 : core schema — tenants, persons, RBAC, books, JE, approvals
     V2 : idempotency_records
     V3 : idp_configs / idp_identities

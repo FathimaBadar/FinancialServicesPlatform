@@ -51,7 +51,7 @@ class TenantServicePspProvisioningTest {
             r.key = i.getArgument(1);
             return r;
         });
-        when(provisioning.createPerson(any(), anyString(), anyString(), isNull(), any(), anyBoolean())).thenAnswer(i -> {
+        when(provisioning.createPerson(any(), anyString(), anyString(), isNull(), any(), anyBoolean(), anyBoolean())).thenAnswer(i -> {
             Person p = new Person();
             p.id = UUID.randomUUID();
             p.username = i.getArgument(1);

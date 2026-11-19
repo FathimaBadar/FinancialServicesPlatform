@@ -141,8 +141,9 @@ public class UserAdminService {
         requireAssignable(actor, tenantId, grant, null);
 
         // Stage the person in PENDING state — no sign-in, no roles until checker approves.
+        // F-8: born with the bootstrap password → forced first-login change at the IdP.
         Person p = provisioning.createPerson(tenantId, username, fullName, email,
-            props.getSecurity().getDefaultPersonPassword(), false);
+            props.getSecurity().getDefaultPersonPassword(), false, true);
         p.status = STATUS_PENDING;
         p.phone = phone;
         p.updatedAt = Instant.now();

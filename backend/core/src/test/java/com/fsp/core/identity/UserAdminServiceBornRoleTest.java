@@ -74,7 +74,7 @@ class UserAdminServiceBornRoleTest {
             .thenAnswer(inv -> ADMIN.equals(inv.getArgument(0))
                 ? Optional.of(person(ADMIN, "admin.self"))
                 : Optional.empty());
-        lenient().when(provisioning.createPerson(eq(TENANT), anyString(), anyString(), any(), any(), eq(false)))
+        lenient().when(provisioning.createPerson(eq(TENANT), anyString(), anyString(), any(), any(), eq(false), eq(true)))
             .thenAnswer(inv -> {
                 Person p = new Person();
                 p.id = UUID.randomUUID();

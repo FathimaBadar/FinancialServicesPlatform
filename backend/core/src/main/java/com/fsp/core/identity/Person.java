@@ -25,6 +25,9 @@ public class Person {
     public String phone;
     @Column(name = "password_hash", nullable = false)
     public String passwordHash;
+    /** F-8: born with the bootstrap password → the IdP forces a first-login change. */
+    @Column(name = "password_must_change", nullable = false)
+    public boolean mustChangePassword;
     @Column(nullable = false)
     public String status; // ACTIVE | ARCHIVED | DISABLED
     @Column(name = "is_applicant", nullable = false)

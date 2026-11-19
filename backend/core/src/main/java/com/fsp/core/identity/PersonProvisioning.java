@@ -46,7 +46,7 @@ public class PersonProvisioning {
 
     @Transactional(propagation = Propagation.REQUIRED)
     public Person createPerson(UUID tenantId, String username, String fullName, String email,
-                               String rawPassword, boolean applicant) {
+                               String rawPassword, boolean applicant, boolean mustChangePassword) {
         if (username == null || username.isBlank()) {
             throw ApiException.badRequest("USERNAME_INVALID", "username required");
         }
@@ -60,11 +60,12 @@ public class PersonProvisioning {
         p.fullName = fullName == null || fullName.isBlank() ? username : fullName;
         p.email = email;
         p.passwordHash = encoder.encode(rawPassword);
+        p.mustChangePassword = mustChangePassword;
         p.status = "ACTIVE";
         p.isApplicant = applicant;
         Person saved = personRepository.save(p);
-        log.info("person_created personId={} tenant={} username={} applicant={}",
-            saved.id, tenantId, username, applicant);
+        log.info("person_created personId={} tenant={} username={} applicant={} mustChangePassword={}",
+            saved.id, tenantId, username, applicant, mustChangePassword);
         return saved;
     }
 

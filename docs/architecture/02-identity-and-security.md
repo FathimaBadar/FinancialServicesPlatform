@@ -80,3 +80,48 @@ flowchart LR
 ## 5. Per-Tenant IdP Policy
 
 A tenant admin can override the default native IdP by setting `idp_configs.provider = THIRD_PARTY` (issuer URL etc.). Third-party identities federate via `idp_identities(issuer, subject) → person_id`; until the federation client lands, external logins surface `503 IDP_EXTERNAL_FEDERATION_PENDING`. Entitlements never move — RBAC stays in core.
+
+## 6. First-login password change (F-8)
+
+Persons provisioned by API (user create, KYC saga admin/checker, PSP creation, child-org
+provisioning) are born with the shared bootstrap password (`FSP_PERSON_PASSWORD`). They
+must replace it at first sign-in; nothing in the platform may let a shared secret survive
+indefinitely.
+
+Flow (credentials never leave the IdP origin):
+
+```mermaid
+sequenceDiagram
+    participant P as Person (browser)
+    participant B as BFF (:8080 PAR)
+    participant I as IdP (:8082)
+    participant DB as persons table
+
+    P->>B: portal /login
+    B->>I: PAR (request_uri)
+    I-->>P: /idp/login form
+    P->>I: POST /idp/authorize/callback (username, temp password)
+    I->>DB: verify bcrypt + password_must_change = true
+    I-->>P: hosted change form (short-lived ticket parks the PAR data)
+    P->>I: POST /idp/password/complete (new password + confirm)
+    I->>I: policy: 10–128 chars, ≠ current, confirm match
+    I->>DB: password_hash ← bcrypt(new), password_must_change ← false
+    I-->>P: 302 redirect_uri?code=… (same PAR client, same state)
+    P->>B: code → session
+```
+
+- **Flag, not heuristic:** `persons.password_must_change` (V24) is set `true` at every
+  provisioning site that hands out the bootstrap password (`PersonProvisioning.createPerson`
+  param). SQL seeds (system/demo personas) keep the default `false` — their passwords are
+  environment constants such as `demo1234`, intended to be rotated by ops, not changed per person.
+- **Single seam:** the native IdP owns credential verification (`IdpTokenService.grantPassword`)
+  and now also the change: policy check, bcrypt write, flag flip. Core never sees the new
+  password; BFF/SPA only ever see the final auth code.
+- **Direct token grants are refused:** a ROPC `password` grant for a must-change person gets
+  `403 PASSWORD_CHANGE_REQUIRED` — the change is only possible through the hosted surface.
+- **Ticket semantics:** the change ticket (`ParService.PasswordChangeTicket`) parks the PAR
+  request for 10 minutes, is re-readable across validation failures (policy / mismatch /
+  same-as-current re-render the form), and is strictly consumed once on success.
+- **FAPI 2.0 note:** the hosted change surface is pre-authentication; it carries no bearer
+  material and issues the standard authorization code through the existing PAR/PKCE/DPoP
+  pipeline afterwards — the FAPI2 slice does not need to special-case it.

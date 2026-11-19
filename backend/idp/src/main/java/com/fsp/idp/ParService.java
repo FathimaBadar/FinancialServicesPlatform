@@ -34,6 +34,47 @@ public class ParService {
     // Key: auth_code, Value: AuthCodeData
     private final Map<String, AuthCodeData> authCodeStore = new ConcurrentHashMap<>();
 
+    // F-8: forced first-login password change. The ticket parks the PAR data (already
+    // consumed from parStore at the callback) so the change form can resume the sign-in
+    // flow after the new password is set — no second authentication round.
+    // Ticket is re-readable until success or expiry (validation failures re-render the form).
+    private static final long PW_TICKET_EXPIRY_SECONDS = 600;
+    private final Map<String, ParService.PasswordChangeTicket> pwTicketStore = new ConcurrentHashMap<>();
+
+    public record PasswordChangeTicket(String username, UUID personId, UUID tenantId,
+                                       ParRequestData parData, Instant createdAt) {}
+
+    public String storePasswordChangeTicket(String username, UUID personId, UUID tenantId,
+                                            ParRequestData parData) {
+        String ticket = "pwt_" + UUID.randomUUID().toString().replace("-", "");
+        pwTicketStore.put(ticket, new PasswordChangeTicket(username, personId, tenantId, parData, Instant.now()));
+        log.debug("password_change_ticket_stored username={} clientId={}", username, parData.clientId());
+        return ticket;
+    }
+
+    /** Peek (non-consuming): validation failures re-render the form with the same ticket. */
+    public PasswordChangeTicket peekPasswordChangeTicket(String ticket) {
+        PasswordChangeTicket t = pwTicketStore.get(ticket);
+        if (t == null) {
+            return null;
+        }
+        if (Instant.now().isAfter(t.createdAt().plusSeconds(PW_TICKET_EXPIRY_SECONDS))) {
+            pwTicketStore.remove(ticket);
+            log.warn("password_change_ticket_expired");
+            return null;
+        }
+        return t;
+    }
+
+    /** Consume strictly once — only on a successful password change. */
+    public PasswordChangeTicket consumePasswordChangeTicket(String ticket) {
+        PasswordChangeTicket t = peekPasswordChangeTicket(ticket);
+        if (t != null) {
+            pwTicketStore.remove(ticket);
+        }
+        return t;
+    }
+
     public ParService(JwtService jwt, IdpProperties props) {
         this.jwt = jwt;
         this.props = props;

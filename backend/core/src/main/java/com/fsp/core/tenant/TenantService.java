@@ -84,10 +84,10 @@ public class TenantService {
         String defaultPassword = props.getSecurity().getDefaultPersonPassword();
         Person admin = provisioning.createPerson(psp.id, req.adminUsername(),
             req.adminFullName() == null || req.adminFullName().isBlank()
-                ? req.adminUsername() : req.adminFullName(), null, defaultPassword, false);
+                ? req.adminUsername() : req.adminFullName(), null, defaultPassword, false, true);
         Person checker = provisioning.createPerson(psp.id, req.checkerUsername(),
             req.checkerFullName() == null || req.checkerFullName().isBlank()
-                ? req.checkerUsername() : req.checkerFullName(), null, defaultPassword, false);
+                ? req.checkerUsername() : req.checkerFullName(), null, defaultPassword, false, true);
         provisioning.assignRole(admin.id, adminRole.id);
         provisioning.assignRole(checker.id, checkerRole.id);
         // the provisioned checker IS the organization's designated checker (docs/checker-flag.md)

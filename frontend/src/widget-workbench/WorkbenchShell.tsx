@@ -29,7 +29,7 @@ export function WorkbenchShell() {
           New widget: <b>New widget (LLM)</b> with an LLM, or by hand in{' '}
           <span className="mono">shared/widgets/&lt;area&gt;/&lt;name&gt;/</span> (index.tsx + widget.tsx + data.ts).
           <br />
-          Portal theme is dark only.
+          Theme follows <code>data-theme</code> on &lt;html&gt; (light default; dark via <code>data-theme="dark"</code>).
         </p>
       </aside>
       <main className="main">

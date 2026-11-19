@@ -3,7 +3,7 @@
  * Server-side page (totals-free): page/size/q/sort are allow-listed query params.
  */
 import type { DataSources } from '../../core/sources';
-import type { FixtureSet } from '../../core/ports';
+import type { FixtureRequest, FixtureSet } from '../../core/ports';
 import type { OrgListQuery, OrgPage, OrgRow } from './model';
 import { DEFAULT_QUERY, PAGE_SIZES } from './model';
 import { forbidUnless } from '../../kit/forbid';
@@ -50,7 +50,7 @@ function pageOf(rows: OrgRow[], q: OrgListQuery): OrgPage {
 
 export const fixtures: FixtureSet = {
   'onboard.orgs.list': {
-    default: (req): OrgPage => {
+    default: (req: FixtureRequest): OrgPage => {
       forbidUnless(req.permissions, 'org.create');
       const p = req.params;
       const [, sd = 'asc'] = (p.sort ?? DEFAULT_QUERY.sort).split(',') as [string, string];

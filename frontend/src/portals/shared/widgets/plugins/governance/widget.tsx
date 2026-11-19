@@ -57,7 +57,7 @@ export function PluginsGovernance() {
         <PageHeader
           title="Plugin types"
           subtitle="Registration is four-eyes: you request it, another platform checker approves."
-          actions={!registering ? <Button variant="primary" onClick={() => { cmd.reset(); setRegistering(true); }}>Register plugin</Button> : undefined}
+          actions={!registering ? <Button variant="primary" data-action="plugin.register" onClick={() => { cmd.reset(); setRegistering(true); }}>Register plugin</Button> : undefined}
         />
         <NoticeBar notice={notice} onDismiss={dismiss} />
         {cmd.isError && <div className="mb-3"><Alert kind="bad">{toProblem(cmd.error).message}</Alert></div>}
@@ -97,7 +97,7 @@ export function PluginsGovernance() {
                   options={installable.map((t) => ({ value: `${t.code}@${t.version}`, label: `${t.code} ${t.version}` }))}
                   onChange={(e) => setInstallType(e.target.value)}
                 />
-                <Button variant="primary" disabled={!installType || cmd.isPending} onClick={() => {
+                <Button variant="primary" disabled={!installType || cmd.isPending} data-action="plugin.install" onClick={() => {
                   const [code, version] = installType.split('@');
                   run({ kind: 'install', orgId, code: code ?? '', version: version ?? '' },
                     `Installation of ${code} requested — awaiting a checker.`);

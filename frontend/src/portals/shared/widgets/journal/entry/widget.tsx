@@ -78,7 +78,7 @@ export function JournalEntries() {
         title="Journal entries"
         subtitle="Balanced entries, four-eyes approved, posted to the ledger."
         actions={canCreate && !creating ? (
-          <Button variant="primary" disabled={!book} title={!book ? 'No active book yet' : undefined}
+          <Button variant="primary" disabled={!book} title={!book ? 'No active book yet' : undefined} data-action="je.create"
             onClick={() => { cmd.reset(); patch({ new: '1', entry: null }); }}>New entry</Button>
         ) : undefined}
       />

@@ -103,13 +103,13 @@ export function EntryDetail({ entry, accounts, meId, canCreate, canApprove, busy
 
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         {entry.status === 'DRAFT' && mine && canCreate && (
-          <Button variant="primary" disabled={busy} onClick={onSubmit}>{busy ? 'Sending…' : 'Submit for approval'}</Button>
+          <Button variant="primary" disabled={busy} onClick={onSubmit} data-action="je.submit">{busy ? 'Sending…' : 'Submit for approval'}</Button>
         )}
         {entry.status === 'PENDING_CHECKER' && !mine && canApprove && !confirm && (
-          <Button variant="primary" disabled={busy} onClick={() => setConfirm(true)}>Approve and post</Button>
+          <Button variant="primary" disabled={busy} onClick={() => setConfirm(true)} data-action="je.approve">Approve and post</Button>
         )}
         {entry.status === 'COMMIT_UNKNOWN' && canApprove && (
-          <Button variant="primary" disabled={busy} onClick={onCheckStatus}>{busy ? 'Checking…' : 'Check status'}</Button>
+          <Button variant="primary" disabled={busy} onClick={onCheckStatus} data-action="je.check">{busy ? 'Checking…' : 'Check status'}</Button>
         )}
       </div>
       {confirm && (

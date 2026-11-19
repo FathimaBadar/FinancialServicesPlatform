@@ -4,7 +4,9 @@ import com.fsp.plugin.kyc.api.ApiProblemException;
 import com.fsp.plugin.kyc.api.KycDtos;
 import com.fsp.plugin.kyc.domain.KycCase;
 import com.fsp.plugin.kyc.domain.KycDecision;
+import com.fsp.plugin.kyc.domain.KycUbo;
 import com.fsp.plugin.kyc.repository.KycCaseRepository;
+import com.fsp.plugin.kyc.repository.KycUboRepository;
 import com.fsp.plugin.kyc.service.CoreClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -14,6 +16,7 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -29,13 +32,15 @@ public class KycOnboardingSagaService {
 
     private final KycCaseService caseService;
     private final KycCaseRepository caseRepository;
+    private final KycUboRepository uboRepository;
     private final ScreeningService screening;
     private final CoreClient coreClient;
 
     public KycOnboardingSagaService(KycCaseService caseService, KycCaseRepository caseRepository,
-                                    ScreeningService screening, CoreClient coreClient) {
+                                    KycUboRepository uboRepository, ScreeningService screening, CoreClient coreClient) {
         this.caseService = caseService;
         this.caseRepository = caseRepository;
+        this.uboRepository = uboRepository;
         this.screening = screening;
         this.coreClient = coreClient;
     }
@@ -98,6 +103,55 @@ public class KycOnboardingSagaService {
         if (slug.length() > 40) slug = slug.substring(0, 40).replaceAll("\\.+$", "");
         if (slug.length() < 3) slug = "org";
         return slug + "." + caseNo.substring(caseNo.lastIndexOf('-') + 1);
+    }
+
+    /**
+     * Resume a DRAFT/REQUEST_INFO case (the REQUEST_INFO four-eyes loop): the maker re-submits
+     * the — possibly amended — application. It is RE-SCREENED server-side from the stored UBOS
+     * (screening is the provider's verdict, never the caller's claim), a NEW approval revision
+     * is opened (kyc-approval-&lt;case&gt;-&lt;rev&gt;, deterministic so a retry cannot fork approvals),
+     * and the case returns to PENDING_REVIEW. The prior revision stays immutable in core.
+     */
+    @Transactional
+    public KycCase resume(UUID caseId, UUID ownerTenantId, UUID makerPersonId, String makerName,
+                          String actorAssertion, String idempotencyKey) {
+        KycCase c = caseRepository.findById(caseId)
+            .orElseThrow(() -> new ApiProblemException("KYC_CASE_NOT_FOUND", "Case not found", 404));
+        if (!c.ownerTenantId.equals(ownerTenantId)) {
+            throw new ApiProblemException("KYC_ACCESS_DENIED", "Case not accessible", 403);
+        }
+
+        // state guard + idempotency record live in the case service (DRAFT/REQUEST_INFO only)
+        caseService.submit(c.id, ownerTenantId, makerPersonId, null, idempotencyKey);
+        c = caseRepository.findById(c.id).orElseThrow();
+
+        List<KycDtos.UboRequest> ubos = uboRepository.findByCaseIdOrderByPersonNoAsc(c.id).stream()
+            .map(KycOnboardingSagaService::toUboRequest).toList();
+        screening.runIdentity(c.id, ownerTenantId, ubos);
+        screening.runSanctions(c.id, ownerTenantId, c.legalName, ubos);
+        caseService.event(c, "SCREENED", "KYC plugin", "Amended application re-screened");
+
+        long rev = (c.approvalRev != null ? c.approvalRev : 0L) + 1;
+        String payloadHash = sha256(c.caseNo + "|" + c.legalName + "|" + c.registrationNumber + "|" + c.subjectTenantId);
+        Map<String, Object> approval = coreClient.openApproval(Map.of(
+            "action", "CASE_DECISION", "targetResourceId", c.id.toString(), "payloadHash", payloadHash),
+            actorAssertion, "kyc-approval-" + c.id + "-" + rev);
+        c = caseRepository.findById(c.id).orElseThrow();
+        c.approvalId = UUID.fromString(String.valueOf(approval.get("id")));
+        c.approvalRev = rev;
+        c.status = KycCase.STATUS_PENDING_REVIEW;
+        c.updatedAt = Instant.now();
+        c = caseRepository.save(c);
+        caseService.event(c, "SUBMITTED", makerName, "Approval revision " + rev + " opened for the checker");
+
+        log.info("kyc_onboarding_resubmitted caseId={} caseNo={} rev={} ownerTenant={} maker={}",
+            c.id, c.caseNo, rev, ownerTenantId, makerPersonId);
+        return c;
+    }
+
+    private static KycDtos.UboRequest toUboRequest(KycUbo u) {
+        return new KycDtos.UboRequest(u.fullName, u.dob, u.nationality, u.residentialAddress,
+            u.phone, u.email, u.idDocType, u.idNumber, u.idExpiry, u.ownershipPct, u.isPep);
     }
 
     /** Decide a case (approve/reject/request-info).

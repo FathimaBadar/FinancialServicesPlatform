@@ -63,7 +63,7 @@ export function RbacMatrix() {
       <PageHeader
         title="Roles and permissions"
         subtitle="Changes are four-eyes: you request, a checker approves."
-        actions={canManage && !creating ? <Button variant="primary" onClick={() => { cmd.reset(); setCreating(true); }}>New role</Button> : undefined}
+        actions={canManage && !creating ? <Button variant="primary" data-action="role.create" onClick={() => { cmd.reset(); setCreating(true); }}>New role</Button> : undefined}
       />
       <NoticeBar notice={notice} onDismiss={dismiss} />
       {creating && (

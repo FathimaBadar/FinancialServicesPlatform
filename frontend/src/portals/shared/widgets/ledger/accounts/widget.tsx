@@ -55,7 +55,7 @@ export function LedgerAccounts() {
             <StatePanel kind="empty" title="No accounts in this book" hint="Provision the default chart to start posting." />
             {canCreate && book.status === 'ACTIVE' && (
               <div className="flex justify-center">
-                <Button variant="primary" disabled={provision.isPending} onClick={() => provision.mutate()}>
+                <Button variant="primary" disabled={provision.isPending} data-action="coa.provision" onClick={() => provision.mutate()}>
                   {provision.isPending ? 'Provisioning…' : 'Provision default chart'}
                 </Button>
               </div>

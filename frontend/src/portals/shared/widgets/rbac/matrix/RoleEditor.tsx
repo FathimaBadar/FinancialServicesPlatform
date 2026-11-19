@@ -76,13 +76,13 @@ export function RoleEditor({ role, catalog, held, canManage, busy, problem, onRe
           </div>
           <div className="flex gap-2">
             {!role.protectedRole && (
-              <Button variant="ghost" disabled={busy || role.assignedCount > 0}
+              <Button variant="ghost" disabled={busy || role.assignedCount > 0} data-action="role.delete"
                 title={role.assignedCount > 0 ? 'Unassign this role from everyone first' : undefined}
                 onClick={() => setConfirmDelete(true)}>
                 Delete role
               </Button>
             )}
-            <Button variant="primary" disabled={busy || added.length + removed.length === 0}
+            <Button variant="primary" disabled={busy || added.length + removed.length === 0} data-action="role.update"
               onClick={() => onRequestChange([...draft].sort())}>
               {busy ? 'Sending…' : 'Request change'}
             </Button>

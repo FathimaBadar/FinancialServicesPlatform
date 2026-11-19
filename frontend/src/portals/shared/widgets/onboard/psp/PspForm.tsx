@@ -45,7 +45,7 @@ export function PspForm({ busy, problem, onSubmit, onCancel }: PspFormProps) {
       {problem && <p className="text-[12px] text-status-danger sm:col-span-2" role="alert">{problem}</p>}
       <div className="flex justify-end gap-2 sm:col-span-2">
         <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Creating…' : 'Create organization'}</Button>
+        <Button type="submit" variant="primary" disabled={busy} data-action="org.create">{busy ? 'Creating…' : 'Create organization'}</Button>
       </div>
     </form>
   );

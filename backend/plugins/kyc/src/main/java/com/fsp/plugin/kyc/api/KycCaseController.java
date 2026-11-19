@@ -84,15 +84,16 @@ public class KycCaseController {
         return caseService.get(c.id, actor.tenantId(), actor.personId());
     }
 
-    /** kyc.case.submit — POST /cases/{caseId}/submit */
+    /** kyc.case.submit — POST /cases/{caseId}/submit: resume the saga (DRAFT/REQUEST_INFO →
+     *  re-screen + a NEW approval revision → PENDING_REVIEW). */
     @PostMapping("/cases/{caseId}/submit")
     public KycDtos.CaseView submit(HttpServletRequest request,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @PathVariable("caseId") UUID caseId,
             @RequestBody(required = false) KycDtos.SubmitBody body) {
         var actor = ActorAssertionFilter.actor(request);
-        KycCase c = caseService.submit(caseId, actor.tenantId(), actor.personId(),
-            body == null ? null : body.expectedVersion(), idempotencyKey);
+        KycCase c = sagaService.resume(caseId, actor.tenantId(), actor.personId(), actor.username(),
+            actor.assertion(), idempotencyKey);
         return caseService.get(c.id, actor.tenantId(), actor.personId());
     }
 

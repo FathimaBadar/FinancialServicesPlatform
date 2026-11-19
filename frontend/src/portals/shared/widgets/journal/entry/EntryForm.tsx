@@ -63,7 +63,7 @@ export function EntryForm({ accounts, currency, busy, problem, onSubmit, onCance
         <Button type="button" variant="ghost" onClick={() => setV((s) => ({ ...s, lines: [...s.lines, blankLine('DEBIT')] }))}>Add line</Button>
         <div className="flex gap-2">
           <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Saving…' : 'Save draft'}</Button>
+          <Button type="submit" variant="primary" disabled={busy} data-action="je.create">{busy ? 'Saving…' : 'Save draft'}</Button>
         </div>
       </div>
     </form>

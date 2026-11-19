@@ -41,7 +41,7 @@ export function RegisterPluginForm({ busy, onSubmit, onCancel }: RegisterPluginF
         onChange={(e) => setValues((v) => ({ ...v, manifest: e.target.value }))} onBlur={() => check('manifest')} />
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Sending…' : 'Request registration'}</Button>
+        <Button type="submit" variant="primary" disabled={busy} data-action="plugin.register">{busy ? 'Sending…' : 'Request registration'}</Button>
       </div>
     </form>
   );

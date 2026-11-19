@@ -335,11 +335,26 @@ public class ApprovalService {
         "kyc.approve", "kyc.reject", "kyc.review", "je.approve", "ui.layout.manage",
         "user.manage", "role.manage", "plugin.manage");
 
-    public List<ApprovalDtos.QueueView> queue(UUID tenantId, List<String> statuses, Actor actor) {
+    public List<ApprovalDtos.QueueView> queue(UUID tenantId, List<String> statuses,
+                                              String operationType, Actor actor) {
         permissions.requireAny(actor, CHECKER_PERMISSIONS, tenantId);
-        List<ApprovalRequest> rows = (statuses == null || statuses.isEmpty())
-            ? repository.findByTenantIdOrderByRequestedAtDesc(tenantId)
-            : repository.findByTenantIdAndStatusOrderByRequestedAtDesc(tenantId, statuses.getFirst());
+        List<String> statusFilter = statuses == null || statuses.isEmpty() ? null : statuses;
+        // Enum-equality filters are pushed down to the database (guide §4A search push-down) —
+        // a pending UI_LAYOUT_PUBLISH row beyond an arbitrary newest-first page must still be
+        // decidable, so filtering happens before any caller-side limit.
+        List<ApprovalRequest> rows;
+        if (operationType != null && !operationType.isBlank()) {
+            rows = statusFilter == null
+                ? repository.findByTenantIdAndOperationTypeOrderByRequestedAtDesc(tenantId, operationType)
+                : repository.findByTenantIdAndOperationTypeAndStatusInOrderByRequestedAtDesc(
+                    tenantId, operationType, statusFilter);
+        } else if (statusFilter == null) {
+            rows = repository.findByTenantIdOrderByRequestedAtDesc(tenantId);
+        } else if (statusFilter.size() == 1) {
+            rows = repository.findByTenantIdAndStatusOrderByRequestedAtDesc(tenantId, statusFilter.getFirst());
+        } else {
+            rows = repository.findByTenantIdAndStatusInOrderByRequestedAtDesc(tenantId, statusFilter);
+        }
         java.util.Set<String> held = permissions.effectiveKeys(actor, tenantId);
         boolean flagged = actor.personId() != null
             && persons.findById(actor.personId()).map(p -> p.isChecker).orElse(false);
@@ -365,8 +380,10 @@ public class ApprovalService {
         else if (perm == null || !held.contains(perm)) blocked = "NO_PERMISSION";
         else if (!flagged) blocked = "NOT_CHECKER";
         else blocked = null;
-        // payload only for core-owned person/role changes — plugin rows hold a hash, never data
-        String payload = r.operationType.startsWith("USER_") || r.operationType.startsWith("ROLE_") ? r.payload : null;
+        // payload only for core-owned rows the checker needs to JUDGE: person/role changes and
+        // the UI layout/menu snapshot (what the checker is approving); plugin rows hold a hash, never data
+        String payload = r.operationType.startsWith("USER_") || r.operationType.startsWith("ROLE_")
+            || ApprovalRequest.OpType.UI_LAYOUT_PUBLISH.equals(r.operationType) ? r.payload : null;
         return new ApprovalDtos.QueueView(r.id, r.tenantId, r.operationType, r.targetResourceId, r.status,
             r.makerId, nameOf(r.makerId, names), r.checkerId, nameOf(r.checkerId, names), r.reason,
             r.requestedAt, r.decidedAt, payload, blocked == null, blocked, perm);

@@ -9,6 +9,10 @@ import java.util.UUID;
 public interface ApprovalRequestRepository extends JpaRepository<ApprovalRequest, UUID> {
     List<ApprovalRequest> findByTenantIdOrderByRequestedAtDesc(UUID tenantId);
     List<ApprovalRequest> findByTenantIdAndStatusOrderByRequestedAtDesc(UUID tenantId, String status);
+    List<ApprovalRequest> findByTenantIdAndStatusInOrderByRequestedAtDesc(UUID tenantId, java.util.Collection<String> statuses);
+    List<ApprovalRequest> findByTenantIdAndOperationTypeOrderByRequestedAtDesc(UUID tenantId, String operationType);
+    List<ApprovalRequest> findByTenantIdAndOperationTypeAndStatusInOrderByRequestedAtDesc(
+        UUID tenantId, String operationType, java.util.Collection<String> statuses);
     List<ApprovalRequest> findByTargetResourceIdAndStatus(UUID targetResourceId, String status);
     Optional<ApprovalRequest> findByOperationTypeAndTargetResourceId(String operationType, UUID targetResourceId);
 

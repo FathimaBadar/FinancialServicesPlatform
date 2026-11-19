@@ -33,6 +33,8 @@ export interface ApprovalView {
   reason: string | null;
   requestedAt: string;
   decidedAt: string | null;
+  /** The submit-time layout snapshot (UI_LAYOUT_PUBLISH rows) — what the checker is approving. */
+  payload: string | null;
 }
 
 const keys = {
@@ -70,8 +72,11 @@ export function useServerLayouts(portal: string, enabled: boolean) {
 export function usePendingPublish(rootTenantId: string | null, draftId: string | null, enabled: boolean) {
   return useQuery({
     queryKey: keys.approvals(rootTenantId ?? ''),
+    // Server-side operationType push-down (guide §4A): the publish row must be findable
+    // regardless of how many other pending approvals the tenant has.
     queryFn: () =>
-      apiGet<ApprovalView[]>(`/api/approvals?tenantId=${encodeURIComponent(rootTenantId ?? '')}&status=PENDING_CHECKER&size=100`),
+      apiGet<ApprovalView[]>(
+        `/api/approvals?tenantId=${encodeURIComponent(rootTenantId ?? '')}&operationType=UI_LAYOUT_PUBLISH&status=PENDING_CHECKER&size=100`),
     enabled: enabled && !!rootTenantId,
     select: (rows) =>
       rows.find((a) => a.operationType === 'UI_LAYOUT_PUBLISH' && a.targetResourceId === draftId && a.status === 'PENDING_CHECKER') ?? null,

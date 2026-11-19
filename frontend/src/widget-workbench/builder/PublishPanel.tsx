@@ -63,6 +63,17 @@ export function PublishPanel({ layout, errorCount, onOpen }: PublishPanelProps) 
   const p = pending.data ?? null;
   const mine = p !== null && p.makerId === me;
 
+  // What the checker is deciding on: the SUBMITTED snapshot (approval payload), compared
+  // structurally against what the portal draws today — never the live draft, which is
+  // locked while this approval is pending.
+  const submitted = p?.payload ? parseLayout(p.payload, layout.portal) : null;
+  const publishedLayout = published.data ? parseLayout(published.data.layoutJson, layout.portal) : null;
+  const structSig = (l: PortalLayout) =>
+    l.menus.map((m) => `${m.id}|${m.label}#${m.screens.map((s) => `${s.id}:${s.placedWidgets.length}`).join(',')}`).join(';;');
+  const sameAsPublished = submitted && publishedLayout
+    ? structSig(submitted) === structSig(publishedLayout)
+    : null;
+
   return (
     <div className="exp">
       {message && <p className={message.bad ? 'bad' : 'ok'}>{message.text}</p>}
@@ -73,12 +84,14 @@ export function PublishPanel({ layout, errorCount, onOpen }: PublishPanelProps) 
         <button
           type="button"
           className="btn primary"
-          disabled={errorCount > 0 || busy}
+          disabled={errorCount > 0 || busy || !!p}
+          title={p ? 'Draft is locked while its publish approval is pending' : undefined}
           onClick={() => act.save.mutate(layout, { onSuccess: () => ok('Draft saved on the server.'), onError: fail })}
         >
           {act.save.isPending ? 'Saving…' : 'Save draft to server'}
         </button>
       </div>
+      {p && <p className="dim small">Draft is locked while the publish approval is pending — the checker decides on the submitted snapshot.</p>}
       {errorCount > 0 && <p className="bad small">Fix the {errorCount} error(s) first.</p>}
 
       {rows.map((r) => (
@@ -107,6 +120,22 @@ export function PublishPanel({ layout, errorCount, onOpen }: PublishPanelProps) 
         <div className="small">
           Waiting for approval since {when(p.requestedAt)}{mine ? ' — submitted by you' : ''}.
           <div className="mono dim">approval {p.id}</div>
+          {!mine && submitted && (
+            <details className="small">
+              <summary>
+                Submitted content: {submitted.menus.length} menu(s),{' '}
+                {submitted.menus.reduce((n, m) => n + m.screens.length, 0)} screen(s) —{' '}
+                {sameAsPublished === null
+                  ? 'cannot compare with published'
+                  : sameAsPublished
+                    ? 'structurally identical to what is published'
+                    : 'differs from what is published'}
+              </summary>
+              <pre className="mono dim" style={{ maxHeight: '14em', overflow: 'auto' }}>{p.payload}</pre>
+            </details>
+          )}
+          {!mine && !submitted && <span className="bad small">Submitted snapshot is missing or unreadable — do not approve.</span>}
+          <div className="dim small">The draft is locked until this approval is decided (approve or reject).</div>
         </div>
       ) : (
         <div className="dim small">Nothing waiting.</div>

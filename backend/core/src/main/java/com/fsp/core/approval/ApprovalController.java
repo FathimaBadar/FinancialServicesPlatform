@@ -28,15 +28,16 @@ public class ApprovalController {
         this.permissions = permissions;
     }
 
-    /** GET /v1/approvals?tenantId=...&status=PENDING_CHECKER&page? — bounded list (guide §4A). */
+    /** GET /v1/approvals?tenantId=...&status=PENDING_CHECKER&operationType=UI_LAYOUT_PUBLISH&size? — bounded (guide §4A). */
     @FspOperation(id = "approval.queue.read", component = "approval", title = "View approval queue")
     @GetMapping("/v1/approvals")
     public List<ApprovalDtos.QueueView> queue(jakarta.servlet.http.HttpServletRequest request,
                                               @RequestParam("tenantId") UUID tenantId,
                                               @RequestParam(value = "status", required = false) String status,
+                                              @RequestParam(value = "operationType", required = false) String operationType,
                                               @RequestParam(value = "size", required = false, defaultValue = "50") Integer size) {
         if (size < 1 || size > 100) throw ApiException.badRequest("BOUNDS", "size must be 1-100");
-        return approvalService.queue(tenantId, status == null ? List.of() : List.of(status), actor(request))
+        return approvalService.queue(tenantId, status == null ? List.of() : List.of(status), operationType, actor(request))
             .stream().limit(size).toList();
     }
 

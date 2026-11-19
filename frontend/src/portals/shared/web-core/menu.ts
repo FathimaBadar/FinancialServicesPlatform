@@ -77,7 +77,7 @@ export const MENU_ITEMS: MenuItem[] = [
 
   // ---------------- KYC (one screen family: the directory / queue / case)
   { id: 'kyc-reviews', label: 'Review queue', icon: '✓', link: '/kyc/reviews',
-    perm: ['kyc.approve', 'kyc.reject'], portals: ['platform', 'org'], group: 'KYC', widgets: ['kyc.manage'] },
+    perm: ['kyc.approve', 'kyc.reject'], portals: ['org'], group: 'KYC', widgets: ['kyc.manage'] },
   { id: 'kyc-decisions', label: 'My organization', icon: '◈', link: '/kyc',
     perm: ['kyc.review'], portals: ['org'], group: 'KYC', widgets: ['kyc.application'] },
 

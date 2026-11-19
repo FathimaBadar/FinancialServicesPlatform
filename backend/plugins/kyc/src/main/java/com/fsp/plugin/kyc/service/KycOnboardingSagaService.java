@@ -191,8 +191,10 @@ public class KycOnboardingSagaService {
             reason = "REQUEST_INFO;" + info.reason();
         }
 
-        // Resolve core approval on-behalf (checker ≠ maker enforced by core)
-        String resolveKey = "kyc-approval-" + c.id + "-resolve-" + Instant.now().getEpochSecond();
+        // Resolve core approval on-behalf (checker ≠ maker enforced by core). The key is scoped
+        // to the APPROVAL id (unique per revision) so retries collapse but the REQUEST_INFO loop
+        // (revision 1 resolved, then revision 2) can never reuse another revision's key.
+        String resolveKey = "kyc-approval-" + c.approvalId + "-resolve-" + Instant.now().getEpochSecond();
         coreClient.resolveApproval(c.approvalId, coreApproved, reason, actorAssertion, resolveKey);
 
         // Update case state

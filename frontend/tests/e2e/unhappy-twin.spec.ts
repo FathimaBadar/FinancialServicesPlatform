@@ -160,7 +160,7 @@ test('unhappy twin — REQUEST_INFO loop, REJECT, self-approve blocks, stalled r
   // UI lane: the maker's detail shows the four-eyes banner, never an approve control
   await merAdmin.page.goto(`/merchant/journal?entry=${entryId}`);
   await expect(merAdmin.page.locator('[data-posting-state="PENDING_CHECKER"]').first()).toBeVisible();
-  await expect(merAdmin.page.getByText("You made this entry, so you can't approve it")).toBeVisible();
+  await expect(merAdmin.page.getByText('so you can’t approve it')).toBeVisible();
   await expect(merAdmin.page.locator('[data-action="je.approve"]')).toHaveCount(0);
   // four-eyes is additive, not an amputation: the checker CAN decide it
   expect((await api(merChecker, 'POST', `/tenants/${merTenantId}/journal-entries/${entryId}/approve`, {})).status)

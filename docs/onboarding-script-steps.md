@@ -287,8 +287,8 @@ it after: `frontend/tests/e2e/gap-probes.spec.ts` (live stack) and
 submit/approve via the journal.entry and ledger.accounts widgets). The KYC application 5-tab
 FORM and the decision buttons are the last chain legs still riding the plugin API. Period
 open/close has no API yet (`period.control` is read-only and says so). F-8 password
-change, F-9 unhappy-path E2E, F-10 bank accounts, F-12 checker notifications are unchanged
-backlog.
+change, F-10 bank accounts, F-12 checker notifications are unchanged backlog. F-9 is done
+(see the happy-twin note below).
 
 ### How to verify
 
@@ -297,7 +297,7 @@ cd backend && ./gradlew :core:test :plugins:kyc:test       # role/approval/provi
 cd frontend && bunx vitest run src/portals/gap-probes.test.ts
 # live stack (restart core/gateway/plugin so V19 + new routes load), then:
 make portal-publish                                           # once per fresh DB (GAP-7)
-cd frontend && bunx playwright test tests/e2e/gap-probes.spec.ts tests/e2e/onboarding-chain.spec.ts
+cd frontend && bunx playwright test tests/e2e/gap-probes.spec.ts tests/e2e/onboarding-chain.spec.ts tests/e2e/unhappy-twin.spec.ts
 ```
 
 ---
@@ -318,7 +318,7 @@ flips those steps to `[UI]` automatically.
 | F-6 | **Signed admin bundle in dev** (seed a bundle or a `make portal-publish` target) | **✅ done** | infra/frontend | GAP-7 (Sc 1.4) | the admin console shell renders its real menu after sign-in |
 | F-7 | **Staging/approval affordance in the users widget** (PENDING banner + “awaiting <checker>” pointer) | **✅ done** | frontend | GAP-8 (Sc 7.2) | the maker sees the staged user and who must act next |
 | F-8 | **Password reset / first-login change** for API-created persons (today they all share `$FSP_PERSON_PASSWORD`) | **⬜ open** | core + IdP | Sc 9 note (credentials hygiene) | each new person changes their own password at first sign-in |
-| F-9 | **Adverse-path E2E coverage**: KYC `REJECT`/`REQUEST_INFO`, maker self-approve → `MAKER_CANNOT_APPROVE` explicit block, stalled `TENANT_PENDING` recovery (KycRecoveryService) | **⬜ open** | tests + UI states | beyond happy path | the chain’s unhappy twin passes with explicit UI states per ui-std §5.2 |
+| F-9 | **Adverse-path E2E coverage**: KYC `REJECT`/`REQUEST_INFO`, maker self-approve → explicit refusal + `MAKER_CANNOT_APPROVE` block state, stalled `TENANT_PENDING` recovery (KycRecoveryService) | **✅ done** (`tests/e2e/unhappy-twin.spec.ts` — scenes A–D) | tests + UI states | beyond happy path | the chain's unhappy twin passes with explicit UI states per ui-std §5.2; note: born-role makers never hold `kyc.approve`, so the KYC maker-block surfaces as `PERMISSION_DENIED` + server `block=MAKER` (the person-level `MAKER_CANNOT_APPROVE` is asserted on the USER_CREATE lane) |
 | F-10 | **Bank account management screen** (`bank.account.create`/`approve` are seeded permissions; no surface exists) | **⬜ open** | frontend | first-money depth | a merchant adds/verifies its own bank account in the UI |
 | F-11 | **Ledger/period screens** (`ledger.accounts`, `period.control` widgets exist as ids only) | **✅ done — ledger.accounts driven by the chain (provision + table); period.control read-only** | frontend | Sc 8 depth | CoA and period state are visible, not assumed |
 | F-12 | **Checker inbox/notification** (today a checker must poll the queue) | **⬜ open** | backend + frontend | every four-eyes step | a checker is pointed at pending work without polling |
@@ -343,3 +343,19 @@ is the credentials gap every real onboarding hits on day one.
   `TenantChildrenService`).
 - Money and case fields: minor units as strings; TIN `^\d{8}$`; registration
   number 3-10 digits; branch code 5-6 digits (`NamibiaRules`).
+- The KYC saga had two gaps the unhappy twin (F-9) exposed and fixed:
+  - `POST /cases/{caseId}/submit` after a REQUEST_INFO/return used to leave the case in
+    `SUBMITTED` with **no re-opened approval** (the loop died; the case stalled out).
+    The saga now resumes on submit (`KycOnboardingSagaService.resume`): it re-screens the
+    amended application server-side, then opens a NEW approval revision
+    (`kyc-approval-<case>-<rev>`, approvalRev bumps to 2). The case returns to
+    `PENDING_REVIEW` and the checker decides again.
+  - The core-approval resolve idempotency key (`kyc-approval-<caseId>-resolve-<epochSecond>`)
+    collided when two revisions of the same case resolved within the same second
+    (`409 IDEMPOTENCY_KEY_REUSED`). The key is now approval-scoped:
+    `kyc-approval-<approvalId>-resolve-<epochSecond>` — retries still collapse, revisions never
+    collide.
+- Run the twin: `cd frontend && bunx playwright test tests/e2e/unhappy-twin.spec.ts`
+  (~60 s; scenes A REQUEST_INFO loop → B REJECT→terminal → C self-approve blocks
+  (KYC PERMISSION_DENIED + block=MAKER, JE/USER_CREATE `MAKER_CANNOT_APPROVE`) →
+  D stalled `TENANT_PENDING` → `STALLED` via the recovery job).

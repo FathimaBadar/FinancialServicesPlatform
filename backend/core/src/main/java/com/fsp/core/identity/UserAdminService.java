@@ -16,8 +16,13 @@ import com.fsp.core.rbac.UserRole;
 import com.fsp.core.tenant.TenantRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,9 +58,9 @@ public class UserAdminService {
 
     static final String PERMISSION = "user.manage";
     static final String STATUS_PENDING = "PENDING";
-    /** Max page size for bounded queries (guide §4A: size 1–100, default 25). */
+    /** Collection standard (AGENTS §2f): size 1–100, default 20. */
     static final int MAX_PAGE_SIZE = 100;
-    static final int DEFAULT_PAGE_SIZE = 25;
+    static final int DEFAULT_PAGE_SIZE = 20;
     private static final Pattern USERNAME = Pattern.compile("^[a-z0-9][a-z0-9._-]{2,63}$");
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$");
     private static final Pattern PHONE = Pattern.compile("^\\+?[0-9][0-9 ()-]{5,19}$");
@@ -91,14 +96,102 @@ public class UserAdminService {
 
     // ------------------------------------------------------------------ reads
 
+    /**
+     * One page of an organization's users. Search ({@code q}: username, full name, email or a
+     * role name), status filter, sort and paging all run in PostgreSQL (AGENTS §2f); nothing is
+     * filtered or sorted in Java. Read-only — no locks, no remote I/O.
+     */
     @Transactional(readOnly = true)
-    public List<UserDtos.UserView> list(UUID tenantId, Actor actor, Integer page, Integer size) {
+    public UserDtos.UserPage list(UUID tenantId, Actor actor, Integer page, Integer size,
+                                  String q, String status, String sort) {
         requireOrg(actor, tenantId);
         int pageNum = page == null || page < 0 ? 0 : page;
         int s = size == null || size < 1 ? DEFAULT_PAGE_SIZE : Math.min(size, MAX_PAGE_SIZE);
-        List<Person> rows = persons.findByTenantIdOrderByUsernameAsc(tenantId, PageRequest.of(pageNum, s, Sort.by("username")));
-        Map<UUID, List<UserDtos.RoleRef>> roleMap = rolesFor(rows.stream().map(pr -> pr.id).toList(), tenantId);
-        return rows.stream().map(pr -> view(pr, roleMap.getOrDefault(pr.id, List.of()))).toList();
+        String sortKey = sort == null || sort.isBlank() ? DEFAULT_SORT : sort.trim();
+        Sort order = parseSort(sortKey);
+        List<String> statuses = parseStatus(status);
+
+        Page<Person> rows = persons.findAll(listSpec(tenantId, statuses, likePattern(q)),
+            PageRequest.of(pageNum, s, order));
+        Map<UUID, List<UserDtos.RoleRef>> roleMap = rolesFor(rows.getContent().stream().map(pr -> pr.id).toList(), tenantId);
+        List<UserDtos.UserView> items = rows.getContent().stream()
+            .map(pr -> view(pr, roleMap.getOrDefault(pr.id, List.of()))).toList();
+        return new UserDtos.UserPage(items, pageNum, s, rows.getTotalElements(), rows.getTotalPages(),
+            rows.hasNext(), sortKey, statusCounts(tenantId));
+    }
+
+    /** Sort safelist: wire field → entity property. Anything else is refused, never passed through. */
+    private static final Map<String, String> SORT_FIELDS = Map.of(
+        "username", "username", "fullName", "fullName", "status", "status",
+        "createdAt", "createdAt", "updatedAt", "updatedAt");
+    static final String DEFAULT_SORT = "username,asc";
+    private static final List<String> STATUSES = List.of(STATUS_PENDING, "ACTIVE", "DISABLED", "ARCHIVED");
+
+    private static Sort parseSort(String sort) {
+        String[] parts = sort.split(",", -1);
+        String field = SORT_FIELDS.get(parts[0].trim());
+        String dir = parts.length > 1 ? parts[1].trim().toLowerCase(Locale.ROOT) : "asc";
+        if (field == null || parts.length > 2 || !(dir.equals("asc") || dir.equals("desc"))) {
+            throw ApiException.badRequest("SORT_INVALID",
+                "Sort must be one of " + String.join(", ", SORT_FIELDS.keySet().stream().sorted().toList())
+                    + " followed by ,asc or ,desc");
+        }
+        Sort primary = Sort.by(dir.equals("desc") ? Sort.Direction.DESC : Sort.Direction.ASC, field);
+        // unique tie-break so rows never repeat or vanish between pages
+        return field.equals("username") ? primary.and(Sort.by("id")) : primary.and(Sort.by("username")).and(Sort.by("id"));
+    }
+
+    /** null/blank → every status; {@code current} → everything but ARCHIVED; else one status. */
+    private static List<String> parseStatus(String status) {
+        if (status == null || status.isBlank()) return null;
+        String s = status.trim().toUpperCase(Locale.ROOT);
+        if (s.equals("CURRENT")) return List.of(STATUS_PENDING, "ACTIVE", "DISABLED");
+        if (STATUSES.contains(s)) return List.of(s);
+        throw ApiException.badRequest("STATUS_INVALID",
+            "Status must be current, PENDING, ACTIVE, DISABLED or ARCHIVED");
+    }
+
+    /** Case-insensitive contains-pattern with LIKE wildcards escaped ({@code \} is the escape char). */
+    static String likePattern(String q) {
+        if (q == null || q.isBlank()) return null;
+        String t = q.trim().toLowerCase(Locale.ROOT);
+        if (t.length() > 100) t = t.substring(0, 100);
+        return "%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+    }
+
+    private static Specification<Person> listSpec(UUID tenantId, List<String> statuses, String like) {
+        return (root, query, cb) -> {
+            List<Predicate> where = new ArrayList<>();
+            where.add(cb.equal(root.get("tenantId"), tenantId));
+            if (statuses != null) where.add(root.get("status").in(statuses));
+            if (like != null) {
+                // role-name match: an org role this person holds whose name matches
+                Subquery<UUID> byRole = query.subquery(UUID.class);
+                Root<UserRole> ur = byRole.from(UserRole.class);
+                Root<Role> r = byRole.from(Role.class);
+                byRole.select(ur.<UUID>get("personId")).where(
+                    cb.equal(ur.get("roleId"), r.get("id")),
+                    cb.equal(r.get("tenantId"), tenantId),
+                    cb.like(cb.lower(r.<String>get("name")), like, '\\'));
+                where.add(cb.or(
+                    cb.like(cb.lower(root.<String>get("username")), like, '\\'),
+                    cb.like(cb.lower(root.<String>get("fullName")), like, '\\'),
+                    cb.like(cb.lower(cb.coalesce(root.<String>get("email"), "")), like, '\\'),
+                    root.get("id").in(byRole)));
+            }
+            return cb.and(where.toArray(Predicate[]::new));
+        };
+    }
+
+    /** Per-status counts over the whole org (one grouped query), zero-filled, plus CURRENT. */
+    private Map<String, Long> statusCounts(UUID tenantId) {
+        Map<String, Long> out = new java.util.LinkedHashMap<>();
+        for (String st : STATUSES) out.put(st, 0L);
+        for (PersonRepository.StatusCount c : persons.countByStatus(tenantId)) {
+            if (out.containsKey(c.getStatus())) out.put(c.getStatus(), c.getN());
+        }
+        out.put("CURRENT", out.get(STATUS_PENDING) + out.get("ACTIVE") + out.get("DISABLED"));
+        return out;
     }
 
     @Transactional(readOnly = true)

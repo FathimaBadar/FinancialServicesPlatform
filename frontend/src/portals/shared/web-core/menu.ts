@@ -19,7 +19,7 @@ export type PortalId = 'platform' | 'org';
 
 export type MenuWidget =
   | 'kyc.orgs' | 'kyc.manage' | 'kyc.application'
-  | 'onboard.psp'
+  | 'onboard.psp' | 'onboard.list'
   | 'approvals.queue' | 'journal.entry' | 'audit.trail'
   | 'rbac.matrix' | 'permissions.catalogue' | 'plugins.governance'
   | 'users.organization'
@@ -41,54 +41,67 @@ export interface MenuItem {
   widgets: MenuWidget[];
 }
 
+/** The approvals queue's gate: every checker permission (OR). One list for both portals. */
+const APPROVALS_PERMS = ['kyc.approve', 'kyc.reject', 'je.approve', 'org.approve_child', 'bank.account.approve',
+  'gl.account.approve', 'user.manage', 'role.manage', 'plugin.manage', 'ui.layout.manage'];
+
 export const MENU_ITEMS: MenuItem[] = [
-  // ---------------- governance (both portals, governance-first like SME)
+  // ================= platform (admin console) — ONLY the menus the admin sidebar spec shows,
+  // limited to features FSP actually has (no Reset Password / Customer / Component /
+  // Sub Component / Branch / Department: there is nothing behind them to render).
+  // Approvals stays: user and role changes are four-eyes and are decided only there.
+  { id: 'back-office-users', label: 'Back Office User', icon: '☰', link: '/users',
+    perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['users.organization'] },
+  // the organization directory + PSP creation (rule 4: gated by the union of its widgets)
+  { id: 'organizations', label: 'Organization', icon: '◈', link: '/organizations',
+    perm: ['kyc.review', 'org.create'], portals: ['platform'], group: 'User Management',
+    widgets: ['kyc.orgs', 'onboard.psp', 'onboard.list'] },
+  { id: 'onboarding', label: 'Onboarding', icon: '⇲', link: '/onboarding',
+    perm: ['org.create'], portals: ['platform'], group: 'Onboarding', widgets: ['onboard.list', 'onboard.psp'] },
+  { id: 'roles', label: 'Role', icon: '⚿', link: '/rbac',
+    perm: ['role.view', 'role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['rbac.matrix'] },
+  { id: 'platform-approvals', label: 'Approvals', icon: '✓', link: '/approvals',
+    perm: APPROVALS_PERMS, portals: ['platform'], group: 'Role Management', widgets: ['approvals.queue'] },
+
+  // ================= org portals (manufacturer / distributor / wholesaler / merchant)
+  // ---------------- governance (governance-first like SME)
   { id: 'overview', label: 'Overview', icon: '◫', link: '/overview',
-    perm: ['audit.view'], portals: ['platform', 'org'], widgets: ['overview.tiles'] },
-  // platform onboards PSPs directly (org.create at the root); organizations onboard children
-  // through the KYC plugin (org.onboard_child) — one label, one link per portal
-  { id: 'onboarding-psp', label: 'Onboarding', icon: '⇲', link: '/onboarding',
-    perm: ['org.create'], portals: ['platform'], widgets: ['onboard.psp'] },
+    perm: ['audit.view'], portals: ['org'], widgets: ['overview.tiles'] },
+  // organizations onboard children through the KYC plugin (org.onboard_child)
   { id: 'onboarding', label: 'Onboarding', icon: '⇲', link: '/onboarding',
     perm: ['org.onboard_child'], portals: ['org'], widgets: ['kyc.manage'] },
   { id: 'network', label: 'My network', icon: '⑃', link: '/network',
     perm: ['kyc.review'], portals: ['org'], widgets: ['kyc.orgs'] },
   { id: 'users', label: 'User management', icon: '☰', link: '/users',
-    perm: ['user.manage'], portals: ['platform', 'org'], widgets: ['users.organization'] },
+    perm: ['user.manage'], portals: ['org'], widgets: ['users.organization'] },
 
   // ---------------- KYC (one screen family: the directory / queue / case)
-  { id: 'kyc-applications', label: 'KYC applications', icon: '◈', link: '/kyc/applications',
-    perm: ['kyc.review'], portals: ['platform'], group: 'KYC', widgets: ['kyc.orgs'] },
   { id: 'kyc-reviews', label: 'Review queue', icon: '✓', link: '/kyc/reviews',
-    perm: ['kyc.approve', 'kyc.reject'], portals: ['org'], group: 'KYC', widgets: ['kyc.manage'] },
+    perm: ['kyc.approve', 'kyc.reject'], portals: ['platform', 'org'], group: 'KYC', widgets: ['kyc.manage'] },
   { id: 'kyc-decisions', label: 'My organization', icon: '◈', link: '/kyc',
     perm: ['kyc.review'], portals: ['org'], group: 'KYC', widgets: ['kyc.application'] },
 
   // ---------------- operations (money-adjacent: four-eyes surfaces)
   { id: 'approvals', label: 'Approvals', icon: '✓', link: '/approvals',
-    perm: ['kyc.approve', 'kyc.reject', 'je.approve', 'org.approve_child', 'bank.account.approve', 'gl.account.approve',
-      'user.manage', 'role.manage', 'plugin.manage', 'ui.layout.manage'],
-    portals: ['platform', 'org'], group: 'Operations', widgets: ['approvals.queue'] },
+    perm: APPROVALS_PERMS, portals: ['org'], group: 'Operations', widgets: ['approvals.queue'] },
   { id: 'bank-accounts', label: 'Bank accounts', icon: '₪', link: '/bank-accounts',
-    perm: ['bank.account.view'], portals: ['platform', 'org'], group: 'Operations', widgets: ['bank.accounts'] },
+    perm: ['bank.account.view'], portals: ['org'], group: 'Operations', widgets: ['bank.accounts'] },
   { id: 'journal', label: 'Journal entries', icon: '⇄', link: '/journal',
-    perm: ['je.view', 'je.create', 'je.approve'], portals: ['platform', 'org'],
+    perm: ['je.view', 'je.create', 'je.approve'], portals: ['org'],
     group: 'Operations', widgets: ['journal.entry'] },
   { id: 'ledger-audit', label: 'Audit trail', icon: '☰', link: '/audit',
-    perm: ['audit.view'], portals: ['platform', 'org'], group: 'Operations', widgets: ['audit.trail'] },
+    perm: ['audit.view'], portals: ['org'], group: 'Operations', widgets: ['audit.trail'] },
 
   // ---------------- access + ledger setup
   { id: 'rbac', label: 'Roles and permissions', icon: '⚿', link: '/rbac',
-    perm: ['role.view', 'role.manage'], portals: ['platform', 'org'], group: 'Access', widgets: ['rbac.matrix'] },
+    perm: ['role.view', 'role.manage'], portals: ['org'], group: 'Access', widgets: ['rbac.matrix'] },
   { id: 'permissions', label: 'All permissions', icon: '⌗', link: '/permissions',
-    perm: ['audit.view', 'role.manage', 'kyc.review'], portals: ['platform', 'org'],
+    perm: ['audit.view', 'role.manage', 'kyc.review'], portals: ['org'],
     group: 'Access', widgets: ['permissions.catalogue'] },
-  { id: 'plugins', label: 'Plugins', icon: '⧉', link: '/plugins',
-    perm: ['plugin.manage'], portals: ['platform'], group: 'Access', widgets: ['plugins.governance'] },
   { id: 'ledger', label: 'Chart of accounts', icon: '▣', link: '/ledger',
-    perm: ['gl.account.view'], portals: ['platform', 'org'], group: 'Access', widgets: ['ledger.accounts'] },
+    perm: ['gl.account.view'], portals: ['org'], group: 'Access', widgets: ['ledger.accounts'] },
   { id: 'periods', label: 'Accounting periods', icon: '◷', link: '/periods',
-    perm: ['gl.account.view', 'period.open', 'period.close'], portals: ['platform', 'org'],
+    perm: ['gl.account.view', 'period.open', 'period.close'], portals: ['org'],
     group: 'Access', widgets: ['period.control'] },
 ];
 
@@ -99,6 +112,11 @@ export function menuFor(portal: PortalId): MenuItem[] {
 /** [route, permission keys] for one portal's menu. */
 export function menuPerms(portal: PortalId): Array<readonly [string, string[]]> {
   return menuFor(portal).map((i) => [i.link, i.perm] as const);
+}
+
+/** First menu point (registry order) the holder of `permissions` may open; null = none. */
+export function firstCodedLink(portal: PortalId, permissions: readonly string[]): string | null {
+  return menuFor(portal).find((i) => i.perm.some((k) => permissions.includes(k)))?.link ?? null;
 }
 
 /** Exact permission set for one route ('__no_menu_point__' sentinel ⇒ fail-closed deny). */

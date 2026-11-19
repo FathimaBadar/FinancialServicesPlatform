@@ -57,7 +57,7 @@ test(`publish a signed "${PORTAL}" portal bundle (four-eyes)`, async ({ browser 
   await maker.goto(`/widget-workbench/builder?portal=${PORTAL}`);
   await maker.getByRole('button', { name: "Reset to today's menus" }).click();
   await maker.getByRole('button', { name: /Click again/ }).click();
-  await maker.getByRole('button', { name: 'Publish', exact: true }).click();
+  await maker.getByRole('button', { name: 'Publish', exact: true }).first().click();
   await maker.getByRole('button', { name: 'Save draft to server' }).click();
   await expect(maker.getByText('Draft saved on the server.')).toBeVisible();
   await maker.getByRole('button', { name: 'Submit draft for approval' }).click();

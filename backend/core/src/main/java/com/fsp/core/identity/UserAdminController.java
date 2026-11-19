@@ -33,10 +33,13 @@ public class UserAdminController {
     @FspOperation(id = "user.list", component = "identity", permission = UserAdminService.PERMISSION,
         title = "List organization users")
     @GetMapping(BASE)
-    public List<UserDtos.UserView> list(HttpServletRequest request, @PathVariable("tenantId") UUID tenantId,
-                                        @RequestParam(value = "page", required = false, defaultValue = "0") Integer page,
-                                        @RequestParam(value = "size", required = false, defaultValue = "25") Integer size) {
-        return service.list(tenantId, actor(request), page, size);
+    public UserDtos.UserPage list(HttpServletRequest request, @PathVariable("tenantId") UUID tenantId,
+                                  @RequestParam(value = "page", required = false) Integer page,
+                                  @RequestParam(value = "size", required = false) Integer size,
+                                  @RequestParam(value = "q", required = false) String q,
+                                  @RequestParam(value = "status", required = false) String status,
+                                  @RequestParam(value = "sort", required = false) String sort) {
+        return service.list(tenantId, actor(request), page, size, q, status, sort);
     }
 
     @FspOperation(id = "user.get", component = "identity", permission = UserAdminService.PERMISSION,

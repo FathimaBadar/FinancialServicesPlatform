@@ -1,7 +1,7 @@
 import { clsx } from 'clsx';
 import { Input } from '../../../ui/atoms';
-import { STATUS_FILTERS } from './model';
-import type { OrgRow, StatusFilter } from './model';
+import { SORT_OPTIONS, STATUS_FILTERS } from './model';
+import type { OrgRow, SortId, StatusCountKey, StatusFilter } from './model';
 
 export interface UserToolbarProps {
   orgs: OrgRow[] | undefined;
@@ -11,11 +11,14 @@ export interface UserToolbarProps {
   onQuery: (q: string) => void;
   status: StatusFilter;
   onStatus: (s: StatusFilter) => void;
-  counts: Record<StatusFilter, number>;
+  /** whole-org counts from the server; undefined while the first page loads */
+  counts: Record<StatusCountKey, number> | undefined;
+  sort: SortId;
+  onSort: (s: SortId) => void;
 }
 
-/** Organization switcher (when the actor administers more than one), search, status filter. */
-export function UserToolbar({ orgs, orgId, onOrg, query, onQuery, status, onStatus, counts }: UserToolbarProps) {
+/** Organization switcher (when the actor administers more than one), search, sort, status filter. */
+export function UserToolbar({ orgs, orgId, onOrg, query, onQuery, status, onStatus, counts, sort, onSort }: UserToolbarProps) {
   return (
     <div className="mb-4 grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -45,6 +48,14 @@ export function UserToolbar({ orgs, orgId, onOrg, query, onQuery, status, onStat
             onChange={(e) => onQuery(e.target.value)}
           />
         </label>
+        <label className="flex items-center">
+          <span className="sr-only">Sort users</span>
+          <select className="fsp-field w-auto cursor-pointer" value={sort} onChange={(e) => onSort(e.target.value as SortId)}>
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
       <div role="group" aria-label="Filter by status" className="flex flex-wrap gap-1.5">
         {STATUS_FILTERS.map((f) => (
@@ -59,7 +70,9 @@ export function UserToolbar({ orgs, orgId, onOrg, query, onQuery, status, onStat
             )}
           >
             {f.label}
-            <span className={clsx('ml-1.5 tabular-nums', status === f.id ? 'opacity-80' : 'opacity-60')}>{counts[f.id]}</span>
+            {counts && (
+              <span className={clsx('ml-1.5 tabular-nums', status === f.id ? 'opacity-80' : 'opacity-60')}>{counts[f.countKey]}</span>
+            )}
           </button>
         ))}
       </div>

@@ -1,8 +1,9 @@
 /**
  * users.organization component — list · search/filter · view · add · modify ·
  * deactivate · activate · remove, URL-backed state per ui-std §7.
+ * The list is ONE server page: search, status filter, sort and paging run in core (AGENTS §2.7).
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useWidgetRuntime } from '../../core/runtime';
 import { useSession } from '../../../web-core/session-core';
@@ -13,14 +14,28 @@ import { UserForm } from './UserForm';
 import { UserList } from './UserList';
 import { UserListSkeleton } from './UserListSkeleton';
 import { NoticeBar } from '../../kit/Notice';
+import { Pager } from '../../kit/Pager';
 import type { Notice } from '../../kit/Notice';
 import { UserToolbar } from './UserToolbar';
 import {
-  matchesFilter, matchesQuery, STATUS_FILTERS, toProblem, useOrgOptions, useRoleOptions, useUserCommand, useUserList,
+  DEFAULT_PAGE_SIZE, DEFAULT_SORT, PAGE_SIZES, SORT_OPTIONS, STATUS_FILTERS, toProblem, useOrgOptions, useRoleOptions,
+  useUser, useUserCommand, useUserList,
 } from './model';
-import type { StatusFilter, UserCommand, UserFormValues, UserRow } from './model';
+import type { SortId, StatusFilter, UserCommand, UserFormValues, UserListQuery, UserRow } from './model';
 
 const STATUS_IDS = STATUS_FILTERS.map((f) => f.id);
+const SORT_IDS: readonly string[] = SORT_OPTIONS.map((o) => o.id);
+const SEARCH_DEBOUNCE_MS = 300;
+
+/** The value, once it has stopped changing for `ms` — so typing sends one search, not one per key. */
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
 
 export function UsersOrganization() {
   const { port, context } = useWidgetRuntime();
@@ -28,12 +43,17 @@ export function UsersOrganization() {
   const meId = session.user?.userId ?? null;
   const rootOrgId = context.orgId ?? '';
 
-  // ---- URL state: ?org= &q= &status= &user=<id|new> &edit=1
+  // ---- URL state: ?org= &q= &status= &sort= &page= &size= &user=<id|new> &edit=1
   const [params, setParams] = useSearchParams();
   const orgId = params.get('org') ?? rootOrgId;
   const query = params.get('q') ?? '';
   const statusParam = params.get('status') as StatusFilter | null;
   const status: StatusFilter = statusParam && STATUS_IDS.includes(statusParam) ? statusParam : 'current';
+  const sortParam = params.get('sort');
+  const sort: SortId = sortParam && SORT_IDS.includes(sortParam) ? (sortParam as SortId) : DEFAULT_SORT;
+  const page = Math.max(0, Number.parseInt(params.get('page') ?? '0', 10) || 0);
+  const sizeParam = Number.parseInt(params.get('size') ?? '', 10);
+  const size = (PAGE_SIZES as readonly number[]).includes(sizeParam) ? sizeParam : DEFAULT_PAGE_SIZE;
   const openId = params.get('user');
   const editing = params.get('edit') === '1';
 
@@ -55,7 +75,12 @@ export function UsersOrganization() {
 
   // ---- server state
   const orgs = useOrgOptions(port, rootOrgId);
-  const list = useUserList(port, orgId);
+  const debouncedQuery = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS);
+  const listQuery: UserListQuery = useMemo(
+    () => ({ page, size, q: debouncedQuery, status, sort }),
+    [page, size, debouncedQuery, status, sort],
+  );
+  const list = useUserList(port, orgId, listQuery);
   const formOpen = openId === 'new' || editing;
   const roles = useRoleOptions(port, orgId, formOpen);
   const cmd = useUserCommand(port, orgId);
@@ -67,17 +92,12 @@ export function UsersOrganization() {
   const say = (kind: Notice['kind'], text: string, undo?: Notice['undo']) =>
     setNotice({ id: Date.now(), kind, text, undo });
 
-  const users = useMemo(() => list.data ?? [], [list.data]);
-  const counts = useMemo(() => {
-    const c: Record<StatusFilter, number> = { current: 0, PENDING: 0, ACTIVE: 0, DISABLED: 0, ARCHIVED: 0 };
-    for (const u of users) for (const f of STATUS_IDS) if (matchesFilter(u, f)) c[f] += 1;
-    return c;
-  }, [users]);
-  const visible = useMemo(
-    () => users.filter((u) => matchesFilter(u, status) && matchesQuery(u, query.trim())),
-    [users, status, query],
-  );
-  const openUser: UserRow | undefined = openId && openId !== 'new' ? users.find((u) => u.id === openId) : undefined;
+  const users = useMemo(() => list.data?.items ?? [], [list.data]);
+  const counts = list.data?.counts;
+  const orgTotal = counts ? counts.CURRENT + counts.ARCHIVED : null;
+  const pageRow = openId && openId !== 'new' ? users.find((u) => u.id === openId) : undefined;
+  const one = useUser(port, orgId, openId, pageRow);
+  const openUser: UserRow | undefined = openId && openId !== 'new' ? one.data : undefined;
   const orgName = orgs.data?.find((o) => o.id === orgId)?.legalName ?? session.user?.tenantName ?? 'this organization';
 
   // ---- drawer navigation
@@ -118,7 +138,7 @@ export function UsersOrganization() {
       run({ kind: 'create', values }, (saved) => {
         setDirty(false);
         say('ok', `Request sent — ${saved.fullName} is added once a checker approves it.`);
-        patch({ user: saved.id, edit: null, status: null, q: null });
+        patch({ user: saved.id, edit: null, status: null, q: null, page: null });
       });
     } else if (openUser) {
       run({ kind: 'update', user: openUser, values, rolesEditable: openUser.id !== meId }, (saved) => {
@@ -146,6 +166,7 @@ export function UsersOrganization() {
   const reload = () => {
     cmd.reset();
     void list.refetch();
+    if (openId && openId !== 'new') void one.refetch();
   };
 
   // ---- render
@@ -153,6 +174,7 @@ export function UsersOrganization() {
   const compact = context.tier === 'xs';
   const drawerProblem = cmd.error ? toProblem(cmd.error) : null;
   const filtersActive = query.trim() !== '' || status !== 'current';
+  const searching = query.trim() !== debouncedQuery;
 
   let body;
   if (list.isPending) {
@@ -173,22 +195,46 @@ export function UsersOrganization() {
         </div>
       </div>
     );
-  } else if (users.length === 0) {
+  } else if (orgTotal === 0) {
     body = <EmptyState title="No users yet" hint={`Add the first user for ${orgName}.`} />;
-  } else if (visible.length === 0) {
+  } else if (users.length === 0 && page > 0) {
+    // e.g. the last user on the last page was just removed
+    body = (
+      <div className="grid justify-items-center gap-3">
+        <EmptyState title="Nothing on this page" hint="The list got shorter since this page was opened." />
+        <Button variant="ghost" onClick={() => patch({ page: null })}>Go to the first page</Button>
+      </div>
+    );
+  } else if (users.length === 0) {
     body = (
       <div className="grid justify-items-center gap-3">
         <EmptyState title="No users match" hint="Try a different search or status filter." />
         {filtersActive && (
-          <Button variant="ghost" onClick={() => patch({ q: null, status: null })}>Clear filters</Button>
+          <Button variant="ghost" onClick={() => patch({ q: null, status: null, page: null })}>Clear filters</Button>
         )}
       </div>
     );
   } else {
-    body = <UserList users={visible} compact={compact} meId={meId} selectedId={openId} onOpen={open} />;
+    body = (
+      <>
+        <UserList users={users} compact={compact} meId={meId} selectedId={openId} onOpen={open} />
+        <Pager
+          page={page}
+          size={size}
+          shown={users.length}
+          totalElements={list.data?.totalElements ?? 0}
+          hasNext={list.data?.hasNext ?? false}
+          sizes={PAGE_SIZES}
+          busy={list.isFetching}
+          noun="users"
+          onPage={(n) => patch({ page: n > 0 ? String(n) : null })}
+          onSize={(n) => patch({ size: n === DEFAULT_PAGE_SIZE ? null : String(n), page: null })}
+        />
+      </>
+    );
   }
 
-  const summary = list.data
+  const summary = counts
     ? `${orgName} · ${counts.ACTIVE} active${counts.DISABLED ? ` · ${counts.DISABLED} deactivated` : ''}`
     : orgName;
 
@@ -207,14 +253,21 @@ export function UsersOrganization() {
       <UserToolbar
         orgs={orgs.data}
         orgId={orgId}
-        onOrg={(id) => patch({ org: id === rootOrgId ? null : id, user: null, edit: null })}
+        onOrg={(id) => patch({ org: id === rootOrgId ? null : id, user: null, edit: null, page: null })}
         query={query}
-        onQuery={(q) => patch({ q })}
+        onQuery={(q) => patch({ q, page: null })}
         status={status}
-        onStatus={(s) => patch({ status: s === 'current' ? null : s })}
+        onStatus={(s) => patch({ status: s === 'current' ? null : s, page: null })}
         counts={counts}
+        sort={sort}
+        onSort={(s) => patch({ sort: s === DEFAULT_SORT ? null : s, page: null })}
       />
-      <div className={list.isFetching && !list.isPending ? 'opacity-70 transition-opacity' : undefined}>{body}</div>
+      <div
+        aria-busy={list.isFetching || searching}
+        className={(list.isFetching && !list.isPending) || searching ? 'opacity-70 transition-opacity' : undefined}
+      >
+        {body}
+      </div>
 
       {openId && (
         <Drawer
@@ -245,7 +298,7 @@ export function UsersOrganization() {
               onReload={reload}
             />
           ) : !openUser ? (
-            list.isPending ? (
+            one.isPending || one.isFetching ? (
               <div className="p-5"><UserListSkeleton rows={1} /></div>
             ) : (
               <div className="p-5">

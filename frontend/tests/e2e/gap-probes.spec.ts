@@ -197,6 +197,41 @@ async function stageUser(prefix: string): Promise<string> {
   return username;
 }
 
+/* ─────────────── USERS-PAGE · user #21+ is reachable (server-side paging, search, counts) ─────────────── */
+
+test('USERS-PAGE · the users list is a server page: user #21+ is reachable and searchable', async () => {
+  // 21 staged users guarantee the org overflows one default page (20)
+  const tag = `probe.page.${suffix()}`;
+  const names: string[] = [];
+  for (let i = 0; i < 21; i++) {
+    const username = `${tag}.${String(i).padStart(2, '0')}`;
+    const r = await api(mfrAdmin, 'POST', `/tenants/${psp.tenantId}/users`, { username, fullName: `Page Probe ${i}`, roleIds: [], checker: false });
+    expect(r.status, `user staged: ${JSON.stringify(r.json)}`).toBe(202);
+    names.push(username);
+  }
+
+  type Page = { items: { username: string }[]; page: number; size: number; totalElements: number; hasNext: boolean; counts: Record<string, number> };
+  const base = `/tenants/${psp.tenantId}/users`;
+  const first = await api<Page>(mfrAdmin, 'GET', `${base}?q=${tag}&status=PENDING&sort=username,asc&size=20&page=0`);
+  expect(first.json.items).toHaveLength(20);
+  expect(first.json.totalElements).toBe(21);
+  expect(first.json.hasNext).toBe(true);
+  expect(first.json.counts.PENDING).toBeGreaterThanOrEqual(21);
+
+  const second = await api<Page>(mfrAdmin, 'GET', `${base}?q=${tag}&status=PENDING&sort=username,asc&size=20&page=1`);
+  expect(second.json.items.map((u) => u.username)).toEqual([names[20]]);
+
+  const bad = await api(mfrAdmin, 'GET', `${base}?sort=passwordHash,asc`);
+  expect(bad.status).toBe(400);
+
+  // the screen pages too: the 21st user is on page 2, not silently dropped
+  const page = mfrAdmin.page;
+  await page.goto(`/manufacturer/users?q=${tag}&status=PENDING`);
+  await expect(page.getByText('1–20 of 21 users')).toBeVisible();
+  await page.getByRole('button', { name: 'Next ›' }).click();
+  await expect(page.getByText(names[20])).toBeVisible();
+});
+
 test('GAP-3 · the checker approves a staged user from the Approvals screen (click, not API)', async () => {
   await stageUser('probe.queue');
   const row = await pendingApproval(mfrChecker, psp.tenantId, 'USER_CREATE');

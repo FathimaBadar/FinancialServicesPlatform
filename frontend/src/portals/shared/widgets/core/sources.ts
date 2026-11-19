@@ -31,7 +31,8 @@ export type DataSources = Record<string, SourceEntry>;
 export const SOURCES: DataSources = {
   'kyc.orgs.tree':   { '*': { method: 'GET', path: '/api/tenants/{tenantId}/children' } },
   'kyc.orgs.self':   { '*': { method: 'GET', path: '/api/tenants/{tenantId}' } },
-  'users.list':      { '*': { method: 'GET', path: '/api/tenants/{tenantId}/users' } },
+  'users.list':      { '*': { method: 'GET', path: '/api/tenants/{tenantId}/users', query: ['page', 'size', 'q', 'status', 'sort'] } },
+  'users.get':       { '*': { method: 'GET', path: '/api/tenants/{tenantId}/users/{personId}' } },
   'users.roles':     { '*': { method: 'GET', path: '/api/tenants/{tenantId}/user-roles' } },
   'users.org':       { '*': { method: 'GET', path: '/api/tenants/{tenantId}' } },
   'users.org.children': { '*': { method: 'GET', path: '/api/tenants/{tenantId}/children' } },

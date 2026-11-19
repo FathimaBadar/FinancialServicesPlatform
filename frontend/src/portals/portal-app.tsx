@@ -81,7 +81,7 @@ function Router({ portal, portalId }: { portal: PortalConfig; portalId: PortalId
         ),
         children: [
           // home: first published screen the user can see, else the coded overview
-          { index: true, element: <HomeRedirect /> },
+          { index: true, element: <HomeRedirect portalId={portalId} /> },
           // screens of the published, signature-verified layout (SME p/:menu/:screen)
           { path: 'p/:menuId/:screenId', element: <LayoutScreen /> },
           ...menu.map((item) => ({

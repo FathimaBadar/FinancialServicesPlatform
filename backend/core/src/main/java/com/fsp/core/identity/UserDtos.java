@@ -2,6 +2,7 @@ package com.fsp.core.identity;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** Wire records for organization user administration (AGENTS §2b: records in a final container). */
@@ -16,6 +17,14 @@ public final class UserDtos {
     public record UserView(UUID id, UUID tenantId, String username, String fullName, String email,
                            String phone, String status, boolean isApplicant, boolean checker, List<RoleRef> roles,
                            long version, Instant createdAt, Instant updatedAt, Instant archivedAt) {}
+
+    /**
+     * One page of an organization's users (AGENTS §2f envelope). {@code counts} is per status over
+     * the WHOLE organization (PENDING / ACTIVE / DISABLED / ARCHIVED, plus CURRENT = not archived),
+     * independent of the page, search and status filter — it drives the status filter chips.
+     */
+    public record UserPage(List<UserView> items, int page, int size, long totalElements, int totalPages,
+                           boolean hasNext, String sort, Map<String, Long> counts) {}
 
     /** A role the organization defines, plus whether THIS actor may grant/revoke it. */
     public record RoleOption(UUID id, String key, String name, String scope, int permissionCount,

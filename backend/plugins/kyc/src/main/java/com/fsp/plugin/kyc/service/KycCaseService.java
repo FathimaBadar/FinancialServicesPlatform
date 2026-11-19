@@ -170,6 +170,8 @@ public class KycCaseService {
             blockedReason = "STATE";
         } else if (viewerPersonId != null && viewerPersonId.equals(c.makerPersonId)) {
             blockedReason = "MAKER";
+        } else if (viewerPersonId != null && !isChecker(viewerPersonId)) {
+            blockedReason = "CHECKER";
         }
         boolean canDecide = blockedReason == null;
 
@@ -490,5 +492,11 @@ public class KycCaseService {
         return KycCase.STATUS_STALLED.equals(c.status)
             || ((KycCase.STATUS_TENANT_PENDING.equals(c.status) || KycCase.STATUS_SUBMITTED.equals(c.status))
                 && c.updatedAt.isBefore(Instant.now().minusSeconds(600)));
+    }
+
+    /** Whether a person is a designated checker (persons.is_checker). Only checkers may decide KYC cases. */
+    public boolean isChecker(UUID personId) {
+        if (personId == null) return false;
+        return jdbc.queryForObject("SELECT is_checker FROM persons WHERE id = ?", Boolean.class, personId);
     }
 }

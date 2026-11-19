@@ -3,7 +3,7 @@
  * states the FIXED behaviour: it failed before the gap was closed and guards it after.
  */
 import { describe, expect, it } from 'vitest';
-import { MENU_ITEMS } from './shared/web-core/menu';
+import { MENU_ITEMS, firstCodedLink, menuFor, navEntries } from './shared/web-core/menu';
 import { getWidget } from './shared/widgets/registry';
 import { portalEligible } from './shared/web-core/session-core';
 import type { SessionUser, TenantSummary } from './shared/web-core/session-core';
@@ -30,16 +30,44 @@ describe('GAP-3/4 · approvals queue and plugin governance have menu points', ()
     const item = MENU_ITEMS.find((i) => i.widgets.includes('approvals.queue'));
     expect(item?.perm).toEqual(expect.arrayContaining(['kyc.approve', 'je.approve', 'user.manage', 'role.manage', 'plugin.manage']));
   });
-  it('plugins.governance is a platform menu point', () => {
-    const item = MENU_ITEMS.find((i) => (i.widgets as string[]).includes('plugins.governance'));
-    expect(item?.portals).toContain('platform');
+  it('the admin console keeps an approvals point (user/role changes are four-eyes)', () => {
+    expect(menuFor('platform').some((i) => i.widgets.includes('approvals.queue'))).toBe(true);
+  });
+});
+
+describe('ADMIN-MENU · the admin console shows only the specified menus FSP implements', () => {
+  const all = [...new Set(MENU_ITEMS.flatMap((i) => i.perm))];
+  it('sidebar is User Management → Back Office User, Organization; Role Management → Role, Approvals', () => {
+    const nav = navEntries('platform', () => true).map((e) => (e.kind === 'group' ? `#${e.label}` : e.label));
+    expect(nav).toEqual(['#User Management', 'Back Office User', 'Organization', '#Role Management', 'Role', 'Approvals']);
+  });
+  it('no menu point exists without a feature behind it', () => {
+    const labels = menuFor('platform').map((i) => i.label);
+    for (const absent of ['Reset Password', 'Customer', 'Component', 'Sub Component', 'Branch', 'Department']) {
+      expect(labels).not.toContain(absent);
+    }
+  });
+  it('organization screen offers the directory and PSP creation, gated by their union', () => {
+    const org = menuFor('platform').find((i) => i.label === 'Organization');
+    expect(org?.widgets).toEqual(expect.arrayContaining(['kyc.orgs', 'onboard.psp']));
+    expect(org?.perm).toEqual(expect.arrayContaining(['kyc.review', 'org.create']));
+  });
+  it('home falls back to a point the portal actually has (never a missing /overview)', () => {
+    expect(firstCodedLink('platform', all)).toBe('/users');
+    expect(menuFor('platform').map((i) => i.link)).toContain(firstCodedLink('platform', ['role.view']));
+    expect(firstCodedLink('platform', [])).toBeNull();
+  });
+  it('org portals keep their full menu', () => {
+    expect(menuFor('org').map((i) => i.link)).toEqual(expect.arrayContaining(
+      ['/overview', '/onboarding', '/network', '/users', '/kyc/reviews', '/kyc', '/approvals', '/bank-accounts',
+        '/journal', '/audit', '/rbac', '/permissions', '/ledger', '/periods']));
   });
 });
 
 describe('GAP-1 · roles screen exists for organizations too', () => {
   it('rbac.matrix is offered on the org portals', () => {
-    const item = MENU_ITEMS.find((i) => i.widgets.includes('rbac.matrix'));
-    expect(item?.portals).toContain('org');
+    const portals = MENU_ITEMS.filter((i) => i.widgets.includes('rbac.matrix')).flatMap((i) => i.portals);
+    expect(portals).toContain('org');
   });
 });
 

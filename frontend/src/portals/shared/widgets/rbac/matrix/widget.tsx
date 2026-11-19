@@ -1,6 +1,7 @@
 /**
- * rbac.matrix — an organization's roles and what each may do (GAP-1). Selected role lives in the
- * URL (?role=). Makers REQUEST changes; checkers decide them in Approvals.
+ * rbac.matrix — an organization's roles and what each may do (GAP-1). The view lives in the URL:
+ * no ?role → the roles table; ?role=new → Create Role; ?role=<id> → that role's details + matrix.
+ * Makers REQUEST changes; checkers decide them in Approvals.
  */
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -10,11 +11,12 @@ import { NoticeBar } from '../../kit/Notice';
 import type { Notice } from '../../kit/Notice';
 import { StatePanel } from '../../kit/StatePanel';
 import { isForbidden, toProblem } from '../../kit/problem';
-import { NewRoleForm } from './NewRoleForm';
-import { RoleEditor } from './RoleEditor';
-import { RoleList } from './RoleList';
+import { RoleForm } from './RoleForm';
+import { RoleTable } from './RoleTable';
 import { useCatalog, useRoleCommand, useRoles } from './model';
 import type { RoleCommand } from './model';
+
+const NEW = 'new';
 
 export function RbacMatrix() {
   const { port, context } = useWidgetRuntime();
@@ -23,28 +25,27 @@ export function RbacMatrix() {
   const roles = useRoles(port, orgId);
   const catalog = useCatalog(port);
   const cmd = useRoleCommand(port, orgId);
-  const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const dismiss = useCallback(() => setNotice(null), []);
   const held = useMemo(() => new Set(context.permissions), [context.permissions]);
   const canManage = held.has('role.manage');
 
   const list = roles.data ?? [];
-  const selectedId = params.get('role') ?? list[0]?.id ?? null;
-  const selected = list.find((r) => r.id === selectedId) ?? null;
-  const select = (id: string) => setParams((p) => {
-    const n = new URLSearchParams(p);
-    n.set('role', id);
-    return n;
-  }, { replace: true });
+  const view = params.get('role');
+  const open = useCallback((id: string | null) => {
+    cmd.reset();
+    setParams((p) => {
+      const n = new URLSearchParams(p);
+      if (id) n.set('role', id);
+      else n.delete('role');
+      return n;
+    });
+  }, [cmd, setParams]);
 
   const run = (c: RoleCommand, done: string) => cmd.mutate(c, {
     onSuccess: (res) => {
       setNotice({ id: Date.now(), kind: 'ok', text: `${done} Awaiting a checker (reference ${res.pendingApprovalId.slice(0, 8)}).` });
-      if (c.kind === 'create') {
-        setCreating(false);
-        select(res.roleId);
-      }
+      open(c.kind === 'create' ? res.roleId : c.kind === 'delete' ? null : c.role.id);
     },
   });
 
@@ -58,37 +59,38 @@ export function RbacMatrix() {
     return <StatePanel kind="error" title="Couldn’t load the permission catalog" hint={toProblem(catalog.error).message} onRetry={() => void catalog.refetch()} />;
   }
 
+  const selected = view && view !== NEW ? list.find((r) => r.id === view) ?? null : null;
+  const formRole = view === NEW && canManage ? null : selected;
+  const showForm = (view === NEW && canManage) || selected !== null;
+
   return (
-    <Panel className="p-4">
-      <PageHeader
-        title="Roles and permissions"
-        subtitle="Changes are four-eyes: you request, a checker approves."
-        actions={canManage && !creating ? <Button variant="primary" data-action="role.create" onClick={() => { cmd.reset(); setCreating(true); }}>New role</Button> : undefined}
-      />
+    <Panel className="p-4 sm:p-6">
       <NoticeBar notice={notice} onDismiss={dismiss} />
-      {creating && (
-        <div className="mb-4">
-          <NewRoleForm busy={cmd.isPending} onCancel={() => setCreating(false)}
-            onSubmit={(v) => run({ kind: 'create', key: v.key, name: v.name, permissionKeys: [] }, `Role ${v.key} requested.`)} />
+      {showForm ? (
+        <RoleForm
+          key={formRole?.id ?? NEW}
+          role={formRole}
+          catalog={catalog.data ?? []}
+          held={held}
+          canManage={canManage}
+          busy={cmd.isPending}
+          problem={cmd.isError ? toProblem(cmd.error).message : null}
+          onCancel={() => open(null)}
+          onCreate={(v, keys) => run({ kind: 'create', key: v.key, name: v.name, permissionKeys: keys }, `Role ${v.key} requested.`)}
+          onRequestChange={(keys) => formRole && run({ kind: 'update', role: formRole, permissionKeys: keys }, 'Change requested.')}
+          onRequestDelete={() => formRole && run({ kind: 'delete', role: formRole }, `Deletion of ${formRole.key} requested.`)}
+        />
+      ) : (
+        <div className="mx-auto max-w-5xl">
+          <PageHeader
+            title="Roles"
+            subtitle="Manage system roles and access levels. Changes are four-eyes: you request, a checker approves."
+            actions={canManage ? <Button variant="primary" data-action="role.create" onClick={() => open(NEW)}>+ Create Role</Button> : undefined}
+          />
+          {view && view !== NEW && <div className="mb-3"><StatePanel kind="empty" title="That role no longer exists" /></div>}
+          {list.length ? <RoleTable roles={list} canManage={canManage} onOpen={open} /> : <StatePanel kind="empty" title="No roles yet" />}
         </div>
       )}
-      <div className="grid gap-4 md:grid-cols-[280px_1fr]">
-        <RoleList roles={list} selectedId={selectedId} onSelect={select} />
-        {selected ? (
-          <RoleEditor
-            role={selected}
-            catalog={catalog.data ?? []}
-            held={held}
-            canManage={canManage}
-            busy={cmd.isPending}
-            problem={cmd.isError ? toProblem(cmd.error).message : null}
-            onRequestChange={(keys) => run({ kind: 'update', role: selected, permissionKeys: keys }, 'Change requested.')}
-            onRequestDelete={() => run({ kind: 'delete', role: selected }, `Deletion of ${selected.key} requested.`)}
-          />
-        ) : (
-          <StatePanel kind="empty" title="No roles yet" />
-        )}
-      </div>
     </Panel>
   );
 }

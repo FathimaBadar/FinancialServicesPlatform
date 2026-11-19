@@ -78,6 +78,9 @@ export function usePendingPublish(rootTenantId: string | null, draftId: string |
       apiGet<ApprovalView[]>(
         `/api/approvals?tenantId=${encodeURIComponent(rootTenantId ?? '')}&operationType=UI_LAYOUT_PUBLISH&status=PENDING_CHECKER&size=100`),
     enabled: enabled && !!rootTenantId,
+    // a checker can decide from another session/browser; without polling the maker's pill
+    // would say "Waiting for approval" until the next interaction refetch
+    refetchInterval: 15_000,
     select: (rows) =>
       rows.find((a) => a.operationType === 'UI_LAYOUT_PUBLISH' && a.targetResourceId === draftId && a.status === 'PENDING_CHECKER') ?? null,
   });

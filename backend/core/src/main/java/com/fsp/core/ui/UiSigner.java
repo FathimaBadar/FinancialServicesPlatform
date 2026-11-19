@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fsp.core.config.FspProperties;
+import com.fsp.shared.PkiKeyResolver;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -23,7 +24,6 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
-import java.util.List;
 
 /**
  * Signs portal delivery bundles with the portal-builder keypair
@@ -52,40 +52,31 @@ public class UiSigner {
 
     public UiSigner(FspProperties props) throws Exception {
         this.props = props.getUi();
+        Path privPath = PkiKeyResolver.resolve(props.getUi().getSigningKeyPath(), "ui-builder-signing.pem");
+        // public key lives next to the private key as <base>-pub.pem; standard repo layout is
+        // covered by the shared resolver's infrastructure/pki/dev anchoring
+        Path pubPath;
+        if (Files.exists(privPath)) {
+            pubPath = Path.of(privPath.toString().replace(".pem", "-pub.pem"));
+            if (!Files.exists(pubPath)) {
+                pubPath = PkiKeyResolver.resolve(props.getUi().getSigningKeyPath(), "ui-builder-signing-pub.pem");
+            }
+        } else {
+            pubPath = PkiKeyResolver.resolve(props.getUi().getSigningKeyPath(), "ui-builder-signing-pub.pem");
+        }
+        if (!Files.exists(pubPath)) {
+            throw new IllegalStateException("ui_signing_pubkey_missing run 'make pki'");
+        }
         this.privateKey = KeyFactory.getInstance("EC")
-                .generatePrivate(new PKCS8EncodedKeySpec(decodePem(resolveKeyPath(this.props.getSigningKeyPath()))));
+                .generatePrivate(new PKCS8EncodedKeySpec(decodePem(privPath)));
         ECPublicKey pub = (ECPublicKey) KeyFactory.getInstance("EC")
-                .generatePublic(new X509EncodedKeySpec(decodePem(resolvePublicPath(this.props.getSigningKeyPath()))));
+                .generatePublic(new X509EncodedKeySpec(decodePem(pubPath)));
         this.publicKey = pub;
         this.publicPoint = pub.getW();
     }
 
-    /** Launcher-cwd-independent key lookup, mirroring the IdP resolver pattern.
-     *  bootRun runs from backend/core → try configured, repo-relative (both depths), absolute. */
-    private static final List<String> KEY_ROOTS = List.of(
-            "infrastructure/pki/dev/",
-            "../infrastructure/pki/dev/",
-            "/home/arun/FinancialServicesPlatform/infrastructure/pki/dev/");
-
-    private static Path resolveKeyPath(String configured) {
-        Path p = Path.of(configured);
-        if (Files.exists(p)) return p;
-        return KEY_ROOTS.stream().map(r -> Path.of(r, "ui-builder-signing.pem"))
-                .filter(Files::exists).findFirst()
-                .orElse(Path.of("infrastructure/pki/dev/ui-builder-signing.pem"));
-    }
-
-    /** Public key lives next to the private key: <base>-pub.pem. */
-    private static Path resolvePublicPath(String configuredPrivateKeyPath) {
-        Path p = Path.of(configuredPrivateKeyPath);
-        if (Files.exists(p)) {
-            Path pub = Path.of(p.toString().replace(".pem", "-pub.pem"));
-            if (Files.exists(pub)) return pub;
-        }
-        return KEY_ROOTS.stream().map(r -> Path.of(r, "ui-builder-signing-pub.pem"))
-                .filter(Files::exists).findFirst()
-                .orElseThrow(() -> new IllegalStateException("ui_signing_pubkey_missing run 'make pki'"));
-    }
+    /** Launcher-cwd-independent key lookup via the shared relative-only PkiKeyResolver
+     *  (see com.fsp.shared.PkiKeyResolver) — works from any module depth, any machine. */
 
     private static byte[] decodePem(Path file) throws IOException {
         String text = Files.readString(file).trim();

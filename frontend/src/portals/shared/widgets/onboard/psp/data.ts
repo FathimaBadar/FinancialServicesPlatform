@@ -1,6 +1,6 @@
 /** onboard.psp data contributions — the platform creates PSP (manufacturer) organizations. */
 import type { DataSources } from '../../core/sources';
-import type { FixtureSet } from '../../core/ports';
+import type { FixtureSet, FixtureRequest } from '../../core/ports';
 import type { PspCreated, PspRow } from './model';
 import { forbidUnless } from '../../kit/forbid';
 
@@ -37,7 +37,7 @@ const ORG = '00000000-0000-0000-0000-0000000000a1';
 
 export const fixtures: FixtureSet = {
   'onboard.psp.list': {
-    default: (req): PspRow[] => {
+    default: (req: FixtureRequest): PspRow[] => {
       forbidUnless(req.permissions, 'org.create');
       return psps;
     },
@@ -46,7 +46,7 @@ export const fixtures: FixtureSet = {
   },
   'onboard.psp.create': {
     // POST /v1/tenants with a tenant body → tenant + admin + checker (UsernamePolicy names).
-    default: (req): PspCreated => {
+    default: (req: FixtureRequest): PspCreated => {
       forbidUnless(req.permissions, 'org.create');
       const v = req.body as { legalName?: string; adminUsername?: string; checkerUsername?: string };
       const slug = (v.legalName ?? 'new org').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);

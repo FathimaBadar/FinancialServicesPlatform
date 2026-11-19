@@ -4,7 +4,7 @@
  * fixtures play reads only.
  */
 import type { DataSources } from '../../core/sources';
-import type { FixtureSet } from '../../core/ports';
+import type { FixtureSet, FixtureRequest } from '../../core/ports';
 import { WB_BOOK } from '../../kit/fixture-ledger';
 import { forbidUnless } from '../../kit/forbid';
 
@@ -14,7 +14,7 @@ export const sources: DataSources = {
 
 export const fixtures: FixtureSet = {
   'period.control.list': {
-    default: (req) => {
+    default: (req: FixtureRequest) => {
       forbidUnless(req.permissions, 'gl.account.view');
       return [
         { id: '00000000-0000-0000-0000-0000000000f1', fiscalYear: 2026, periodNo: 11, startDate: '2026-11-01', endDate: '2026-11-30', status: 'OPEN' },

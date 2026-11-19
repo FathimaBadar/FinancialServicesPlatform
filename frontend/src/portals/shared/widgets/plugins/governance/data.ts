@@ -1,6 +1,6 @@
 /** plugins.governance data contributions (core PluginGovernanceController + registry/installation). */
 import type { DataSources } from '../../core/sources';
-import type { FixtureSet } from '../../core/ports';
+import type { FixtureSet, FixtureRequest } from '../../core/ports';
 import type { InstallationRow, OrgRow, PluginTypeRow } from './model';
 import { forbidUnless } from '../../kit/forbid';
 
@@ -86,7 +86,7 @@ const installs: InstallationRow[] = [
 
 export const fixtures: FixtureSet = {
   'plugins.governance.types': {
-    default: (req): PluginTypeRow[] => {
+    default: (req: FixtureRequest): PluginTypeRow[] => {
       forbidUnless(req.permissions, 'plugin.manage');
       return types;
     },
@@ -94,7 +94,7 @@ export const fixtures: FixtureSet = {
     error: null,
   },
   'plugins.governance.orgs': {
-    default: (req): OrgRow[] => {
+    default: (req: FixtureRequest): OrgRow[] => {
       forbidUnless(req.permissions, 'plugin.manage');
       return orgs.slice(1); // children of the platform root, never the root itself
     },
@@ -102,7 +102,7 @@ export const fixtures: FixtureSet = {
     error: null,
   },
   'plugins.governance.installations': {
-    default: (req): InstallationRow[] => {
+    default: (req: FixtureRequest): InstallationRow[] => {
       forbidUnless(req.permissions, 'plugin.manage');
       const orgId = req.params.orgId ?? '';
       return installs.filter((i) => i.tenantId === orgId);
@@ -112,7 +112,7 @@ export const fixtures: FixtureSet = {
   },
   'plugins.governance.register': {
     // Four-eyes: the request is STAGED; the type turns REGISTERED after a checker approves.
-    default: (req) => {
+    default: (req: FixtureRequest) => {
       forbidUnless(req.permissions, 'plugin.register');
       const m = JSON.parse(String((req.body as { manifest?: string }).manifest ?? '{}')) as { code?: string; version?: string };
       return { code: m.code ?? 'unknown', version: m.version ?? '0.0.0', status: 'PENDING_APPROVAL' };
@@ -120,7 +120,7 @@ export const fixtures: FixtureSet = {
     error: null,
   },
   'plugins.governance.install': {
-    default: (req) => {
+    default: (req: FixtureRequest) => {
       forbidUnless(req.permissions, 'plugin.install');
       const b = req.body as { code?: string; version?: string };
       return { code: b.code ?? 'unknown', version: b.version ?? '0.0.0', status: 'PENDING_APPROVAL' };

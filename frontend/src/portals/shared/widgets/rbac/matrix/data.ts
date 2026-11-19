@@ -1,6 +1,6 @@
 /** rbac.matrix data contributions — organization roles (core RoleAdminController). */
 import type { DataSources } from '../../core/sources';
-import type { FixtureSet } from '../../core/ports';
+import type { FixtureSet, FixtureRequest } from '../../core/ports';
 import type { PermissionDef, RoleChange, RoleView } from './model';
 import { forbidUnless } from '../../kit/forbid';
 
@@ -65,7 +65,7 @@ function change(roleId: string, operationType: string): RoleChange {
 
 export const fixtures: FixtureSet = {
   'rbac.matrix.roles': {
-    default: (req): RoleView[] => {
+    default: (req: FixtureRequest): RoleView[] => {
       forbidUnless(req.permissions, 'role.view');
       return roles;
     },
@@ -78,7 +78,7 @@ export const fixtures: FixtureSet = {
     error: null,
   },
   'rbac.matrix.create': {
-    default: (req): RoleChange => {
+    default: (req: FixtureRequest): RoleChange => {
       forbidUnless(req.permissions, 'role.manage');
       const b = req.body as { key?: string; name?: string };
       const v = roles.length + 1;
@@ -101,7 +101,7 @@ export const fixtures: FixtureSet = {
     error: null,
   },
   'rbac.matrix.update': {
-    default: (req): RoleChange => {
+    default: (req: FixtureRequest): RoleChange => {
       forbidUnless(req.permissions, 'role.manage');
       const roleId = req.params.roleId ?? '';
       const target = roles.find((r) => r.id === roleId);
@@ -112,7 +112,7 @@ export const fixtures: FixtureSet = {
     error: null,
   },
   'rbac.matrix.delete': {
-    default: (req): RoleChange => {
+    default: (req: FixtureRequest): RoleChange => {
       forbidUnless(req.permissions, 'role.manage');
       const roleId = req.params.roleId ?? '';
       const target = roles.find((r) => r.id === roleId);

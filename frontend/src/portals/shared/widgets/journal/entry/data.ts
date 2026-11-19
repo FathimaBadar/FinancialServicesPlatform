@@ -1,6 +1,6 @@
 /** journal.entry data contributions (core JournalController). Money POSTs are never auto-retried. */
 import type { DataSources } from '../../core/sources';
-import type { FixtureSet } from '../../core/ports';
+import type { FixtureSet, FixtureRequest } from '../../core/ports';
 import type { EntryView, LineView } from './model';
 import { LEDGER_FIXTURES, WB_BOOK, WB_TENANT } from '../../kit/fixture-ledger';
 import { forbidUnless } from '../../kit/forbid';
@@ -65,7 +65,7 @@ function findOrThrow(entryId: string): EntryView {
 export const fixtures: FixtureSet = {
   ...LEDGER_FIXTURES,
   'journal.entry.list': {
-    default: (req): EntryView[] => {
+    default: (req: FixtureRequest): EntryView[] => {
       forbidUnless(req.permissions, 'je.view');
       const status = req.params.status;
       return status && status !== 'ALL' ? entries.filter((e) => e.status === status) : entries;
@@ -74,14 +74,14 @@ export const fixtures: FixtureSet = {
     error: null,
   },
   'journal.entry.get': {
-    default: (req): EntryView => {
+    default: (req: FixtureRequest): EntryView => {
       forbidUnless(req.permissions, 'je.view');
       return findOrThrow(req.params.entryId ?? '');
     },
     error: null,
   },
   'journal.entry.create': {
-    default: (req): EntryView => {
+    default: (req: FixtureRequest): EntryView => {
       forbidUnless(req.permissions, 'je.create');
       const b = req.body as {
         bookId: string; postingDate: string; valueDate: string; description: string;
@@ -106,7 +106,7 @@ export const fixtures: FixtureSet = {
     error: null,
   },
   'journal.entry.submit': {
-    default: (req): EntryView => {
+    default: (req: FixtureRequest): EntryView => {
       forbidUnless(req.permissions, 'je.create');
       const e = findOrThrow(req.params.entryId ?? '');
       if (e.status !== 'DRAFT') throw new Error(`fixture drift: submit from ${e.status} is a JE_STATE violation`);
@@ -116,7 +116,7 @@ export const fixtures: FixtureSet = {
     error: null,
   },
   'journal.entry.approve': {
-    default: (req): EntryView => {
+    default: (req: FixtureRequest): EntryView => {
       forbidUnless(req.permissions, 'je.approve');
       const e = findOrThrow(req.params.entryId ?? '');
       if (e.status !== 'PENDING_CHECKER') throw new Error(`fixture drift: approve from ${e.status} is a JE_STATE violation`);
@@ -127,7 +127,7 @@ export const fixtures: FixtureSet = {
   },
   'journal.entry.check': {
     // ui-std §5.1: check-status resolves COMMIT_UNKNOWN with the ORIGINAL transfer ids — never fresh ones.
-    default: (req): EntryView => {
+    default: (req: FixtureRequest): EntryView => {
       forbidUnless(req.permissions, 'je.approve');
       const e = findOrThrow(req.params.entryId ?? '');
       if (e.status !== 'COMMIT_UNKNOWN') return { ...e };

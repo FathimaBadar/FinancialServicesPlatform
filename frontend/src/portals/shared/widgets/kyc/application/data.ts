@@ -1,6 +1,6 @@
 /** kyc.application data contributions — this organization's own KYC standing (KYC plugin). */
 import type { DataSources } from '../../core/sources';
-import type { FixtureSet } from '../../core/ports';
+import type { FixtureSet, FixtureRequest } from '../../core/ports';
 import { forbidUnless } from '../../kit/forbid';
 
 export const sources: DataSources = {
@@ -12,7 +12,7 @@ const ORG = '00000000-0000-0000-0000-0000000000a2';
 /** One organization record as the KYC plugin answers it (core KYC was retired in V13). */
 export const fixtures: FixtureSet = {
   'kyc.application.self': {
-    default: (req) => {
+    default: (req: FixtureRequest) => {
       forbidUnless(req.permissions, 'kyc.review');
       return {
         tenantId: ORG,

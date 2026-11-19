@@ -4,7 +4,7 @@
  * workbench's fixture lane answers them with the SAME WB-scoped rows (fixtures.ts keeps
  * one identity per row). Money never appears here as a number.
  */
-import type { FixtureSet } from '../core/ports';
+import type { FixtureSet, FixtureRequest } from '../core/ports';
 import type { BookRow, GlAccountRow } from './books';
 import { forbidUnless } from './forbid';
 
@@ -45,7 +45,7 @@ const books: BookRow[] = [
 /** Books + active chart; both guarded exactly like core (gl.account.view on the tenant subtree). */
 export const LEDGER_FIXTURES: FixtureSet = {
   'ledger.books': {
-    default: (req) => {
+    default: (req: FixtureRequest) => {
       forbidUnless(req.permissions, 'gl.account.view');
       return books;
     },
@@ -53,7 +53,7 @@ export const LEDGER_FIXTURES: FixtureSet = {
     error: null,
   },
   'ledger.accounts.list': {
-    default: (req) => {
+    default: (req: FixtureRequest) => {
       forbidUnless(req.permissions, 'gl.account.view');
       return WB_GL_ACCOUNTS;
     },

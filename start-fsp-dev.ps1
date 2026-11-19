@@ -20,6 +20,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Ensure UTF-8 console output on Windows (chcp 65001 equivalent)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+[Console]::InputEncoding  = [System.Text.UTF8Encoding]::new()
+
 # Ensure we run from the repo root regardless of where the user launches from
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location $SCRIPT_DIR

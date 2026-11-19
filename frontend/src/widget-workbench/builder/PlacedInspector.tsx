@@ -1,4 +1,5 @@
-import { TIERS } from '../../portals/shared/widgets/core/grid';
+import { useState } from 'react';
+import { COLS, TIERS } from '../../portals/shared/widgets/core/grid';
 import type { Tier } from '../../portals/shared/widgets/core/grid';
 import type { ConfigField, WidgetDef } from '../../portals/shared/widgets/core/manifest';
 import { cellsOf } from '../../portals/shared/widgets/core/manifest';
@@ -14,33 +15,48 @@ export interface PlacedInspectorProps {
   onRemove: () => void;
 }
 
+/** Human width names for a tier's column count (Full/Half/Third/Quarter). */
+function widthOptions(tier: Tier): Array<{ v: number; label: string }> {
+  const cols = COLS[tier];
+  const out: Array<{ v: number; label: string }> = [];
+  for (const parts of [1, 2, 3, 4]) {
+    if (cols % parts === 0) out.push({ v: cols / parts, label: parts === 1 ? 'Full' : `${['Half', 'Third', 'Quarter'][parts - 2]}` });
+  }
+  return out;
+}
+
+function widthLabel(tier: Tier, v: number | null, fallback: number): string {
+  const opts = widthOptions(tier);
+  const hit = opts.find((o) => o.v === (v ?? fallback));
+  return hit ? hit.label : `${v ?? fallback} cols`;
+}
+
 export function PlacedInspector({ def, placed, onSpan, onConfig, onRemove }: PlacedInspectorProps) {
+  const [details, setDetails] = useState(false);
   const fields = Object.entries(def.config ?? {}).map(([key, field]) => ({ key, field: field as ConfigField }));
   return (
     <>
       <div className="pane-h">
         <b>{def.label}</b>
         <span className="grow" />
-        <button type="button" className="lnk bad" onClick={onRemove}>Remove</button>
+        <button type="button" className="lnk bad" onClick={onRemove}>Remove from page</button>
       </div>
-      <div className="mono small dim">{def.id}@{def.version} · instance {placed.id}</div>
-      <b className="small">Size per tier</b>
+      <b className="small">Width</b>
       {TIERS.map((t) => {
         const z = def.size[t];
         if (z.kind === 'hidden') {
-          return <div key={t} className="small dim">{TIER_LABEL[t]}: hidden ({z.reason})</div>;
+          return <div key={t} className="small dim">{TIER_LABEL[t]}: hidden — {z.reason}</div>;
         }
+        const now = placedSpan(def, placed, t) ?? z.default;
+        const opts = widthOptions(t).filter((o) => o.v >= z.min && o.v <= z.max);
         return (
           <label key={t} className="row">
             {TIER_LABEL[t]}
-            <input
-              type="number"
-              min={z.min}
-              max={z.max}
-              value={placedSpan(def, placed, t) ?? z.default}
-              onChange={(e) => onSpan(t, Number(e.target.value))}
-            />
-            <span className="dim small">{z.min}–{z.max}</span>
+            <select value={String(now)} onChange={(e) => onSpan(t, Number(e.target.value))}>
+              {opts.map((o) => <option key={o.v} value={o.v}>{o.label} · {o.v} of {COLS[t]}</option>)}
+              {!opts.some((o) => o.v === now) && <option value={now}>{widthLabel(t, now, z.default)}</option>}
+            </select>
+            {placed.span[t] === undefined && <span className="dim small">default</span>}
           </label>
         );
       })}
@@ -67,10 +83,20 @@ export function PlacedInspector({ def, placed, onSpan, onConfig, onRemove }: Pla
           )}
         </label>
       ))}
-      <b className="small">Permissions it names</b>
-      <div className="mono small">
-        {cellsOf(def).map((c) => <div key={c}>{c}</div>)}
-      </div>
+      <button type="button" className="lnk small" onClick={() => setDetails(!details)}>
+        {details ? 'Hide details' : 'Details'} <span className="dim">{details ? '▾' : '▸'}</span>
+      </button>
+      {details && (
+        <>
+          <div className="mono small dim">{def.id}@{def.version} · instance {placed.id}</div>
+          <dl className="facts">
+            <dt>columns (raw)</dt>
+            <dd className="mono">{TIERS.map((t) => `${t}=${placedSpan(def, placed, t) ?? '·'}`).join(' ')}</dd>
+            <dt>permissions it names</dt>
+            <dd className="mono">{cellsOf(def).join(', ') || 'none'}</dd>
+          </dl>
+        </>
+      )}
     </>
   );
 }

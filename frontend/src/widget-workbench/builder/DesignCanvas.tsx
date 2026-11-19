@@ -19,20 +19,27 @@ export interface DesignCanvasProps {
   items: readonly PlacedWidget[];
   defs: ReadonlyMap<string, WidgetDef>;
   selected: string | null;
+  /** Show at true width, scrolling; false = shrink to fit (readable first, §4.3). */
+  fit: boolean;
+  onFit: (fit: boolean) => void;
+  locked: boolean;
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
-  onResize: (id: string, by: number) => void;
   onReorder: (from: number, to: number) => void;
+  /** Opens the add-widget drawer at position `at` (§4.4). */
+  onOpenPicker: (at: number) => void;
   onAdd: (widgetId: string, at: number) => void;
 }
 
 /**
- * The screen of a submenu at one grid tier, with the placed widgets rendered for real — on
- * fixtures, in design mode (never against the live API with the developer's own session).
- * Drop widgets from the palette; drag ⠿ to reorder (the order is the phone order).
+ * The screen of a page at one grid tier, with the placed widgets rendered for real — on
+ * fixtures, in design mode (never against the live API with the admin's own session).
+ * The canvas shows the true tier width and scrolls instead of shrinking (§4.3); a "Fit"
+ * toggle still zooms when you want the whole frame visible. Every slot has a + chip and
+ * typing "/" opens the picker, so adding widgets never requires dragging (§4.4).
  */
 export function DesignCanvas(props: DesignCanvasProps) {
-  const { context, tier, items, defs, selected } = props;
+  const { context, tier, items, defs, selected, fit, locked } = props;
   const width = TIER_TEST_WIDTH[tier];
   const cols = COLS[tier];
   const fitRef = useRef<HTMLDivElement>(null);
@@ -49,9 +56,10 @@ export function DesignCanvas(props: DesignCanvasProps) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const zoom = Math.min(1, avail / width);
+  const zoom = fit ? Math.min(1, avail / width) : 1;
 
   const accept = (e: DragEvent, at: number | 'end') => {
+    if (locked) return;
     if (!carries(e, DND_WIDGET, DND_PLACED)) return;
     e.preventDefault();
     e.stopPropagation();
@@ -62,6 +70,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
     e.preventDefault();
     e.stopPropagation();
     setOver(null);
+    if (locked) return;
     const widgetId = e.dataTransfer.getData(DND_WIDGET);
     if (widgetId) {
       props.onAdd(widgetId, at);
@@ -78,9 +87,12 @@ export function DesignCanvas(props: DesignCanvasProps) {
       <div className="cv-bar">
         <span>{TIER_LABEL[tier]} · {width}px · {cols} columns</span>
         <span className="grow" />
-        <span className="dim">Drop widgets here · drag ⠿ to reorder (this order is the phone order)</span>
+        <span className="dim small">Widgets flow top to bottom — this order is the phone order</span>
+        <button type="button" className={fit ? 'btn on' : 'btn'} title="Fit the whole frame in view (shrinks)" onClick={() => props.onFit(!fit)}>
+          Fit
+        </button>
       </div>
-      <div className="cv-fit" ref={fitRef}>
+      <div className={fit ? 'cv-fit' : 'cv-scroll'} ref={fitRef}>
         <QueryClientProvider client={queryClient}>
           <div
             className={over === 'end' ? 'cv-page drop-over' : 'cv-page'}
@@ -136,11 +148,8 @@ export function DesignCanvas(props: DesignCanvasProps) {
                       ⠿
                     </span>
                     <b>{d.label}</b>
-                    <span className="dim mono">{span}/{cols}</span>
                     <span className="grow" />
-                    <button type="button" title="Narrower" onClick={(e) => { e.stopPropagation(); props.onResize(it.id, -1); }}>−</button>
-                    <button type="button" title="Wider" onClick={(e) => { e.stopPropagation(); props.onResize(it.id, 1); }}>+</button>
-                    <button type="button" title="Remove" onClick={(e) => { e.stopPropagation(); props.onRemove(it.id); }}>✕</button>
+                    {selected === it.id && <span className="dim small mono">↹ select · Alt+↑↓ reorder</span>}
                   </div>
                   <FrameRouter>
                     <WidgetHost
@@ -153,11 +162,40 @@ export function DesignCanvas(props: DesignCanvasProps) {
                       config={it.config}
                     />
                   </FrameRouter>
+                  {!locked && (
+                    <button
+                      type="button"
+                      className="slot-chip"
+                      title={`Add a widget before ${d.label}`}
+                      onClick={(e) => { e.stopPropagation(); props.onOpenPicker(i); }}
+                    >
+                      +
+                    </button>
+                  )}
                 </div>
               );
             })}
-            {items.length === 0 && (
-              <div className="cv-empty">Empty screen. Drag a widget from the palette and drop it here.</div>
+            {items.length === 0 ? (
+              <div className="cv-empty">
+                <p>Nothing is on this page yet.</p>
+                {!locked && (
+                  <button type="button" className="btn primary" onClick={() => props.onOpenPicker(0)}>
+                    + Add widget
+                  </button>
+                )}
+              </div>
+            ) : (
+              !locked && (
+                <button
+                  type="button"
+                  className="cv-end"
+                  onClick={() => props.onOpenPicker(items.length)}
+                  onDragOver={(e) => accept(e, 'end')}
+                  onDrop={(e) => drop(e, items.length)}
+                >
+                  + Add widget
+                </button>
+              )
             )}
           </div>
         </QueryClientProvider>

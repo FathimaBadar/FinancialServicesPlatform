@@ -5,7 +5,7 @@
  * has none, so the console never rendered. This flow publishes one the PROPER way — the same
  * path production uses, nothing seeded around the signature:
  *   1. maker (platform-admin) registers every build widget with core (ui.widget.register);
- *   2. the builder seeds the layout from the build-time menu registry ("Reset to today's menus");
+ *   2. the builder seeds its editor copy from the live portal ("Start from the live portal");
  *   3. maker saves the draft and submits it → UI_LAYOUT_PUBLISH approval (four-eyes);
  *   4. checker (admin-checker, a different person) approves → core signs the bundle (ES256).
  * Idempotent: an already-published portal is left alone unless FSP_PUBLISH_FORCE=1.
@@ -55,9 +55,9 @@ test(`publish a signed "${PORTAL}" portal bundle (four-eyes)`, async ({ browser 
 
   // 2. seed the layout from today's menus, 3. save + submit (maker)
   await maker.goto(`/widget-workbench/builder?portal=${PORTAL}`);
-  await maker.getByRole('button', { name: "Reset to today's menus" }).click();
-  await maker.getByRole('button', { name: /Click again/ }).click();
-  await maker.getByRole('button', { name: 'Publish', exact: true }).first().click();
+  await maker.getByRole('button', { name: "Start from the live portal" }).click();
+  // the submit sheet gathers the checks, the diff and the four-eyes submission
+  await maker.goto(`/widget-workbench/builder?portal=${PORTAL}&view=submit`);
   await maker.getByRole('button', { name: 'Save draft to server' }).click();
   await expect(maker.getByText('Draft saved on the server.')).toBeVisible();
   await maker.getByRole('button', { name: 'Submit draft for approval' }).click();
@@ -65,7 +65,7 @@ test(`publish a signed "${PORTAL}" portal bundle (four-eyes)`, async ({ browser 
 
   // 4. a DIFFERENT person approves → core publishes + signs
   const checker = await workbenchSession(browser, 'admin-checker');
-  await checker.goto(`/widget-workbench/builder?portal=${PORTAL}&view=publish`);
+  await checker.goto(`/widget-workbench/builder?portal=${PORTAL}&view=submit`);
   await checker.getByRole('button', { name: 'Approve and publish' }).click();
   await expect(checker.getByText(`Published: the ${PORTAL} portal draws this layout on its next load.`)).toBeVisible();
 

@@ -83,6 +83,19 @@ export function usePendingPublish(rootTenantId: string | null, draftId: string |
   });
 }
 
+/** The newest REJECTED publish approval — the "Changes requested" state (§4.1). */
+export function useLastDecision(rootTenantId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['approvals', rootTenantId ?? '', 'UI_LAYOUT_PUBLISH', 'REJECTED', 'last'],
+    // Server-side status + operationType push-down; the queue orders by requestedAt desc.
+    queryFn: () =>
+      apiGet<ApprovalView[]>(
+        `/api/approvals?tenantId=${encodeURIComponent(rootTenantId ?? '')}&operationType=UI_LAYOUT_PUBLISH&status=REJECTED&size=1`),
+    enabled: enabled && !!rootTenantId,
+    select: (rows) => rows[0] ?? null,
+  });
+}
+
 export function usePublishActions(portal: string, rootTenantId: string | null) {
   const qc = useQueryClient();
   const settle = () => {

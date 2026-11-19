@@ -1,22 +1,27 @@
 import { useConnection } from './connection';
 
-/** The bar at the top of the workbench: signed in or not, as whom, and what to do about it. */
+/** The bar at the top of the workbench: signed in or not, as whom, and what to do about it.
+ *  On builder routes it collapses to a dot + identity (§4.7) — the builder has its own header. */
 export function ConnectionBar() {
   const c = useConnection();
   const on = c.status === 'connected';
+  const compact = typeof window !== 'undefined' && window.location.pathname.startsWith('/builder');
   return (
-    <div className="conn" data-connection={c.status}>
+    <div className={compact ? 'conn compact' : 'conn'} data-connection={c.status}>
       <span className={on ? 'dot on' : 'dot'} />
       <b>{on ? 'FSP API' : 'Fixtures'}</b>
-      <span className="mono dim small">same-origin /api → BFF → gateway → core</span>
-      <span className="grow" />
+      {!compact && <span className="mono dim small">same-origin /api → BFF → gateway → core</span>}
+      {!compact && <span className="grow" />}
       {c.status === 'checking' && <span className="small dim">Checking the session…</span>}
       {c.status === 'connected' && (
         <>
-          <span className="small">
-            signed in as <b>{c.who}</b> · org <span className="mono">{c.orgName ?? c.orgId ?? '—'}</span> ·{' '}
-            {c.permissions.length} permissions
-          </span>
+          {!compact && (
+            <span className="small">
+              signed in as <b>{c.who}</b> · org <span className="mono">{c.orgName ?? c.orgId ?? '—'}</span> ·{' '}
+              {c.permissions.length} permissions
+            </span>
+          )}
+          {compact && <span className="small">{c.who}</span>}
           <label className="chk small">
             <input
               type="checkbox"

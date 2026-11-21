@@ -47,7 +47,7 @@
     --color-chip-text: #5f5f5f;
     --color-scrollbar-thumb: #c9c9c9;
     --color-placeholder: #6b6b6b;
-    --color-grid-line: rgba(0, 0, 0, 0.07);
+    --color-grid-line: rgba(0, 0, 0, 0.03);
     /* per-portal identity (shell sets it from portal.config.accent) */
     --portal-accent: var(--color-accent);
     /* radius scale (SME: pill controls, 16px panels) */
@@ -90,7 +90,7 @@
     --color-chip-text: #c9c9c9;
     --color-scrollbar-thumb: #2a2a2a;
     --color-placeholder: #6b6b6b;
-    --color-grid-line: rgba(255, 255, 255, 0.022);
+    --color-grid-line: rgba(255, 255, 255, 0.01);
     /* per-portal identity (shell sets it from portal.config.accent) */
     --portal-accent: var(--color-accent);
     /* radius scale (SME: pill controls, 16px panels) */

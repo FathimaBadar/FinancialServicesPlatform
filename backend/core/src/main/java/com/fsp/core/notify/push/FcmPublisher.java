@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Firebase Cloud Messaging v1 (Android + cross-platform fallback plane). Credential-gated:
@@ -33,6 +34,10 @@ public class FcmPublisher implements PushPublisher {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String TOKEN_URL = "https://oauth2.googleapis.com/token";
+    /** Stable refresh-critical-section key so all senders single-flight on ONE token refresh. */
+    private static final UUID TOKEN_SLOT = UUID.nameUUIDFromBytes("fsp:fcm-token-refresh".getBytes(StandardCharsets.UTF_8));
+
+    private final com.fsp.core.common.KeyLocks keyLocks;
     private final String projectId;
     private final String clientEmail;
     private final PrivateKey key;
@@ -40,7 +45,8 @@ public class FcmPublisher implements PushPublisher {
     private volatile String cachedToken;
     private volatile Instant tokenExpiry = Instant.EPOCH;
 
-    public FcmPublisher(com.fsp.core.config.FspProperties props) throws Exception {
+    public FcmPublisher(com.fsp.core.config.FspProperties props, com.fsp.core.common.KeyLocks keyLocks) throws Exception {
+        this.keyLocks = keyLocks;
         var cfg = props.getPush();
         this.projectId = cfg.getFcmProjectId();
         String raw = cfg.getFcmCredentialsJson().trim();
@@ -89,9 +95,27 @@ public class FcmPublisher implements PushPublisher {
         }
     }
 
-    /** OAuth2 JWT-bearer exchange against the service account (RS256), cached 45 min. */
-    private synchronized String accessToken() throws Exception {
-        if (Instant.now().isBefore(tokenExpiry) && cachedToken != null) return cachedToken;
+    /**
+     * Access token with single-flight refresh (AGENTS.md §2d.2). Cheap volatile fast-path first;
+     * the refresh (network I/O) runs under a fair per-key KeyLocks stripe instead of a shared
+     * process-wide object monitor — push senders never queue behind a cold token exchange, only
+     * concurrent refreshers wait, and `withLock` cannot leak the lock on a failed exchange.
+     */
+    private String accessToken() {
+        String token = cachedToken;
+        if (token != null && Instant.now().isBefore(tokenExpiry)) return token;
+        return keyLocks.withLock("fcm-token-refresh", TOKEN_SLOT, () -> {
+            if (cachedToken != null && Instant.now().isBefore(tokenExpiry)) return cachedToken;
+            try {
+                return refreshAccessToken();
+            } catch (Exception e) {
+                throw new IllegalStateException("fcm_token_refresh_failed", e);
+            }
+        });
+    }
+
+    /** OAuth2 JWT-bearer exchange against the service account (RS256); 1-hour token cached 45 min. */
+    private String refreshAccessToken() throws Exception {
         long exp = Instant.now().plus(Duration.ofMinutes(60)).getEpochSecond();
         String input = b64u(new ObjectMapper().writeValueAsString(Map.of("alg", "RS256", "typ", "JWT")))
             + "." + b64u("{\"iss\":\"" + clientEmail + "\",\"scope\":\"https://www.googleapis.com/auth/firebase.messaging\","

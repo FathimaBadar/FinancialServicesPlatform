@@ -84,8 +84,16 @@ public class TbService {
             while (results.next()) {
                 CreateAccountStatus status = results.getStatus();
                 // The results array carries a row for every position in this client; 'Created' is the
-                // success status — only real rejections fail the batch.
-                if (status == CreateAccountStatus.Created) continue;
+                // success status — only real rejections fail the batch. 'exists' (identical id
+                // re-dispatched, e.g. a CoA provision/ensure retry after an UnknownTransport — the
+                // deterministic UUIDs are stable) is an idempotent success. Flag/user-data/ledger
+                // drift still rejects below via the exists_with_different_* statuses.
+                if (status == CreateAccountStatus.Created || status == CreateAccountStatus.Exists) {
+                    if (status == CreateAccountStatus.Exists) {
+                        log.debug("tb_create_accounts_exists index={}", results.getPosition());
+                    }
+                    continue;
+                }
                 batch.beforeFirst();
                 batch.setPosition(results.getPosition());
                 failures.add("index=%d idLow=%d status=%s".formatted(results.getPosition(),

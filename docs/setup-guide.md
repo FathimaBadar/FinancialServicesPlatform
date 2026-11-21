@@ -307,7 +307,7 @@ are initialized with `fsp.security.default-person-password` — env
 Successful boot lines to watch for:
 
 ```text
-core:    Flyway ... migrations applied (V1..V16)   → Tomcat started on 8081
+core:    Flyway ... migrations applied (V1..V31)   → Tomcat started on 8081
 idp:     idp JWKS available ...                    → Tomcat started on 8082
 gateway: catalog fetched (N operations)            → started on 8090  (boot FAILS if core unreachable — retry loop)
 bff:     Tomcat started on 8080
@@ -345,7 +345,7 @@ fixes):
 L1  engine:            podman machine list | docker ps          → running
 L2  postgres:          5432 open, compose ps → healthy
 L3  tigerbeetle:       3000 open; log clean (container logs / server.log)
-L4  core:              boot shows Flyway V16 applied; :8081 open
+L4  core:              boot shows Flyway V31 applied; :8081 open
 L5  idp:               GET http://127.0.0.1:8082/idp/jwks → key set JSON
 L6  gateway:           GET http://127.0.0.1:8090/v1/** with token → NOT 404 ROUTE_NOT_IN_CATALOG
 L7  bff chain:         GET :8080/bff/csrf → POST :8080/bff/auth/login (platform-admin/fsp-admin)

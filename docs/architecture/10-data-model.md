@@ -4,7 +4,7 @@
 
 ---
 
-## 1. ER Overview (Core DB, Flyway V1–V16)
+## 1. ER Overview (Core DB, Flyway V1–V31)
 
 ```mermaid
 erDiagram
@@ -33,7 +33,7 @@ erDiagram
 
 ```mermaid
 timeline
-    title Core DB migrations (next free number: V25 — seed folders own V17/V18/V22)
+    title Core DB migrations (next free number: V32 — V32/V33 reserved for chapter 13 Stage 0)
     V1 : core schema — tenants, persons, RBAC, books, JE, approvals
     V2 : idempotency_records
     V3 : idp_configs / idp_identities
@@ -43,7 +43,15 @@ timeline
     V14 : act_as_sessions
     V16 : person checker flag
     V19 : role.view + PSP sub-type back-fill + anchor-role template back-fill + provisioned-checker flag
+    V23 : notifications + push (fsp_notifications schema, chapter 12)
+    V29 : notification channels (email/SMS, chapter 12)
+    V30 : auth plane (password reset + MFA codes, chapter 02 §7)
+    V31 : push_subscriptions @Version column
 ```
+
+The authoritative, always-current list is the **generated ledger**
+(`docs/generated/migrations.md`, refreshed by `node docs/gen/refresh.cjs` and enforced by
+`make docs-check`) — this timeline is narrative context only.
 
 Rules:
 - Applied migrations are **immutable** — never edit an existing migration; write a new one.

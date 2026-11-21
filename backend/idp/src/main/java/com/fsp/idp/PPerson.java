@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.util.UUID;
 
@@ -29,4 +30,17 @@ public class PPerson {
     public String status;
     @Column(name = "is_applicant", nullable = false)
     public boolean isApplicant;
+
+    // read-only contacts of the canonical person (V30): auth-plane targets, never writable here
+    @Column
+    public String email;
+    @Column
+    public String phone;
+
+    /** Optimistic-lock passthrough on the canonical row: IdP writes (password reset,
+     *  hosted change) compare-and-swap on persons.version exactly like core does —
+     *  a concurrent core update to the same person fails HERE instead of being clobbered. */
+    @Version
+    @Column(nullable = false)
+    public long version;
 }

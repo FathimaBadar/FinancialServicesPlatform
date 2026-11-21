@@ -36,7 +36,7 @@ flowchart TB
 
     subgraph Plugins["Out-of-Process Plugins (Strict Process & DB Isolation)"]
         KYC["KYC Plugin :8083<br/>own DB: fsp_plugin_kyc<br/>own Flyway migrations"]
-        VAS["VAS / Inventory :8085<br/>own DB: fsp_plugin_vas<br/>own Flyway migrations"]
+        VAS["VAS / Inventory :8084<br/>own DB: fsp_plugin_inventory<br/>own Flyway migrations"]
     end
 
     UX -->|HTTPS session| BFF -->|Bearer + DPoP| GW
@@ -81,9 +81,10 @@ For detailed specifications, sequence flows, and schemas, read the modular chapt
 | [07. Plugin Platform](file:///home/arun/FinancialServicesPlatform/docs/architecture/07-plugin-platform.md) | Out-of-Process Plugins | Separate OS process mandate, isolated DB schemas (`fsp_plugin_*`), actor assertions, and KYC onboarding saga. |
 | [08. REST Query Standards](file:///home/arun/FinancialServicesPlatform/docs/architecture/08-rest-query-standards.md) | Pagination, Sort & Search | Universal pagination (`page`/`size`), server-side sorting with safelists, and server-side search push-down across Core & Plugins. |
 | [09. Frontend & Portals](file:///home/arun/FinancialServicesPlatform/docs/architecture/09-frontend-portals.md) | Portals & Widget Harness | 5 portal apps from one SPA codebase, session hydration, widget codegen (`bun widgets:*`), and UI standards. |
-| [10. Data Model](file:///home/arun/FinancialServicesPlatform/docs/architecture/10-data-model.md) | Schemas & Migrations | ER diagram, Flyway migration ledger (next V20), and system vs demo seed rules. |
+| [10. Data Model](file:///home/arun/FinancialServicesPlatform/docs/architecture/10-data-model.md) | Schemas & Migrations | ER diagram, Flyway migration ledger (generated via `refresh.cjs`), and system vs demo seed rules. |
 | [11. Operations & Live Docs](file:///home/arun/FinancialServicesPlatform/docs/architecture/11-operations-and-live-docs.md) | Ops, Tests & Maintenance | Dev happy path make targets, test pyramid, two-tier live doc update workflow (`refresh.cjs`), and glossary. |
 | [12. Notifications & Push](file:///home/arun/FinancialServicesPlatform/docs/architecture/12-notifications-and-push.md) | Inbox & Push Spine | Queue-shaped notifications, one push contract for Web Push/APNs/FCM (credential-gated adapters), data-minimized payloads under FAPI, and unread badge plumbing. |
+| [13. Money Movement & Rails](file:///home/arun/FinancialServicesPlatform/docs/architecture/13-money-movement-and-rails.md) | Bank Connectors, Bill Payments, PSP & EMI | Sealed provider-protocol taxonomy, per-bank transport/format profiles (ISO 8583, ISO 20022, REST, SFTP/MQ batches), pending-transfer bill-payment space ladder, exactly-once stack, circuit-breaker/moving-window doctrine, and BoN PSD-1/PSD-3/VAA regulatory traceability. |
 
 ---
 
@@ -98,7 +99,7 @@ The one-page checklist every change is measured against:
 | 3 | One-line structured logs for every incident; MDC correlation; secrets never logged | log pattern + `AuditService` |
 | 4 | Optimistic `@Version` + state preconditions + `KeyLocks` dispatch serialization; never `synchronized` on singletons | `KeyLocks` |
 | 5 | Idempotency key on every `/v1` mutation; insert-first semantics; 5xx not cached | `IdempotencyFilter` |
-| 6 | Demo data only under `client-demo` seed; migrations immutable; next migration = V24 | Flyway layout |
+| 6 | Demo data only under `client-demo` seed; migrations immutable; next migration = V32 (V32/V33 reserved for chapter 13 Stage 0) | Flyway layout |
 | 7 | Four-eyes at person_id; machines can never make/check | service preconditions |
 | 8 | Minor units (`long`, `NUMERIC(20,0)`, string on wire); TB ledger id = ISO-4217 numeric | `Amount` contract |
 | 9 | Balanced JE ≥ 2 lines; direct debit-credit matching; deterministic uuid5 transfer ids; linked chain except final leg | `PostingPlanner` |

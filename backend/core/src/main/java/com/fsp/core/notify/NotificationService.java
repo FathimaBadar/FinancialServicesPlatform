@@ -7,11 +7,14 @@ import com.fsp.core.identity.PersonRepository;
 import com.fsp.core.outbox.OutboxService;
 import com.fsp.core.rbac.RbacRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -32,16 +35,19 @@ public class NotificationService {
 
     private final NotificationRepository repository;
     private final PushSubscriptionRepository subscriptions;
-    private final RbacRepository rbac;
+    private final NotificationChannelPrefRepository channelPrefs;
     private final PersonRepository persons;
+    private final RbacRepository rbac;
     private final OutboxService outbox;
 
     public NotificationService(NotificationRepository repository, PushSubscriptionRepository subscriptions,
-                               RbacRepository rbac, PersonRepository persons, OutboxService outbox) {
+                               NotificationChannelPrefRepository channelPrefs, PersonRepository persons,
+                               RbacRepository rbac, OutboxService outbox) {
         this.repository = repository;
         this.subscriptions = subscriptions;
-        this.rbac = rbac;
+        this.channelPrefs = channelPrefs;
         this.persons = persons;
+        this.rbac = rbac;
         this.outbox = outbox;
     }
 
@@ -128,8 +134,74 @@ public class NotificationService {
 
     // ---------- read side ----------
 
-    public List<Notification> list(UUID personId) {
-        return repository.findByPersonIdOrderByCreatedAtDesc(personId);
+    /** Inbox page record (§2f-compliant shape). */
+    public record NotificationPage(List<NotificationView> items, int page, int size,
+                                   long totalElements, int totalPages, boolean hasNext, long unread) {}
+
+    public record NotificationView(UUID id, String type, String opType, String title, String body,
+                                   String link, boolean unread, String createdAt) {}
+
+    /** Sort safelist: wire field → entity property; anything else is refused (§2f). */
+    private static final Map<String, String> SORT_FIELDS = Map.of(
+        "createdAt", "createdAt", "readAt", "readAt", "type", "type", "opType", "opType");
+
+    static Sort parseSort(String sort) {
+        if (sort == null || sort.isBlank()) {
+            return Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by("id")); // newest first, stable tie-break
+        }
+        String[] parts = sort.split(",", -1);
+        String field = SORT_FIELDS.get(parts[0].trim());
+        String dir = parts.length > 1 ? parts[1].trim().toLowerCase(java.util.Locale.ROOT) : "desc";
+        if (field == null || parts.length > 2 || !(dir.equals("asc") || dir.equals("desc"))) {
+            throw ApiException.badRequest("SORT_INVALID",
+                "Sort must be one of " + String.join(", ", SORT_FIELDS.keySet().stream().sorted().toList())
+                    + " followed by ,asc or ,desc");
+        }
+        Sort primary = Sort.by(dir.equals("desc") ? Sort.Direction.DESC : Sort.Direction.ASC, field);
+        // unique tie-break so rows never repeat or vanish between pages
+        return primary.and(Sort.by(Sort.Direction.DESC, "createdAt")).and(Sort.by("id"));
+    }
+
+    /** Case-insensitive contains-pattern with LIKE wildcards escaped. */
+    static String likePattern(String q) {
+        if (q == null || q.isBlank()) return null;
+        String t = q.trim().toLowerCase(java.util.Locale.ROOT);
+        if (t.length() > 100) t = t.substring(0, 100);
+        return "%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+    }
+
+    /** Server-side filters only — the person scope is FIXED to the actor (never from the wire). */
+    static org.springframework.data.jpa.domain.Specification<Notification> inboxSpec(
+            UUID personId, String like, Boolean unread) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> where = new ArrayList<>();
+            where.add(cb.equal(root.get("personId"), personId));
+            if (like != null) {
+                where.add(cb.or(
+                    cb.like(cb.lower(root.<String>get("title")), like, '\\'),
+                    cb.like(cb.lower(root.<String>get("body")), like, '\\'),
+                    cb.like(cb.lower(root.<String>get("opType")), like, '\\')));
+            }
+            if (unread != null) {
+                where.add(unread ? cb.isNull(root.get("readAt")) : cb.isNotNull(root.get("readAt")));
+            }
+            return cb.and(where.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+    }
+
+    public NotificationPage listPage(UUID personId, Integer page, Integer size,
+                                     String q, Boolean unread, String sort, long unreadCount) {
+        int pageNum = page == null || page < 0 ? 0 : page;
+        int pageSize = size == null || size < 1 ? 20 : Math.min(size, 100);
+        String like = likePattern(q);
+        var rows = repository.findAll(inboxSpec(personId, like, unread),
+            PageRequest.of(pageNum, pageSize, parseSort(sort)));
+        List<NotificationView> items = rows.getContent().stream()
+            .map(n -> new NotificationView(n.id, n.type, n.opType, n.title, n.body, n.link,
+                n.readAt == null, String.valueOf(n.createdAt)))
+            .toList();
+        return new NotificationPage(items, pageNum, pageSize, rows.getTotalElements(),
+            rows.getTotalPages(), rows.hasNext(), unreadCount);
     }
 
     public long unreadCount(UUID personId) {
@@ -151,6 +223,67 @@ public class NotificationService {
             subscriptions.retire(row.id, java.time.Instant.now());
             log.info("push_unsubscribed person={} platform={}", personId, row.platform);
         });
+    }
+
+    // ---------- outbound channel consent (V29 — email/SMS) ----------
+
+    /** One row per channel with content, or consent record otherwise. Self-service only:
+     *  the caller passes the actor's home person id (never act-as writable). */
+    public record ChannelState(String channel, boolean enabled, boolean dead, boolean hasContact) {}
+
+    public List<ChannelState> channelState(UUID personId) {
+        Person person = persons.findById(personId)
+            .orElseThrow(() -> ApiException.notFound("PERSON_NOT_FOUND", "person not found"));
+        return List.of(state(personId, NotificationChannelPref.EMAIL, notBlank(person.email)),
+                       state(personId, NotificationChannelPref.SMS, notBlank(person.phone)));
+    }
+
+    /** Toggle one or both channels. Enabling requires a profile contact on that channel
+     *  (consent without a target is meaningless) and clears a bounce-verdict dead flag —
+     *  the person asserts they fixed the profile contact. Disabling always succeeds. */
+    @Transactional
+    public List<ChannelState> setChannels(UUID personId, Boolean email, Boolean sms) {
+        if (email != null) toggle(personId, NotificationChannelPref.EMAIL, email);
+        if (sms != null) toggle(personId, NotificationChannelPref.SMS, sms);
+        return channelState(personId);
+    }
+
+    private void toggle(UUID personId, String channel, boolean enable) {
+        if (!List.of(NotificationChannelPref.EMAIL, NotificationChannelPref.SMS).contains(channel)) {
+            throw ApiException.badRequest("CHANNEL_UNKNOWN", "channel must be EMAIL or SMS");
+        }
+        NotificationChannelPref row = channelPrefs.findByPersonIdAndChannel(personId, channel).orElse(null);
+        if (row == null) {
+            if (!enable) return; // disabling an absent consent: already off, idempotent
+            row = new NotificationChannelPref();
+            row.personId = personId;
+            row.channel = channel;
+            row.dead = false;
+        }
+        if (enable) {
+            Person person = persons.findById(personId)
+                .orElseThrow(() -> ApiException.notFound("PERSON_NOT_FOUND", "person not found"));
+            String contact = channel.equals(NotificationChannelPref.EMAIL) ? person.email : person.phone;
+            if (contact == null || contact.isBlank()) {
+                throw ApiException.badRequest("CHANNEL_NO_CONTACT",
+                    "set your profile " + channel.toLowerCase() + " contact before enabling this channel");
+            }
+            row.enabled = true;
+            row.dead = false; // re-enable asserts the contact is fixed
+        } else {
+            row.enabled = false;
+        }
+        channelPrefs.save(row);
+        log.info("channel_pref_set person={} channel={} enabled={}", personId, channel, row.enabled);
+    }
+
+    private ChannelState state(UUID personId, String channel, boolean hasContact) {
+        NotificationChannelPref pref = channelPrefs.findByPersonIdAndChannel(personId, channel).orElse(null);
+        return new ChannelState(channel, pref != null && pref.enabled, pref != null && pref.dead, hasContact);
+    }
+
+    private static boolean notBlank(String v) {
+        return v != null && !v.isBlank();
     }
 
     private static String opLabel(String opType) {

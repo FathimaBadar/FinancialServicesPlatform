@@ -128,3 +128,55 @@ sequenceDiagram
 - **FAPI 2.0 note:** the hosted change surface is pre-authentication; it carries no bearer
   material and issues the standard authorization code through the existing PAR/PKCE/DPoP
   pipeline afterwards — the FAPI2 slice does not need to special-case it.
+
+## 7. Self-service password reset & MFA codes through the notification channels (V30)
+
+Both features deliver through the notification EMAIL/SMS transports (chapter 12 §12.9
+owns the transport contract; this section owns the IDENTITY semantics). Split:
+
+* **Auth logic + secrets live at the IdP** (core-migrated `public` tables, like V6):
+  `password_resets` (hashed single-use token, 15 min, ≤5 confirm attempts, one live
+  reset per person), `mfa_challenges` (hashed OTP, 5 min, ≤3 attempts, 60 s issuance
+  cooldown), `user_mfa` (the enrolment itself — no row = MFA off).
+* **Transports live at the notify plane**: the IdP never renders or sends — it renders
+  the message and parks one row on `fsp_notifications.auth_dispatches` (+ one
+  `Notification.AuthDispatchRequired` outbox evidence row, same transaction); core's
+  `AuthDispatchDispatcher` delivers via the same SMTP/SMS beans as F-12 and purges the
+  secret-bearing text on claim. Contacts are read from the canonical `persons` row at
+  send time — the dispatch row never stores them.
+
+Flows:
+
+```mermaid
+sequenceDiagram
+    participant P as Person (browser)
+    participant B as BFF (:8080)
+    participant I as IdP (:8082)
+    participant N as Notify core (:8081)
+    P->>B: forgot password
+    B->>I: POST /idp/password/reset-request {username}
+    I->>DB: password_resets row (token SHA-256) + auth_dispatches + outbox — 204 ALWAYS
+    N->>N: AuthDispatchDispatcher → SMTP (reset link, 15 min, SMS deliberately NOT used)
+    P->>I: POST /idp/password/reset-confirm {token, newPassword}
+    I->>DB: bcrypt(new), password_must_change=false, token consumed
+```
+
+MFA (native `password` grant + hosted authorize both covered):
+
+* Password verified + `user_mfa` row exists → `401 MFA_REQUIRED`; an OTP challenge is
+  issued and dispatched to the enrolled channel (EMAIL or SMS); the grant must then add
+  `otp`. Re-requests inside the 60 s cooldown reuse the live challenge (no SMS pumping).
+* Hosted authorize flow parks the PAR in an `MfaTicket` (mirrors the F-8 change
+  ticket) and renders a code-entry page; `POST /idp/mfa/verify` resumes the PAR.
+* Enrolment (bearer-authenticated self-service): `GET /idp/mfa` →
+  `{channel, hasEmail, hasPhone}` (never raw contacts); `PUT /idp/mfa {channel}` sends
+  a confirmation code TO the chosen channel (possession proof);
+  `POST /idp/mfa/confirm {code}` writes the row; `DELETE /idp/mfa {password}` requires
+  the current password (knowledge proof for removing the factor).
+
+FAPI/SCA posture: secrets only as SHA-256 hashes at rest; all codes/links single-use
+with bounded attempts; reset requests answer 204 regardless of account existence (RFC
+9700 anti-enumeration); the sweepers log purpose/person/outcome only — never addresses,
+codes or message text (AGENTS §2c). (⛏: SPA screens for the `MFA_REQUIRED` grant step
+and the `/#/reset` route; distributed rate-limit hardening beyond per-challenge caps;
+TOTP/WebAuthn as additional second factors.)

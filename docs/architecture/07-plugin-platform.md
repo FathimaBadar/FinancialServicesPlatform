@@ -24,9 +24,9 @@ flowchart TB
         API_KYC --> DB_KYC
     end
 
-    subgraph PluginVas["Plugin Process 2: VAS / Inventory (:8085)"]
-        API_VAS["VAS REST API :8085"]
-        DB_VAS[("fsp_plugin_vas DB<br/>own Flyway history")]
+    subgraph PluginVas["Plugin Process 2:Inventory (:8084)"]
+        API_VAS["Inventory REST API :8084"]
+        DB_VAS[("fsp_plugin_inventory DB<br/>own Flyway history")]
         API_VAS --> DB_VAS
     end
 

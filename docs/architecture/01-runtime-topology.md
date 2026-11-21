@@ -10,10 +10,13 @@
 |---------|-----------:|------------|-----------|-------|
 | SPA (Vite dev) | 5173 | no | `frontend/` | proxies `/bff` & `/api` → 8080 |
 | BFF | 8080 | stack profile | `backend/bff` | session cookie, CSRF, DPoP proof gen |
-| core | 8081 | stack profile | `backend/core` | Flyway V1–V16, TB client |
+| core | 8081 | stack profile | `backend/core` | Flyway V1–V31, TB client |
 | IdP | 8082 | stack profile | `backend/idp` | RS256 `idp-signing.pem` mounted, never baked |
 | gateway | 8090 | stack profile | `backend/gateway` | catalog-watched routing (60 s refresh) |
 | plugin-kyc | 8083 | stack profile | `backend/plugins/kyc` | own DB/schema, machine credentials |
+| plugin-inventory | 8084 | stack profile | `backend/plugins/inventory` | own DB/schema, machine credentials |
+| **psp-service** | 8085 | **planned** (chapter 13, Stage 5) | `backend/psp` (new) | rails/connectors, clearing positions, merchant payable — own TB book, own schema |
+| **emi-service** | 8086 | **planned** (chapter 13, Stage 2) | `backend/emi` (new) | NAD-only e-money wallets, bill-payment sagas, closed-loop asset ledgers — own TB book |
 | PostgreSQL | 5432 | **always** (`postgres:17-alpine`) | compose | system of record for all services |
 | TigerBeetle | 127.0.0.1:3000 | **host binary** | `infrastructure/bin/tigerbeetle` 0.17.9 | io_uring does not survive container seccomp — deliberately *not* dockerized |
 
@@ -165,7 +168,7 @@ flowchart TD
         GW["Gateway (Verifies Auth, Stamps X-FSP-Channel headers)"]
     end
 
-    subgraph Service["Service Plugins (:8085 VAS / Inventory)"]
+    subgraph Service["Service Plugins (:8083 KYC / :8084 Inventory)"]
         PLUG["Plugin API (Canonical Typed Commands)"]
     end
 

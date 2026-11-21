@@ -10,12 +10,16 @@ public class FspProperties {
     private final Journal journal = new Journal();
     private final Ui ui = new Ui();
     private final Push push = new Push();
+    private final Email email = new Email();
+    private final Sms sms = new Sms();
 
     public Security getSecurity() { return security; }
     public TigerBeetle getTigerBeetle() { return tigerbeetle; }
     public Journal getJournal() { return journal; }
     public Ui getUi() { return ui; }
     public Push getPush() { return push; }
+    public Email getEmail() { return email; }
+    public Sms getSms() { return sms; }
 
     public static class Security {
         private String internalCredential = "dev-internal-credential";
@@ -109,5 +113,59 @@ public class FspProperties {
         public void setFcmProjectId(String v) { this.fcmProjectId = v; }
         public String getFcmCredentialsJson() { return fcmCredentialsJson; }
         public void setFcmCredentialsJson(String v) { this.fcmCredentialsJson = v; }
+    }
+
+    /** F-12 email channel (V29; docs/architecture/12-notifications-and-push.md §12.3).
+     *  Credential-gated like push: enabled + SMTP coordinates via env (FSP_EMAIL_*),
+     *  never shipped, never logged. The payload is the generic pointer + portal link. */
+    public static class Email {
+        private boolean enabled = false;
+        private String host = "";
+        private int port = 587;
+        private String username = "";
+        private String password = "";
+        private String from = "fsp-notifications@fsp.local";
+        private boolean startTls = true;
+        /** Portal origin used to expand the notification's in-app path into a mailto link. */
+        private String portalBaseUrl = "http://localhost:5173";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean v) { this.enabled = v; }
+        public String getHost() { return host; }
+        public void setHost(String v) { this.host = v; }
+        public int getPort() { return port; }
+        public void setPort(int v) { this.port = v; }
+        public String getUsername() { return username; }
+        public void setUsername(String v) { this.username = v; }
+        public String getPassword() { return password; }
+        public void setPassword(String v) { this.password = v; }
+        public String getFrom() { return from; }
+        public void setFrom(String v) { this.from = v; }
+        public boolean isStartTls() { return startTls; }
+        public void setStartTls(boolean v) { this.startTls = v; }
+        public String getPortalBaseUrl() { return portalBaseUrl; }
+        public void setPortalBaseUrl(String v) { this.portalBaseUrl = v; }
+    }
+
+    /** F-12 SMS channel (V29; docs/architecture/12-notifications-and-push.md §12.4).
+     *  Phase-0 provider shape: generic JSON REST gateway (POST {from,to,text}, Bearer key)
+     *  via env (FSP_SMS_*). Strictest payload: sender-branded ≤ 160 chars, no links. */
+    public static class Sms {
+        private boolean enabled = false;
+        private String provider = "GENERIC";
+        private String apiUrl = "";
+        private String apiKey = "";
+        private String senderId = "FSP";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean v) { this.enabled = v; }
+        public String getProvider() { return provider; }
+        public void setProvider(String v) { this.provider = v; }
+        public String getApiUrl() { return apiUrl; }
+        public void setApiUrl(String v) { this.apiUrl = v; }
+        public String getApiKey() { return apiKey; }
+        public void setApiKey(String v) { this.apiKey = v; }
+        public String getSenderId() { return senderId; }
+        public void setSenderId(String v) { this.senderId = v; }
     }
 }

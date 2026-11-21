@@ -1,6 +1,8 @@
 package com.fsp.idp;
 
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,16 +45,18 @@ public class IdpController {
 
     private final IdpTokenService tokenService;
     private final ParService parService;
+    private final IdpAuthService auth;
     private final IdpProperties props;
     private final JdbcTemplate jdbc;
     private final PPersonRepository persons;
     private final org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder bcrypt =
         new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
 
-    public IdpController(IdpTokenService tokenService, ParService parService,
+    public IdpController(IdpTokenService tokenService, ParService parService, IdpAuthService auth,
                          IdpProperties props, JdbcTemplate jdbc, PPersonRepository persons) {
         this.tokenService = tokenService;
         this.parService = parService;
+        this.auth = auth;
         this.jdbc = jdbc;
         this.props = props;
         this.persons = persons;
@@ -183,7 +187,7 @@ public class IdpController {
 
         // 2. Authenticate user (in real flow, this happens at IdP hosted page)
         // For now, delegate to token service password grant to validate credentials
-        IdpDtos.TokenGrant grant = new IdpDtos.TokenGrant("password", username, password, parData.clientId());
+        IdpDtos.TokenGrant grant = new IdpDtos.TokenGrant("password", username, password, parData.clientId(), null);
         try {
             IdpDtos.TokenResponse tokenResp = tokenService.grantPassword(grant);
             
@@ -212,10 +216,21 @@ public class IdpController {
                     return changePage(ticket, "");
                 }
             }
+            // V30 MFA: password verified, verification code already dispatched — park the PAR
+            // in an OTP-sized ticket and render the code step at the IdP itself.
+            if ("MFA_REQUIRED".equals(e.problem().code())) {
+                PPerson person = persons.findByUsername(username).orElse(null);
+                if (person != null) {
+                    String ticket = parService.storeMfaTicket(username, person.id, person.tenantId, parData);
+                    log.info("idp_mfa_page username={} clientId={}", username, parData.clientId());
+                    return mfaPage(ticket, "");
+                }
+            }
             // Business rejection (grantPassword already logged the credential detail); map to a page code
             String code = switch (e.problem().code()) {
                 case "INVALID_CREDENTIALS", "INVALID_REQUEST" -> "authentication_failed";
                 case "PERSON_INACTIVE" -> "account_inactive";
+                case "MFA_CODE_INVALID", "MFA_CODE_EXPIRED", "MFA_ATTEMPTS_EXHAUSTED" -> "authentication_failed";
                 case "TENANT_INACTIVE", "TENANT_MISSING" -> "tenant_inactive";
                 case "IDP_EXTERNAL_FEDERATION_PENDING" -> "federation_pending";
                 default -> "authentication_failed";
@@ -327,6 +342,126 @@ public class IdpController {
         return new RedirectView(redirectUri.toString());
     }
 
+    // ========== V30: MFA second step, hosted at the IdP (after the password step) ==========
+
+    private Object mfaPage(String ticket, String error) {
+        return """
+            <!doctype html><html><head><meta charset="utf-8">
+            <title>FSP — verification code</title><style>
+            body { font-family: system-ui, sans-serif; background: #0d1117; color: #e8edf2;
+                   display: grid; place-items: center; min-height: 100vh; margin: 0; }
+            .panel { background: #161b22; border: 1px solid #2a323d; border-radius: 12px;
+                     padding: 2rem; width: min(92vw, 22rem); }
+            h1 { font-size: 1.05rem; margin: 0 0 .25rem; }
+            p.eyebrow { font-size: .7rem; letter-spacing: .12em; text-transform: uppercase;
+                        color: #f0a10e; margin: 0 0 .75rem; }
+            label { display: block; font-size: .75rem; margin: .75rem 0 .25rem; color: #9fb0c0; }
+            input { width: 100%%; box-sizing: border-box; padding: .55rem .7rem; border-radius: 8px;
+                    border: 1px solid #3a4450; background: #101418; color: #e8edf2;
+                    font: inherit; letter-spacing: .3em; }
+            button { margin-top: 1.25rem; width: 100%%; padding: .6rem; border: 0; border-radius: 8px;
+                     background: #f0a10e; color: #101418; font-weight: 700; cursor: pointer; }
+            .hint { margin-top: 1rem; font-size: .7rem; color: #7a8a99; line-height: 1.5; }
+            .error { margin-top: 1rem; font-size: .75rem; color: #e5484d; }
+            .error:empty { display: none; }
+            </style></head><body><div class="panel">
+            <p class="eyebrow">FSP Identity Provider</p>
+            <h1>Enter your verification code</h1>
+            <form method="post" action="/idp/mfa/verify">
+              <input type="hidden" name="ticket" value="%s">
+              <label for="otp">Verification code</label>
+              <input id="otp" name="otp" inputmode="numeric" pattern="[0-9]*" required autofocus>
+              <button type="submit">Sign in</button>
+              <p class="error" id="mfa-err">%s</p>
+            </form>
+            <p class="hint">A code was sent to your registered contact. It works for 5 minutes.
+            FSP never gives codes over the phone.</p>
+            </div></body></html>
+            """.formatted(html(ticket), html(error));
+    }
+
+    // POST only: OTP travels in the form body, never the URL
+    @PostMapping(value = "/mfa/verify", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public Object mfaVerify(@RequestParam("ticket") String ticket,
+                            @RequestParam("otp") String otp) {
+        ParService.MfaTicket t = parService.peekMfaTicket(ticket);
+        if (t == null) {
+            log.warn("idp_mfa_verify_failed reason=ticket_invalid");
+            return new RedirectView("/idp/error?code=request_uri_invalid");
+        }
+        try {
+            auth.verifyLoginCode(t.personId(), otp == null ? "" : otp.trim());
+        } catch (IdpProblemException e) {
+            log.warn("idp_mfa_verify_rejected username={} problem={}", t.username(), e.problem().code());
+            return mfaPage(ticket, "Code rejected. " + e.problem().detail());
+        }
+        String authCode = parService.storeAuthCode(t.parData(), t.personId(), t.tenantId());
+        StringBuilder redirectUri = new StringBuilder(t.parData().redirectUri())
+            .append("?code=").append(URLEncoder.encode(authCode, StandardCharsets.UTF_8));
+        if (t.parData().state() != null) {
+            redirectUri.append("&state=").append(URLEncoder.encode(t.parData().state(), StandardCharsets.UTF_8));
+        }
+        redirectUri.append("&iss=").append(URLEncoder.encode(props.getIssuer(), StandardCharsets.UTF_8));
+        parService.consumeMfaTicket(ticket);
+        log.info("idp_mfa_verified username={} clientId={}", t.username(), t.parData().clientId());
+        return new RedirectView(redirectUri.toString());
+    }
+
+    // ========== V30: self-service reset + MFA enrolment (bearer-authenticated) ==========
+
+    /** Pre-auth reset request — ALWAYS 204, never reveals whether the username exists (RFC 9700). */
+    @PostMapping(value = "/password/reset-request", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Void> passwordResetRequest(@RequestBody Map<String, String> body) {
+        String username = body.get("username");
+        if (username != null && !username.isBlank()) {
+            try {
+                auth.requestPasswordReset(username.trim());
+            } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                // concurrent duplicate lost the partial-unique race — the winner's code is live
+                log.info("idp_reset_duplicate_suppressed");
+            }
+        }
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping(value = "/password/reset-confirm", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Void> passwordResetConfirm(@RequestBody Map<String, String> body) {
+        auth.confirmPasswordReset(body.get("token"), body.get("newPassword"), body.get("confirmPassword"));
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping(value = "/mfa", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Object mfaStatus(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        UUID personId = tokenService.personFromBearer(authorization);
+        return auth.state(personId);
+    }
+
+    /** Begin enrolment: a confirmation code goes to the chosen channel (possession proof). */
+    @PutMapping(value = "/mfa", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Void> mfaBegin(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                         @RequestBody Map<String, String> body) {
+        UUID personId = tokenService.personFromBearer(authorization);
+        auth.beginEnrolment(personId, body.get("channel"));
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping(value = "/mfa/confirm", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Void> mfaConfirm(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                           @RequestBody Map<String, String> body) {
+        UUID personId = tokenService.personFromBearer(authorization);
+        auth.confirmEnrolment(personId, body.get("code"));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Disable requires the current password (knowledge proof). */
+    @DeleteMapping(value = "/mfa", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Void> mfaDisable(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                           @RequestBody Map<String, String> body) {
+        UUID personId = tokenService.personFromBearer(authorization);
+        auth.disable(personId, body.get("password"));
+        return ResponseEntity.noContent().build();
+    }
+
     // ========== Token Endpoint (ROPC - legacy + auth_code - FAPI 2.0) ==========
 
     @PostMapping(value = "/token", consumes = MediaType.APPLICATION_JSON_VALUE,
@@ -351,7 +486,8 @@ public class IdpController {
                 body.get("grant_type"),
                 body.get("username"),
                 body.get("password"),
-                body.get("client_id")
+                body.get("client_id"),
+                body.get("otp")
             );
             return tokenService.grantPassword(grant);
         } else if ("authorization_code".equals(grantType)) {

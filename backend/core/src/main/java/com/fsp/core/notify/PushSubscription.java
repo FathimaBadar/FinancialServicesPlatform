@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -14,7 +15,7 @@ import java.util.UUID;
  * destination (gone / unregistered) — the dispatcher flips it once and never retries it.
  */
 @Entity
-@Table(name = "push_subscriptions")
+@Table(name = "push_subscriptions", schema = "fsp_notifications")
 public class PushSubscription {
 
     @Id
@@ -52,6 +53,12 @@ public class PushSubscription {
 
     @Column(nullable = false)
     public String status;
+
+    /** Optimistic lock (AGENTS §2.8): re-subscribe writes compare-and-swap on this row
+     *  so a concurrent retire/refresh fails loudly instead of lost-updating (V31). */
+    @Version
+    @Column(nullable = false)
+    public long version;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     public Instant createdAt;

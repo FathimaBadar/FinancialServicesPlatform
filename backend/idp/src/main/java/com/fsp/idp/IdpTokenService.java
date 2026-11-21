@@ -39,6 +39,7 @@ public class IdpTokenService {
     private final PPersonRepository persons;
     private final PTenantRepository tenants;
     private final IdpConfigRepository configs;
+    private final IdpAuthService auth;
     private final JdbcTemplate jdbc;
     private final BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
     private final JwtService jwt;
@@ -46,11 +47,12 @@ public class IdpTokenService {
     private final IdpProperties props;
 
     public IdpTokenService(PPersonRepository persons, PTenantRepository tenants,
-                           IdpConfigRepository configs, JdbcTemplate jdbc,
+                           IdpConfigRepository configs, IdpAuthService auth, JdbcTemplate jdbc,
                            IdpProperties props) {
         this.persons = persons;
         this.tenants = tenants;
         this.configs = configs;
+        this.auth = auth;
         this.jdbc = jdbc;
         this.ttlSeconds = props.getAccessTokenTtlSeconds();
         this.props = props;
@@ -115,6 +117,10 @@ public class IdpTokenService {
                 "Tenant uses a third-party IdP; federated login arrives with the FAPI2 slice", 503));
         }
 
+        // V30 MFA: a person with an enrolled second factor must pass the channel OTP step here —
+        // the code itself arrives through the notification EMAIL/SMS transports (chapter 02 §7).
+        auth.requireSecondFactor(person.id, grant.otp());
+
         List<String> roles = roleKeys(person.id);
         Instant now = Instant.now();
         String clientId = grant.clientId() == null || grant.clientId().isBlank()
@@ -129,6 +135,22 @@ public class IdpTokenService {
         log.info("idp_token_issued username={} tenant={} roles={} expiresIn={}",
             grant.username(), tenant.id, roles.size(), ttlSeconds);
         return new IdpDtos.TokenResponse(token, "Bearer", ttlSeconds, claims);
+    }
+
+    /** Self-service MFA surface (V30): resolve the caller from its own bearer token —
+     *  the same RS256/issuer/audience discipline as introspect. */
+    public UUID personFromBearer(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "INVALID_TOKEN", "Bearer token required", 401));
+        }
+        JwtService.Claims claims = jwt.verify(authorization.substring(7).trim(),
+            jwt.jwksMap(jwt.jwksJson()), jwt.issuer(), JwtService.DEFAULT_AUDIENCE);
+        if (claims == null) {
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "INVALID_TOKEN", "Bearer token invalid or expired", 401));
+        }
+        return UUID.fromString(claims.userId());
     }
 
     public IdpDtos.IntrospectionResponse introspect(String token) {

@@ -10,12 +10,15 @@ import java.util.UUID;
 
 /**
  * One notification row = one durable pointer a person was given (F-12: a checker is
- * pointed at pending four-eyes work without polling). The table is ALSO the push queue:
- * the dispatcher claims rows by moving {@code pushed_at} off NULL. Content is deliberately
- * PII-free (AGENTS §2c / FAPI data minimization): generic title/body, a type, and a link.
+ * pointed at pending four-eyes work without polling). The table is ALSO the delivery
+ * queue for every outbound channel: the push cursor {@code pushed_at} (V23) plus the
+ * email/SMS cursors {@code email_sent_at}/{@code sms_sent_at} (V29) are claimed
+ * independently, in short per-row transactions, never inside the domain transaction.
+ * Content is deliberately PII-free (AGENTS §2c / FAPI data minimization): generic
+ * title/body, a type, and a link.
  */
 @Entity
-@Table(name = "notifications")
+@Table(name = "notifications", schema = "fsp_notifications")
 public class Notification {
 
     @Id
@@ -65,6 +68,27 @@ public class Notification {
     /** WEBPUSH | APNS | FCM | NONE (no channel available / no credentials / no subscriptions). */
     @Column(name = "push_via")
     public String pushVia;
+
+    /** Per-channel claim cursors — identical pattern to pushed_at (V29, email/SMS slice). */
+    @Column(name = "email_sent_at")
+    public Instant emailSentAt;
+
+    @Column(name = "email_attempts", nullable = false)
+    public int emailAttempts;
+
+    /** SMTP | NONE (no pref / no profile address / channel disabled). */
+    @Column(name = "email_via")
+    public String emailVia;
+
+    @Column(name = "sms_sent_at")
+    public Instant smsSentAt;
+
+    @Column(name = "sms_attempts", nullable = false)
+    public int smsAttempts;
+
+    /** Provider id | NONE. */
+    @Column(name = "sms_via")
+    public String smsVia;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     public Instant createdAt;

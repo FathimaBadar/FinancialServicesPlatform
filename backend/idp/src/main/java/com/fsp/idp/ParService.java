@@ -75,6 +75,45 @@ public class ParService {
         return t;
     }
 
+    // ---------- V30: MFA second-step ticket (hosted authorize flow; OTP-sized TTL) ----------
+
+    private static final long MFA_TICKET_EXPIRY_SECONDS = 300;
+    private final Map<String, MfaTicket> mfaTicketStore = new ConcurrentHashMap<>();
+
+    /** Identity is already proven (password verified, challenge dispatched) — only the OTP is pending. */
+    public record MfaTicket(String username, UUID personId, UUID tenantId,
+                            ParRequestData parData, Instant createdAt) {}
+
+    public String storeMfaTicket(String username, UUID personId, UUID tenantId, ParRequestData parData) {
+        String ticket = "mfa_" + UUID.randomUUID().toString().replace("-", "");
+        mfaTicketStore.put(ticket, new MfaTicket(username, personId, tenantId, parData, Instant.now()));
+        log.debug("mfa_ticket_stored username={} clientId={}", username, parData.clientId());
+        return ticket;
+    }
+
+    /** Peek (non-consuming): a wrong/expired code re-renders the code form with the same ticket. */
+    public MfaTicket peekMfaTicket(String ticket) {
+        MfaTicket t = mfaTicketStore.get(ticket);
+        if (t == null) {
+            return null;
+        }
+        if (Instant.now().isAfter(t.createdAt().plusSeconds(MFA_TICKET_EXPIRY_SECONDS))) {
+            mfaTicketStore.remove(ticket);
+            log.warn("mfa_ticket_expired");
+            return null;
+        }
+        return t;
+    }
+
+    /** Consume strictly once — only after the second factor verified. */
+    public MfaTicket consumeMfaTicket(String ticket) {
+        MfaTicket t = peekMfaTicket(ticket);
+        if (t != null) {
+            mfaTicketStore.remove(ticket);
+        }
+        return t;
+    }
+
     public ParService(JwtService jwt, IdpProperties props) {
         this.jwt = jwt;
         this.props = props;

@@ -9,8 +9,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-public interface NotificationRepository extends JpaRepository<Notification, UUID> {
+public interface NotificationRepository extends JpaRepository<Notification, UUID>,
+        org.springframework.data.jpa.repository.JpaSpecificationExecutor<Notification> {
 
+    @Deprecated // unbounded — replaced by the §2f-compliant paginated inbox (listSpec/listPage)
     List<Notification> findByPersonIdOrderByCreatedAtDesc(UUID personId);
 
     boolean existsByPersonIdAndTypeAndResourceId(UUID personId, String type, UUID resourceId);
@@ -41,4 +43,39 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     @Modifying
     @Query("update Notification n set n.pushAttempts = n.pushAttempts + 1 where n.id = :id")
     int bumpAttempts(@Param("id") UUID id);
+
+    // ---------- email / sms channel cursors (V29) — identical pattern to push ----------
+
+    @Query("""
+        select n from Notification n
+        where n.emailSentAt is null and n.createdAt < :notNewerThan and n.emailAttempts < 3
+        order by n.createdAt asc
+        """)
+    List<Notification> findEmailPending(@Param("notNewerThan") Instant notNewerThan,
+                                        org.springframework.data.domain.Pageable page);
+
+    /** Claim: atomic move off NULL — safe if a future multi-replica dispatcher races. */
+    @Modifying
+    @Query("update Notification n set n.emailSentAt = :at, n.emailVia = :via where n.id = :id and n.emailSentAt is null")
+    int claimEmailed(@Param("id") UUID id, @Param("at") Instant at, @Param("via") String via);
+
+    @Modifying
+    @Query("update Notification n set n.emailAttempts = n.emailAttempts + 1 where n.id = :id")
+    int bumpEmailAttempts(@Param("id") UUID id);
+
+    @Query("""
+        select n from Notification n
+        where n.smsSentAt is null and n.createdAt < :notNewerThan and n.smsAttempts < 3
+        order by n.createdAt asc
+        """)
+    List<Notification> findSmsPending(@Param("notNewerThan") Instant notNewerThan,
+                                      org.springframework.data.domain.Pageable page);
+
+    @Modifying
+    @Query("update Notification n set n.smsSentAt = :at, n.smsVia = :via where n.id = :id and n.smsSentAt is null")
+    int claimSmsSent(@Param("id") UUID id, @Param("at") Instant at, @Param("via") String via);
+
+    @Modifying
+    @Query("update Notification n set n.smsAttempts = n.smsAttempts + 1 where n.id = :id")
+    int bumpSmsAttempts(@Param("id") UUID id);
 }

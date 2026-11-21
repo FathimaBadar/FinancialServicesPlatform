@@ -105,3 +105,19 @@ flowchart LR
 ```
 
 `TbResult` is a sealed algebra: a *definitive* rejection is a business event (log `WARN`, terminalize), an *unknown transport* result drives the recovery protocol above.
+
+---
+
+## 7. Money In Flight — Pending Transfers as the Universal Two-Phase (Chapter 13)
+
+The pending/commit/void mechanism above is the same construct chapter 13 scales into
+bank rails: every in-flight external movement (bill payments, SKU holds, custodian transfers)
+posts as a **linked pending transfer** into a nominal clearing account, and one of three
+dispositions resolves it — **commit** (confirmed), **void** (reversible window), or
+**stays pending** (pending recognition, until a `probe()` or a recon finding clears the
+ambiguity). A timeout on an already-submitted message is **never** a failure; only a
+definitive `RailResult.Rejected(permanent=true)` voids immediately. Normative shapes, the
+exactly-once stack, and the failure doctrine live in
+[chapter 13](file:///home/arun/FinancialServicesPlatform/docs/architecture/13-money-movement-and-rails.md);
+the executable plan (stages, regulatory citations) in
+[plans/bank-connectors-bill-payments-plan.md](file:///home/arun/FinancialServicesPlatform/plans/bank-connectors-bill-payments-plan.md).

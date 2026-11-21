@@ -2,12 +2,12 @@
 
 | Tree | Files | Fingerprint |
 |---|---:|---|
-| backend/core | 212 | `31e6adc0a91d` |
-| backend/idp | 20 | `6924c674962d` |
-| backend/gateway | 7 | `8957ec6c592d` |
-| backend/bff | 12 | `f29d862e23b8` |
-| backend/shared | 5 | `7cc8a1a7916a` |
-| kyc plugin | 36 | `9a0157c6b1ac` |
-| db migrations | 24 | `d99186d4e137` |
-| frontend | 180 | `aa92408ab626` |
-| infra | 2 | `98b3a3f0862e` |
+| backend/core | 243 | `1bf441dc911d` |
+| backend/idp | 28 | `85542299c4d2` |
+| backend/gateway | 7 | `14263a370f33` |
+| backend/bff | 12 | `a7d00e832e9a` |
+| backend/shared | 6 | `348290e7e4bc` |
+| kyc plugin | 36 | `1b3219b6445c` |
+| db migrations | 31 | `eb50c963ab6f` |
+| frontend | 199 | `b1aa6a4c6cb9` |
+| infra | 2 | `770f60122f3f` |

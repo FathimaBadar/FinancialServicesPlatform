@@ -22,6 +22,12 @@ timeline
     V21 : bank accounts
     V23 : notifications and push
     V24 : person password must change
+    V25 : persons list index
+    V26 : inventory permissions
+    V28 : approvals pending target unique
+    V29 : notification channels
+    V30 : auth plane dispatch
+    V31 : push subscription version
 
-**Next free migration number: V25.**
+**Next free migration number: V32.**
 ```

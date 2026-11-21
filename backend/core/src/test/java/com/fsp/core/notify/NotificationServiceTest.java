@@ -37,10 +37,11 @@ class NotificationServiceTest {
 
     private final NotificationRepository repo = mock(NotificationRepository.class);
     private final PushSubscriptionRepository subs = mock(PushSubscriptionRepository.class);
+    private final NotificationChannelPrefRepository prefs = mock(NotificationChannelPrefRepository.class);
     private final RbacRepository rbac = mock(RbacRepository.class);
     private final PersonRepository persons = mock(PersonRepository.class);
     private final OutboxService outbox = mock(OutboxService.class);
-    private final NotificationService svc = new NotificationService(repo, subs, rbac, persons, outbox);
+    private final NotificationService svc = new NotificationService(repo, subs, prefs, persons, rbac, outbox);
 
     private Person person(UUID id) {
         Person p = new Person();
@@ -48,6 +49,53 @@ class NotificationServiceTest {
         p.tenantId = TENANT;
         p.status = "ACTIVE";
         return p;
+    }
+
+    @Test
+    void channelToggleRequiresProfileContactToEnable() {
+        when(persons.findById(CHECKER)).thenReturn(Optional.of(person(CHECKER))); // no email/phone set
+        ApiException noContact = assertThrows(ApiException.class,
+            () -> svc.setChannels(CHECKER, Boolean.TRUE, null));
+        assertEquals("CHANNEL_NO_CONTACT", noContact.getCode());
+        verify(prefs, never()).save(any());
+    }
+
+    @Test
+    void channelEnableWritesConsentAndDisableIsIdempotent() {
+        Person withContact = person(CHECKER);
+        withContact.email = "checker@example.com";
+        when(persons.findById(CHECKER)).thenReturn(Optional.of(withContact));
+        when(prefs.findByPersonIdAndChannel(CHECKER, NotificationChannelPref.EMAIL)).thenReturn(Optional.empty());
+
+        svc.setChannels(CHECKER, Boolean.TRUE, null);
+
+        ArgumentCaptor<NotificationChannelPref> cap = ArgumentCaptor.forClass(NotificationChannelPref.class);
+        verify(prefs, times(1)).save(cap.capture());
+        assertTrue(cap.getValue().enabled);
+        assertEquals(NotificationChannelPref.EMAIL, cap.getValue().channel);
+        assertTrue(!cap.getValue().dead); // enabling never flips the bounce flag — contact is live
+
+        // disabling a consent that was never written: idempotent no-op, no insert
+        org.mockito.Mockito.reset(prefs);
+        when(prefs.findByPersonIdAndChannel(CHECKER, NotificationChannelPref.SMS)).thenReturn(Optional.empty());
+        svc.setChannels(CHECKER, null, Boolean.FALSE);
+        verify(prefs, never()).save(any());
+    }
+
+    @Test
+    void channelStateNeverExposesTheRawContact() {
+        Person withContact = person(CHECKER);
+        withContact.email = "checker@example.com"; // secret-ish value that must NOT go out
+        when(persons.findById(CHECKER)).thenReturn(Optional.of(withContact));
+        when(prefs.findByPersonIdAndChannel(CHECKER, NotificationChannelPref.EMAIL)).thenReturn(Optional.empty());
+        when(prefs.findByPersonIdAndChannel(CHECKER, NotificationChannelPref.SMS)).thenReturn(Optional.empty());
+
+        List<NotificationService.ChannelState> states = svc.channelState(CHECKER);
+
+        assertEquals(2, states.size());
+        assertTrue(states.get(0).hasContact()); // EMAIL present
+        assertTrue(!states.get(1).hasContact()); // SMS absent
+        assertTrue(!states.get(0).enabled()); // dormant by default — opt-IN
     }
 
     @Test

@@ -231,7 +231,7 @@ sequenceDiagram
     actor TC as Telco Checker
     actor PA as Platform Admin
     actor ME as Merchant POS
-    participant VAS as Digital Services Plugin (:8085)
+    participant VAS as Digital Services Plugin (:8087)
     participant GW as API Gateway (:8090)
     participant CORE as FSP Core (:8081)
     participant TB as TigerBeetle (:3000)
@@ -261,7 +261,7 @@ sequenceDiagram
 
 1. `[API]` Platform Admin (Maker):
    `POST /api/platform/plugins` with:
-   - `code: "digital-services"`, `version: "1.0.0"`, `baseUrl: "http://localhost:8085"`
+   - `code: "digital-services"`, `version: "1.0.0"`, `baseUrl: "http://localhost:8087"`
    - `manifest`: Declares permissions (`digital.product.manage`, `digital.voucher.upload`, `digital.float.provision`, `digital.dispense`, `digital.billpay`), routes, and GL templates (1020 Digital Float Asset, 2030 Voucher Inventory Liability, 4100 Commission Income, 1310 Utility Settlement Clearing).
 2. `[UI]` Platform Checker (`admin-checker`) approves `PLUGIN_REGISTER` in `/admin/plugins`.
 3. `[UI · act-as]` Platform Checker acts as the Telco/Utility Provider (`MTC & Power Corp`), requests installation.
@@ -358,7 +358,7 @@ flowchart TD
         POSAdp["POS Device Adapter — mTLS + Device Serial auth"]
     end
 
-    subgraph CanonicalService["Digital Services Plugin (:8085)"]
+    subgraph CanonicalService["Digital Services Plugin (:8087)"]
         API["POST /api/plugins/digital/dispense<br/>(Unified Payload: recipient, amount, serviceType)"]
     end
 

@@ -11,12 +11,15 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -32,9 +35,6 @@ public class NotificationController {
 
     public record PushSubscribeRequest(String platform, String endpoint, String token,
                                        String p256dh, String auth, String userAgent) {}
-
-    public record NotificationView(UUID id, String type, String opType, String title, String body,
-                                   String link, boolean unread, String createdAt) {}
 
     public record PushSubscriptionView(UUID id, String platform, String status, String createdAt) {}
 
@@ -52,11 +52,15 @@ public class NotificationController {
     @FspOperation(id = "notification.list", permission = "notification.view", component = "notify",
         title = "Read the notification inbox")
     @GetMapping
-    public ResponseEntity<Map<String, Object>> list(HttpServletRequest request) {
+    public NotificationService.NotificationPage list(HttpServletRequest request,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size,
+            @RequestParam(value = "q", required = false) String q,
+            @RequestParam(value = "unread", required = false) Boolean unread,
+            @RequestParam(value = "sort", required = false) String sort) {
         Actor actor = actor(request);
-        return ResponseEntity.ok(Map.of(
-            "items", service.list(actor.personId()).stream().map(NotificationController::view).toList(),
-            "unread", service.unreadCount(actor.personId())));
+        long unreadTotal = service.unreadCount(actor.personId());
+        return service.listPage(actor.personId(), page, size, q, unread, sort, unreadTotal);
     }
 
     /** Cheap poll target for the badge (no rows over the wire). */
@@ -115,9 +119,31 @@ public class NotificationController {
         return ResponseEntity.noContent().build();
     }
 
-    private static NotificationView view(Notification n) {
-        return new NotificationView(n.id, n.type, n.opType, n.title, n.body, n.link,
-            n.readAt == null, String.valueOf(n.createdAt));
+    /** Outbound-channel consent state — never the raw address (data minimization, §12.5). */
+    @FspOperation(id = "notification.channels.read", permission = "notification.view", component = "notify",
+        title = "Read your email/SMS notification channels")
+    @GetMapping("/channels")
+    public ResponseEntity<Map<String, Object>> channels(HttpServletRequest request) {
+        Actor actor = actor(request);
+        return ResponseEntity.ok(Map.of("channels", service.channelState(actor.personId())));
+    }
+
+    public record ChannelPrefRequest(Boolean email, Boolean sms) {}
+
+    /** Opt in/out per channel. Consent lives at the person plane; profile contact must
+     *  exist to enable (400 CHANNEL_NO_CONTACT otherwise). Enabling clears a bounce flag. */
+    @FspOperation(id = "notification.channels.update", permission = "notification.view", component = "notify",
+        risk = FspOperation.OperationRisk.WRITE, title = "Opt in/out of email/SMS notification channels")
+    @PutMapping("/channels")
+    public ResponseEntity<Map<String, Object>> setChannels(@RequestBody ChannelPrefRequest body,
+                                                           HttpServletRequest request) {
+        Actor actor = actor(request);
+        if (body.email() == null && body.sms() == null) {
+            throw ApiException.badRequest("CHANNEL_NOOP", "provide email and/or sms toggles");
+        }
+        List<NotificationService.ChannelState> states =
+            service.setChannels(actor.personId(), body.email(), body.sms());
+        return ResponseEntity.ok(Map.of("channels", states));
     }
 
     /** Person plane only + notification.view gate, scoped to the actor's active tenant. */

@@ -131,7 +131,9 @@ public class IdpController {
     @GetMapping(value = "/login", produces = MediaType.TEXT_HTML_VALUE)
     @org.springframework.web.bind.annotation.ResponseBody
     public String loginPage(@RequestParam("request_uri") String requestUri,
-                            @RequestParam("client_id") String clientId) {
+                            @RequestParam("client_id") String clientId,
+                            jakarta.servlet.http.HttpServletResponse response) {
+        allowFormRedirectTo(response, parService.peekParRequest(requestUri));
         // Raw URI, HTML-escaped for the attribute; the browser URL-encodes it on form submit
         String enc = html(requestUri);
         return """
@@ -174,7 +176,8 @@ public class IdpController {
     @PostMapping(value = "/authorize/callback", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public Object authorizeCallback(@RequestParam("request_uri") String requestUri,
                                            @RequestParam("username") String username,
-                                           @RequestParam("password") String password) {
+                                           @RequestParam("password") String password,
+                                           jakarta.servlet.http.HttpServletResponse response) {
         // In a real implementation, this would be after the user authenticates at the hosted sign-in page
         // For Phase-0, we simulate by accepting username/password here (but this should be a full-page IdP form)
         
@@ -184,6 +187,8 @@ public class IdpController {
             log.warn("idp_authorize_failed reason=request_uri_invalid");
             return new RedirectView("/idp/error?code=request_uri_invalid");
         }
+        // The password-change / MFA steps rendered below post here, then 302 to the client
+        allowFormRedirectTo(response, parData);
 
         // 2. Authenticate user (in real flow, this happens at IdP hosted page)
         // For now, delegate to token service password grant to validate credentials
@@ -244,6 +249,19 @@ public class IdpController {
         }
     }
 
+    /**
+     * A hosted form bound to a PAR ends in a 302 to that PAR's redirect_uri; CSP form-action
+     * is enforced on that hop too, so the page must allow exactly that origin (see
+     * {@link IdpHardeningFilter#cspAllowingFormRedirectTo}). No PAR → strict policy stays.
+     */
+    private static void allowFormRedirectTo(jakarta.servlet.http.HttpServletResponse response,
+                                            ParService.ParRequestData parData) {
+        if (parData != null) {
+            response.setHeader(IdpHardeningFilter.CSP_HEADER,
+                IdpHardeningFilter.cspAllowingFormRedirectTo(parData.redirectUri()));
+        }
+    }
+
     private static String html(String raw) {
         if (raw == null) {
             return "";
@@ -300,13 +318,15 @@ public class IdpController {
     @PostMapping(value = "/password/complete", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public Object passwordChangeComplete(@RequestParam("ticket") String ticket,
                                          @RequestParam("new_password") String newPassword,
-                                         @RequestParam("confirm_password") String confirmPassword) {
+                                         @RequestParam("confirm_password") String confirmPassword,
+                                         jakarta.servlet.http.HttpServletResponse response) {
         ParService.PasswordChangeTicket t = parService.peekPasswordChangeTicket(ticket);
         if (t == null) {
             // Unknown/expired (already consumed, or the user sat on the form > 10 min)
             log.warn("idp_password_change_failed reason=ticket_invalid");
             return new RedirectView("/idp/error?code=request_uri_invalid");
         }
+        allowFormRedirectTo(response, t.parData());
         if (newPassword == null || newPassword.length() < PW_MIN_LENGTH || newPassword.length() > PW_MAX_LENGTH) {
             log.warn("idp_password_change_rejected username={} reason=policy_length", t.username());
             return changePage(ticket, "Password must be %d–%d characters.".formatted(PW_MIN_LENGTH, PW_MAX_LENGTH));
@@ -383,12 +403,14 @@ public class IdpController {
     // POST only: OTP travels in the form body, never the URL
     @PostMapping(value = "/mfa/verify", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public Object mfaVerify(@RequestParam("ticket") String ticket,
-                            @RequestParam("otp") String otp) {
+                            @RequestParam("otp") String otp,
+                            jakarta.servlet.http.HttpServletResponse response) {
         ParService.MfaTicket t = parService.peekMfaTicket(ticket);
         if (t == null) {
             log.warn("idp_mfa_verify_failed reason=ticket_invalid");
             return new RedirectView("/idp/error?code=request_uri_invalid");
         }
+        allowFormRedirectTo(response, t.parData());
         try {
             auth.verifyLoginCode(t.personId(), otp == null ? "" : otp.trim());
         } catch (IdpProblemException e) {

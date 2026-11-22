@@ -21,4 +21,11 @@ public interface MerchantPayableRepository extends JpaRepository<MerchantPayable
         """)
     java.util.List<MerchantPayable> forMerchant(@Param("merchantId") UUID merchantId,
                                                 @Param("withBalance") Boolean withBalance);
+
+    /** Recon face (Stage 6, PSD-1 §12.2.3 pay-over): outstanding accrual, oldest first. */
+    @Query("""
+        SELECT p FROM MerchantPayable p
+        WHERE p.accrualMinor > p.paidMinor
+        """)
+    java.util.List<MerchantPayable> findAccruing(org.springframework.data.domain.Pageable page);
 }

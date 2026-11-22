@@ -29,6 +29,7 @@ timeline
     V30 : auth plane dispatch
     V31 : push subscription version
     V32 : sku orders
+    V33 : recon permission
 
-**Next free migration number: V33.**
+**Next free migration number: V34.**
 ```

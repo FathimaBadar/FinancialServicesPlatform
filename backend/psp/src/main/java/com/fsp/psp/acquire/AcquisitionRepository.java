@@ -58,4 +58,6 @@ public interface AcquisitionRepository extends JpaRepository<Acquisition, UUID> 
     /** Invariant helper: count acquisitions captured in a cycle that are not yet settled. */
     long countByConnectorCodeAndCurrencyAndCycleDateAndState(String connectorCode,
         String currency, LocalDate cycleDate, String state);
+    /** Recon face (Stage 6): captures still pending past the settle grace. */
+    long countByStateAndCycleDateBefore(String state, java.time.LocalDate cycleDate);
 }

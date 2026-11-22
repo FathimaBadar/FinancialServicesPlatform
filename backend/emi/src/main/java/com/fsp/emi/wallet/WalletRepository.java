@@ -13,4 +13,8 @@ public interface WalletRepository extends JpaRepository<Wallet, UUID> {
     Optional<Wallet> findByPersonIdAndCurrency(UUID personId, String currency);
 
     List<Wallet> findByStatus(String status);
+
+    /** Recon face (Stage 6): deterministic bounded page for the TB batch-lookup probe. */
+    org.springframework.data.domain.Page<Wallet> findAllByStatusOrderByOpenedAtAscIdAsc(
+        String status, org.springframework.data.domain.Pageable pageable);
 }

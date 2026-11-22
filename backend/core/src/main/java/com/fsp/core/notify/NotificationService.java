@@ -51,6 +51,62 @@ public class NotificationService {
         this.outbox = outbox;
     }
 
+    /** Recon violation notification type (Stage 6, docs/architecture/13 §8). */
+    public static final String TYPE_RECON_VIOLATION = "RECON_VIOLATION";
+    public static final String PERMISSION_RECON_VIEW = "recon.view";
+    private static final List<String> RECON_SEVERITIES = List.of("P0", "P1", "P2");
+
+    /**
+     * Pages every holder of {@code recon.view} at the recon worker's tenant (machine plane:
+     * the recon-worker posts the violation; notification rows + the push outbox record flow
+     * through the V29/V31 channel plane for delivery — email/SMS/push cadence as §12.9).
+     * Validation is strict (severity whitelist, bounded strings) — machine input is untrusted.
+     */
+    @Transactional
+    public int reconPage(UUID tenantId, String invariant, String severity, String detail) {
+        if (invariant == null || invariant.isBlank() || invariant.length() > 64) {
+            throw ApiException.badRequest("PSP_RECON_PAGE_INVALID", "invariant must be 1..64 chars");
+        }
+        if (severity == null || !RECON_SEVERITIES.contains(severity)) {
+            throw ApiException.badRequest("RECON_SEVERITY_INVALID", "severity must be P0|P1|P2");
+        }
+        String body = detail == null ? "" : detail.substring(0, Math.min(detail.length(), 2000));
+        String safeInvariant = invariant.strip();
+        List<Person> holders = rbac.activePersonsWithPermission(tenantId, PERMISSION_RECON_VIEW);
+        String correlation = RequestCorrelation.currentCorrelation() == null
+            ? UUID.randomUUID().toString() : RequestCorrelation.currentCorrelation();
+        int created = 0;
+        for (Person p : holders) {
+            Notification n = new Notification();
+            n.id = UUID.randomUUID();
+            n.personId = p.id;
+            n.tenantId = tenantId;
+            n.type = TYPE_RECON_VIOLATION;
+            n.opType = safeInvariant;
+            n.title = severity + " recon violation: " + safeInvariant;
+            n.body = body;
+            n.resourceType = "ReconPage";
+            n.resourceId = n.id;
+            n.link = "/notifications";
+            repository.save(n);
+            created++;
+        }
+        if (created > 0) {
+            com.fasterxml.jackson.databind.node.ObjectNode push =
+                com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+            push.put("opType", safeInvariant);
+            push.put("severity", severity);
+            var ids = push.putArray("personIds");
+            holders.forEach(h -> ids.add(h.id.toString()));
+            push.put("correlationId", correlation);
+            outbox.record("Notification", holders.get(0).id, "Notification.PushRequired",
+                push.toString());
+        }
+        log.info("recon_page_queued invariant={} severity={} recipients={}",
+            safeInvariant, severity, created);
+        return created;
+    }
+
     // ---------- write side ----------
 
     /**

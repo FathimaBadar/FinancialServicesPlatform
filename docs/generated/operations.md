@@ -45,6 +45,7 @@
 | plugin.type.list | —(owner-scoped) | — | `PluginGovernanceController.java` |
 | rbac.permission.catalog | —(owner-scoped) | — | `RbacController.java` |
 | rbac.permission.me | —(owner-scoped) | — | `RbacController.java` |
+| recon.page | —(owner-scoped) | — | `ReconPageController.java` |
 | role.create | —(owner-scoped) | — | `RoleAdminController.java` |
 | role.delete | —(owner-scoped) | — | `RoleAdminController.java` |
 | role.get | —(owner-scoped) | — | `RoleAdminController.java` |

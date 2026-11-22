@@ -4,8 +4,17 @@ spring:
 
 fsp:
   recon:
-    # Stage 6 wires the real feeds (psp_book, emi_book, bank statements). Skeleton: log-only.
+    # Stage 6 (docs/architecture/13 §8): probes the book-owner services' internal recon
+    # faces and pages core on violation. Cheaper PSP checks run every interval; the EMI
+    # custody deep probe runs daily (and once at boot).
     sweep-interval-ms: ${FSP_RECON_SWEEP_MS:60000}
+    emi-base-url: ${FSP_EMI_URL:http://localhost:8086}
+    psp-base-url: ${FSP_PSP_URL:http://localhost:8085}
+    core-base-url: ${FSP_CORE_URL:http://localhost:8081}
+    internal-credential: ${FSP_INTERNAL_CREDENTIAL:dev-internal-credential}
+    platform-tenant-id: ${FSP_RECON_TENANT_ID:00000000-0000-0000-0000-000000000001}
+    # P0 dedupe: the same violation key is paged at most once per window.
+    page-dedup-minutes: ${FSP_RECON_DEDUP_MIN:1440}
 
 logging:
   pattern:

@@ -628,8 +628,25 @@ row heals deterministically at sweep). Exactly-once claim = `settlement_batch` r
   repair, statement taxonomy, merchant state machine, controller contract), full
   `./gradlew build` green; live smoke vs real TigerBeetle + Postgres green end-to-end.
 
-**Stage 6 — recon-worker (3–4 d).** Invariants per book and cross-book,
+**Stage 6 — recon-worker (3–4 d) — LANDED (2026-11-22).** Invariants per book and cross-book,
 daily + on-demand runs, page-on-violation (hooks into the notifications plane, §12.9 dispatch).
+- **Worker:** `backend/recon` — stateless, read-only, no own DB, no port (`web-application-type:
+  none`); `@Scheduled` sweep probing `GET /internal/recon/snapshot` on PSP (:8085) + EMI (:8086)
+  (credential-only hop); EMI daily deep probe at boot + UTC midnight. Pure invariant math in
+  `ReconInvariants` (unit-tested): `pspClearingZero`, `pspPayOver`, `pspStaleCaptures`,
+  `emiCustody` (float == walletSum + heldSum, PSPD-3 custody doctrine).
+- **Doctrine:** only PROVEN breaks page — probe noise (feed down, unparseable/missing money,
+  unknown TB account) never pages and never defaults to zero.
+- **Paging:** core machine op `POST /v1/recon/pages` (`@FspOperation(id="recon.page")`) →
+  `NotificationService.reconPage` pages every active holder of `recon.view` (V33 migration,
+  role-template grant), records notifications + valid-JSON `Notification.PushRequired` outbox;
+  worker dedupes violation keys 24 h in-memory and retries on core-unreachable without burning
+  the dedupe; deterministic daily idempotency key sanitized to core's charset.
+- **Verified:** recon unit/job/service tests green (worker, core, PSP, EMI), full `./gradlew build`
+  green; live smoke — induced backdated-capture demos → `PSP_CAPTURE_STALE`/`PSP_CLEARING_RESIDUAL`/
+  `PSP_PAY_OVER_BREACH` P0s each sweep, core page landed (`recipients=2`, notification rows,
+  parseable outbox payload, `idempotency_recorded 200`), repeat sweeps `recon_page_suppressed`,
+  core-outage path retried, clean demo state → silent sweeps.
 
 Total ≈ 3–5 weeks with review gates per stage.
 

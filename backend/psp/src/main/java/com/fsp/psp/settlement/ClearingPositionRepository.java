@@ -9,4 +9,7 @@ public interface ClearingPositionRepository extends JpaRepository<ClearingPositi
 
     Optional<ClearingPosition> findByConnectorCodeAndCurrencyAndPositionDate(
         String connectorCode, String currency, java.time.LocalDate positionDate);
+
+    /** Recon face (Stage 6): drained rows are settled; survivors are today-pending or broken. */
+    java.util.List<ClearingPosition> findBySettledFalseOrderByPositionDateAscId();
 }

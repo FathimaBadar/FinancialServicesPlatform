@@ -270,7 +270,37 @@ Merchant acquiring with a per-cycle zero-clearing invariant, all on the PSP book
   rows matched by rail ref → taxonomy `UNKNOWN_RAIL_REF` / `AMBIGUOUS_RAIL_REF` /
   `AMOUNT_OR_STATE_DRIFT` (recon-worker Stage 6 consumes the drifts).
 
-## 9. Stage plan (summary)
+## 9. Recon-worker invariants & paging (Stage 6 — LANDED 2026-11-22)
+
+A stateless, read-only invariant worker (`backend/recon`, **no own DB, no port**,
+`spring.main.web-application-type: none`, `@Scheduled` sweep) — its ONLY mutator is core's
+machine-plane op `POST /v1/recon/pages`:
+
+- **Faces:** `GET /internal/recon/snapshot` on PSP (:8085) and EMI (:8086), credential-only
+  (`X-FSP-Internal-Credential`), never gateway-routed. PSP feed: positions (mirror vs `tbNet`),
+  overdue payables, stale captures, float lines; EMI feed: custody lines with the proven
+  invariant **floatNet == walletSum + heldSum** (held funds parked in bill/SKU/fee/tax clearing
+  accounts stay physically in the float until external settlement — PSD-3 §13).
+- **Doctrine — only PROVEN breaks page:** probe failures (feed down, unparseable/missing/oversize
+  money, unknown TB account → `tbNet` null) log `recon_probe_failed` and **never page, never
+  default to zero** — recon outage must not page the platform into numbness. Invariants:
+  `PSP_CLEARING_RESIDUAL` (settled-cycle clearing ≠ 0), `PSP_CAPTURE_STALE` (capture > 2 d),
+  `PSP_PAY_OVER_BREACH` (PSD-1 §12.2.3 pay-over SLA), `EMI_CUSTODY_MISMATCH` (PSD-3 §13.1.5),
+  `EMI_FLOAT_UNPROVEN`.
+- **Violation → page:** `POST /v1/recon/pages` (`@FspOperation(id="recon.page")`, MACHINE actors
+  only) → `NotificationService.reconPage` creates `RECON_VIOLATION` notifications for every active
+  holder of `recon.view` at the recon tenant (V33 grant) and records a valid-JSON
+  `Notification.PushRequired` outbox row for the channel plane. Worker-side dedupe: violation key,
+  24 h window; **failed dispatch does not burn the dedupe** (core-unreachable retried next sweep).
+- **Page idempotency:** deterministic key `recon-<invariant>-<severity>-<UTC-day>` sanitized to
+  core's `[A-Za-z0-9._-]` charset — retries within a dispatch day replay instead of
+  duplicating recipients (core 5xx deletes the PENDING idempotency row, so retries stay clean).
+- **Verified live:** induced demo violation (backdated capture cycle) → `recon_violation` P0 ×3,
+  core page op → `recipients=2` + notification rows + outbox event with parseable payload,
+  `idempotency_recorded 200`, repeat sweeps `recon_page_suppressed` (24 h dedupe), core-outage
+  path retried without burning dedupe; clean demo state → silent sweeps (probe-fail-only logging).
+
+## 10. Stage plan (summary)
 
 Stages 0–6 in plan §11 produce, in order: schemas (V32 EMI / V33 PSP) + recon-worker skeleton →
 sealed registry + breakers/limiter + tests → EMI wallets → bill-payment sagas → SKU money →

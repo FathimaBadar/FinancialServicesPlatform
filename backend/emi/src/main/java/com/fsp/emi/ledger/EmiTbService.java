@@ -85,6 +85,41 @@ public class EmiTbService {
         return flags;
     }
 
+    /** Recon face (Stage 6): batch-lookup balances for many accounts (TB is the
+     *  authoritative record; batching keeps the deep custody probe to a few RPCs).
+     *  Returns balances in the SAME ORDER as the given ids; accounts unknown to TB are
+     *  null entries (probes must treat them as "cannot prove", not as zero). */
+    public List<java.util.Optional<Balance>> lookupBalances(List<UUID> accountIds) {
+        List<java.util.Optional<Balance>> out = new ArrayList<>(accountIds.size());
+        if (accountIds.isEmpty()) return out;
+        int chunk = 500;
+        for (int start = 0; start < accountIds.size(); start += chunk) {
+            List<UUID> slice = accountIds.subList(start, Math.min(start + chunk, accountIds.size()));
+            IdBatch ids = new IdBatch(slice.size());
+            for (UUID id : slice) {
+                ids.add(UInt128.asBytes(id));
+            }
+            try {
+                AccountBatch balances = client.lookupAccounts(ids);
+                java.util.Map<UUID, Balance> byId = new java.util.HashMap<>();
+                while (balances.next()) {
+                    byId.put(UInt128.asUUID(balances.getId()),
+                        new Balance(saturate(balances.getDebitsPosted()),
+                            saturate(balances.getCreditsPosted()),
+                            saturate(balances.getDebitsPending()),
+                            saturate(balances.getCreditsPending())));
+                }
+                for (UUID id : slice) {
+                    out.add(java.util.Optional.ofNullable(byId.get(id)));
+                }
+            } catch (Exception e) {
+                log.error("emi_tb_batch_balance_unknown_transport count={}", slice.size(), e);
+                for (UUID ignored : slice) out.add(java.util.Optional.empty());
+            }
+        }
+        return out;
+    }
+
     public EmiTbResult createAccounts(List<AccountSpec> specs) {
         if (specs.isEmpty()) return new EmiTbResult.Ok();
         AccountBatch batch = new AccountBatch(specs.size());

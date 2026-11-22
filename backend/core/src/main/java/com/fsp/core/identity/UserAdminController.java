@@ -103,6 +103,21 @@ public class UserAdminController {
         return service.remove(tenantId, personId, expectedVersion, actor(request));
     }
 
+    /** Admin-initiated password reset request (four-eyes): opens a USER_PASSWORD_RESET
+     *  approval awaiting checker resolution; the IdP then sends the reset link. */
+    @FspOperation(id = "user.password.reset.request", component = "identity",
+        permission = UserAdminService.PERMISSION,
+        risk = FspOperation.OperationRisk.WRITE, title = "Request admin-initiated password reset (four-eyes)")
+    @PostMapping(BASE + "/{personId}/password-reset-request")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public UserDtos.UserView passwordResetRequest(HttpServletRequest request,
+                                                  @PathVariable("tenantId") UUID tenantId,
+                                                  @PathVariable("personId") UUID personId,
+                                                  @RequestBody(required = false) UserDtos.Transition body) {
+        return service.passwordResetRequest(tenantId, personId,
+            body == null ? null : body.expectedVersion(), actor(request));
+    }
+
     private static Actor actor(HttpServletRequest request) {
         Actor actor = (Actor) request.getAttribute("fsp.actor");
         if (actor == null) throw ApiException.unauthorized("ACTOR_MISSING", "No authenticated actor");

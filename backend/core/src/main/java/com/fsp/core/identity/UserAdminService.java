@@ -341,6 +341,27 @@ public class UserAdminService {
         return before;
     }
 
+    @Transactional
+    public UserDtos.UserView passwordResetRequest(UUID tenantId, UUID personId, Long expectedVersion, Actor actor) {
+        requireOrg(actor, tenantId);
+        Person p = load(tenantId, personId);
+        requireVersion(p, expectedVersion);
+        requireNotSelf(actor, p, "request a password reset for");
+        if ("ARCHIVED".equals(p.status)) {
+            throw ApiException.conflict("USER_STATE", "A removed user cannot be reset");
+        }
+        if ("PENDING".equals(p.status)) {
+            throw ApiException.conflict("USER_STATE", "User has a pending change awaiting approval; resolve it first");
+        }
+        UserDtos.UserView before = viewOf(p);
+        approvals.open(tenantId, ApprovalRequest.OpType.USER_PASSWORD_RESET, p.id, actor,
+            "password-reset-request:" + p.username, null);
+        record(actor, tenantId, "USER_PASSWORD_RESET_REQUESTED", p.id, before, before);
+        log.info("user_password_reset_requested personId={} tenant={} by={} (awaiting checker approval)",
+            p.id, tenantId, actor.personId());
+        return before;
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private UserDtos.UserView transition(UUID tenantId, UUID personId, Long expectedVersion, Actor actor,

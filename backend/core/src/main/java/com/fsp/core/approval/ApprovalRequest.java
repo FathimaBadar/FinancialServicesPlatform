@@ -28,6 +28,8 @@ public class ApprovalRequest {
         public static final String USER_DEACTIVATE = "USER_DEACTIVATE";
         public static final String USER_ACTIVATE = "USER_ACTIVATE";
         public static final String USER_REMOVE = "USER_REMOVE";
+        /** Admin-initiated password reset (four-eyes; checker needs user.manage). */
+        public static final String USER_PASSWORD_RESET = "USER_PASSWORD_RESET";
         public static final String UI_LAYOUT_PUBLISH = "UI_LAYOUT_PUBLISH";
         /** Organization role governance (RoleAdminService) — checker needs role.manage. */
         public static final String ROLE_CREATE = "ROLE_CREATE";

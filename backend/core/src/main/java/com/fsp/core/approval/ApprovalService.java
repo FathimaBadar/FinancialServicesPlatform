@@ -198,7 +198,8 @@ public class ApprovalService {
                  ApprovalRequest.OpType.USER_UPDATE,
                  ApprovalRequest.OpType.USER_DEACTIVATE,
                  ApprovalRequest.OpType.USER_ACTIVATE,
-                 ApprovalRequest.OpType.USER_REMOVE -> "user.manage";
+                 ApprovalRequest.OpType.USER_REMOVE,
+                 ApprovalRequest.OpType.USER_PASSWORD_RESET -> "user.manage";
             case ApprovalRequest.OpType.PLUGIN_REGISTER,
                  ApprovalRequest.OpType.PLUGIN_INSTALL -> "plugin.manage";
             case ApprovalRequest.OpType.ROLE_CREATE,

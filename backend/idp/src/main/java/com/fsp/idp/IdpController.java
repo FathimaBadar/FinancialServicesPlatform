@@ -587,6 +587,26 @@ public class IdpController {
 
     // ========== Internal: OAuth client management (core only) ==========
 
+    /** Admin-initiated password reset (internal hop from core, credential-gated).
+     *  Always 204 — never reveals whether the person exists (RFC 9700 discipline).
+     *  Core has already validated person + org membership; the IdP only dispatches
+     *  the reset link to the person's email. Core never sees or touches the new password. */
+    @PostMapping(value = "/internal/password-reset/{personId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Void> internalPasswordReset(@PathVariable("personId") UUID personId,
+            @RequestHeader(value = "X-FSP-Internal-Credential", required = false) String credential) {
+        if (credential == null || !credential.equals(props.getInternalCredential())) {
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "INTERNAL_CREDENTIAL_INVALID", "Internal credential required", 401));
+        }
+        // Internal hop: core already validated person exists & belongs to the org.
+        PPerson person = persons.findById(personId).orElse(null);
+        if (person != null) {
+            // Silent no-op if inactive / no usable email — RFC 9700 enumeration resistance.
+            auth.requestPasswordReset(person.username);
+        }
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping(value = "/internal/clients", consumes = MediaType.APPLICATION_JSON_VALUE,
         produces = MediaType.APPLICATION_JSON_VALUE)
     public IdpDtos.ClientView createClient(@RequestBody IdpDtos.ClientCreate body,

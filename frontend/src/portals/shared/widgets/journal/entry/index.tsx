@@ -10,7 +10,11 @@ const journalEntryWidget = defineWidget({
   description: 'Create balanced entries, submit them for approval, approve as a different person, and check uncertain postings.',
   category: 'Ledger',
   contexts: ['ANY'],
-  requires: ['je.view', 'je.create', 'je.approve'],
+  // gl.account.view is a supporting read: the books picker (ledger.books, kit/books.ts) is the
+  // same call core answers with a gl.account.view check — and every seeded role holding je.*
+  // also holds gl.account.view. Without it the workbench's cell picker can never satisfy the
+  // shared fixture and the preview is a permanent "forbidden" wall.
+  requires: ['je.view', 'je.create', 'je.approve', 'gl.account.view'],
   sources: ['journal.entry.list', 'journal.entry.get', 'journal.entry.accounts', 'ledger.books'],
   commands: ['journal.entry.create', 'journal.entry.submit', 'journal.entry.approve', 'journal.entry.check'],
   actions: [

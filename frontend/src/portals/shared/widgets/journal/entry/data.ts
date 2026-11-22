@@ -2,7 +2,8 @@
 import type { DataSources } from '../../core/sources';
 import type { FixtureSet, FixtureRequest } from '../../core/ports';
 import type { EntryView, LineView } from './model';
-import { LEDGER_FIXTURES, WB_BOOK, WB_TENANT } from '../../kit/fixture-ledger';
+import type { GlAccountRow } from '../../kit/books';
+import { LEDGER_FIXTURES, WB_BOOK, WB_TENANT, WB_GL_ACCOUNTS } from '../../kit/fixture-ledger';
 import { forbidUnless } from '../../kit/forbid';
 
 export const sources: DataSources = {
@@ -64,6 +65,16 @@ function findOrThrow(entryId: string): EntryView {
 
 export const fixtures: FixtureSet = {
   ...LEDGER_FIXTURES,
+  'journal.entry.accounts': {
+    // postable accounts under one book (core GET /books/{bookId}/gl-accounts); same guard as core.
+    default: (req: FixtureRequest): GlAccountRow[] => {
+      forbidUnless(req.permissions, 'gl.account.view');
+      const bookId = req.params.bookId || WB_BOOK;
+      return WB_GL_ACCOUNTS.filter((a) => a.bookId === bookId);
+    },
+    empty: [],
+    error: null,
+  },
   'journal.entry.list': {
     default: (req: FixtureRequest): EntryView[] => {
       forbidUnless(req.permissions, 'je.view');

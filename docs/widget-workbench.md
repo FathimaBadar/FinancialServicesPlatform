@@ -128,8 +128,16 @@ bun run widgets:skill      # regenerate docs/skills/fsp-widget-author/SKILL.md
 | Live sources return 401 | BFF session expired → re-login via the connection bar |
 | Register fails 400/404 | services down → full stack: `scripts\dev-windows.ps1 dev` (Windows) / make targets (Linux) |
 | Preview fine with fixtures, broken live | fixture shape drifted from the real response — fix `data.ts` mapping from the network table in the widget page |
+| **Every frame says `forbidden` on the widget page** | the widget's manifest lacks a cell that a mapped shared source's fixture checks (e.g. `ledger.books` needs `gl.account.view`) → add that cell to `requires` so the preview lane can grant it; real roles holding the primary cells are expected to hold supporting ones too (seed RBAC) |
 
 ---
+
+### Workbench chrome
+
+- **Theme** (toggle in the connection bar): System / Light / Dark, persisted per browser (`fsp.wb-theme` in localStorage) and applied to `<html data-theme>` before first paint — the same contract the portals render from, so previews are tinted as shipped.
+- **Registry page**: search (label, id, `requires`, action cells) + category filter with a sticky header, so the 18-row table is scannable without scrolling.
+- **A11y**: skip-to-content link, `:focus-visible` rings on every control, frame status badges announce politely (`aria-live="polite"`).
+- **Every registered widget has default-lane fixtures** — no widget page may open as an error wall. `bun run widgets:check` guards registry coherence; open each widget page (or hit `/w/<id>?scenario=empty|error`) to verify the preview states.
 
 ## 9. Agent Decision Guide & Workflow (When to Engage & When to Add Menu Items)
 

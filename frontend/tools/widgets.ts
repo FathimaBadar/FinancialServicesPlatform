@@ -305,7 +305,13 @@ async function main() {
       if (!size || !['xs', 'sm', 'md', 'lg'].every((t) => size[t])) errs.push(`${id}: size missing a tier`);
       const reqs = d['requires'] as unknown;
       const rows = Array.isArray(reqs) ? (reqs as string[]) : (reqs as { all: string[] } | null)?.all ?? [];
-      if (!rows.length) errs.push(`${id}: empty requires`);
+      // A widget that reads nothing and renders no actions (e.g. inventory.placeholder) legitimately
+      // needs no cell; anything with a source/command/action must gate on at least one.
+      const doesAnything =
+        (Array.isArray(d['sources']) && (d['sources'] as string[]).length > 0) ||
+        (Array.isArray(d['commands']) && (d['commands'] as string[]).length > 0) ||
+        ((d['actions'] as unknown[] | undefined)?.length ?? 0) > 0;
+      if (!rows.length && doesAnything) errs.push(`${id}: empty requires`);
       for (const r of rows) {
         if (!KEYS.includes(r)) errs.push(`${id}: requires "${r}" is not an FSP permission key`);
       }

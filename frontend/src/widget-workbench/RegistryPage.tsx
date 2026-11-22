@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { apiGet, apiPut, readProblem } from '../portals/shared/web-core/api';
@@ -46,6 +47,23 @@ export function RegistryPage() {
   const local = new Map(WIDGETS.map((w) => [w.id, w.version]));
   const serverProblem = server.error ? readProblem(server.error) : null;
 
+  /** Find one of 18 dense rows without scrolling the whole table (dashboard filter pattern). */
+  const categories = useMemo(
+    () => [...new Set(WIDGETS.map((w) => w.category ?? '—'))].sort((a, b) => a.localeCompare(b)),
+    [],
+  );
+  const [needle, setNeedle] = useState('');
+  const [cat, setCat] = useState('all');
+  const shown = useMemo(() => {
+    const n = needle.trim().toLowerCase();
+    return WIDGETS.filter((w) => (cat === 'all' || (w.category ?? '—') === cat)).filter(
+      (w) =>
+        !n ||
+        [w.id, w.label, w.description ?? '', requiresText(w), ...(w.actions ?? []).map((a) => `${a.label} ${a.cell}`)]
+          .join(' ').toLowerCase().includes(n),
+    );
+  }, [needle, cat]);
+
   return (
     <>
       <h1>Widget registry</h1>
@@ -53,6 +71,23 @@ export function RegistryPage() {
         This build: {WIDGETS.length} widget(s), discovered from <span className="mono">shared/widgets/*/*/index.tsx</span>.
         Readiness per widget: <span className="mono">bun run widgets:check</span>.
       </p>
+      <div className="row-b" role="search" aria-label="Filter widgets">
+        <input
+          type="search"
+          placeholder="Search label, id, cell…"
+          aria-label="Search widgets"
+          value={needle}
+          onChange={(e) => setNeedle(e.target.value)}
+        />
+        <select aria-label="Filter by category" value={cat} onChange={(e) => setCat(e.target.value)}>
+          <option value="all">All categories</option>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span className="dim small" role="status">
+          {shown.length === WIDGETS.length ? 'all' : `${shown.length} of ${WIDGETS.length}`} shown
+        </span>
+        {shown.length === 0 && <span className="warn small">No widget matches — clear the search.</span>}
+      </div>
       <table>
         <thead>
           <tr>
@@ -61,7 +96,7 @@ export function RegistryPage() {
           </tr>
         </thead>
         <tbody>
-          {WIDGETS.map((w) => {
+          {shown.map((w) => {
             const s = onServer.get(w.id);
             const current = s && s.version === w.version;
             return (

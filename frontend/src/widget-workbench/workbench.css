@@ -279,6 +279,20 @@
   align-items: center; padding: 10px 16px; background: var(--wb-panel-2); border: 1px solid var(--wb-border-strong);
   border-radius: 99px; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
 
+/* -- accessibility: visible keyboard focus everywhere + a skip link (ui-std a11y bar) */
+.wb :is(a, button, input, select, textarea, summary, [tabindex="0"]):focus-visible {
+  outline: 2px solid var(--wb-accent-strong, var(--portal-accent, #2563eb));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.wb .skip { position: absolute; left: 8px; top: -48px; z-index: 100; padding: 8px 14px; background: var(--wb-panel-2);
+  border: 1px solid var(--wb-border-strong); border-radius: 0 0 10px 10px; transition: top .15s ease; }
+.wb .skip:focus { top: 0; }
+.wb .main:focus-visible { outline: none; }
+
+/* -- registry: keep the column headers visible while scrolling the 18-row table */
+.wb table thead th { position: sticky; top: 0; z-index: 2; background: var(--wb-panel-2); }
+
 /* -- workbench focus mode (§4.7): builder routes collapse the nav behind ☰ */
 .wb.focus { grid-template-columns: 52px minmax(0, 1fr); }
 .wb.focus .side { padding: 16px 6px; }

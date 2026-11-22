@@ -21,6 +21,7 @@ export function WorkbenchShell() {
 
   return (
     <div className={inBuilder && !navOpen ? 'wb focus' : 'wb'}>
+      <a className="skip" href="#wb-main">Skip to content</a>
       <aside className="side">
         {inBuilder && (
           <button type="button" className="nav-btn" onClick={() => setNavOpen(!navOpen)} aria-expanded={navOpen}>
@@ -48,10 +49,11 @@ export function WorkbenchShell() {
           New widget: <b>New widget (LLM)</b> with an LLM, or by hand in{' '}
           <span className="mono">shared/widgets/&lt;area&gt;/&lt;name&gt;/</span> (index.tsx + widget.tsx + data.ts).
           <br />
-          Theme follows <code>data-theme</code> on &lt;html&gt; (light default; dark via <code>data-theme="dark"</code>).
+          Theme: the toggle in the bar above (light · dark · follows the OS) — the same
+          <code>data-theme</code> on &lt;html&gt; the portals render from.
         </p>
       </aside>
-      <main className="main">
+      <main className="main" id="wb-main" tabIndex={-1}>
         <ConnectionBar />
         <Outlet />
       </main>

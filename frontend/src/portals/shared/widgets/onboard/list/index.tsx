@@ -19,8 +19,11 @@ const onboardListWidget = defineWidget<OnboardListConfig>({
   description: 'Paginated, searchable, sortable directory of organizations; click one to open its KYC screen.',
   category: 'Onboarding',
   contexts: ['PLATFORM'],
-  requires: ['org.create'],
-  sources: ['onboard.orgs.list', 'kyc.orgs.self'],
+  // kyc.review is a supporting read: the widget joins orgs with their KYC cases (kyc.cases.page,
+  // fixture-server guard) — every platform/tenant role that operates the directory holds it.
+  // Without it in `requires` the workbench cell picker can never satisfy the join → permanent 403.
+  requires: ['org.create', 'kyc.review'],
+  sources: ['onboard.orgs.list', 'kyc.orgs.self', 'kyc.cases.page'],
   commands: [],
   actions: [],
   commandOperations: {},

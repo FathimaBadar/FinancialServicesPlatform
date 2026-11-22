@@ -1,0 +1,12 @@
+spring:
+  main:
+    web-application-type: none
+
+fsp:
+  recon:
+    # Stage 6 wires the real feeds (psp_book, emi_book, bank statements). Skeleton: log-only.
+    sweep-interval-ms: ${FSP_RECON_SWEEP_MS:60000}
+
+logging:
+  pattern:
+    console: "ts=%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX,UTC} level=%p traceId=%X{traceId} tenantId=%X{tenantId} userId=%X{userId} logger=%c{1} msg=%m ex=%replace(%ex){'\n',' | '}%n"

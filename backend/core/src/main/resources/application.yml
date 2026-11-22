@@ -18,6 +18,8 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration,classpath:db/seed/system
+    # Consolidated-away migrations stay in the install history (dev DBs) — missing files are intentional.
+    ignore-migration-patterns: "*:missing"
     placeholders:
       fspBootstrapPassword: ${FSP_BOOTSTRAP_PASSWORD:fsp-admin}
 
@@ -36,6 +38,10 @@ fsp:
     # (tenant.act_as), strictly-below only, audited (ACT_AS_START/END). Safe as a shipped
     # default; switch off per environment if the operator wants it out.
     enabled: true
+  orders:
+    # Stage 4 SKU money (plan §7.1): core → EMI internal hop (money hands). Same env var
+    # the gateway uses for its EMI catalog — one knob per environment.
+    emi-base-url: ${FSP_EMI_URL:http://localhost:8086}
 
 management:
   endpoints:

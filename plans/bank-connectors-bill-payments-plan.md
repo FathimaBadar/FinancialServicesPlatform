@@ -508,28 +508,125 @@ Per-connector, token-source-aware (some banks rate-limit per second, some per wi
 
 ## 11. Delivery plan (staged, each stage independently verifiable)
 
-**Stage 0 — schema & primitives (2–3 d).** V32 migration (EMI schema: wallets, sagas,
-`connector_calls`, providers/billers config tables) + V33 (PSP schema: banks, rails,
-clearing positions, merchant payable) + recon-worker skeleton. Boot-verify against the
-existing flyway drift resolution (see backend review).
+**Stage 0 — schema & primitives (2–3 d). ✅ DELIVERED 2026-11-21** — implemented as R5 dictates:
+  **separate Boot services with their own DBs and Flyway histories** (`backend/emi` :8086 →
+  `fsp_emi` V1; `backend/psp` :8085 → `fsp_psp` V1; `backend/recon` read-only no-port skeleton
+  with the invariant checklist in code). EMI V1: wallet (NAD-only CHECK), biller
+  (reversal_class default C), bill_payment_saga (§5.2 rows + state ladder + idempotency
+  uniqueness), connector_call (layer-3, unique per kind+key), asset_ledger (closed-loop
+  defaults), tax_rate_bucket, emi_outbox. PSP V1: bank_connector (§3.4.3 row shape),
+  merchant (pay_over_days=2), clearing_position (zero-per-cycle invariant), merchant_payable,
+  settlement_batch, statement_ingest (hash-claim-once), psp_outbox. All mutable aggregates
+  carry `version` (§2.8). Boot-verified: both services migrate and start; `init-dbs.sql`
+  extended with `fsp_psp`/`fsp_emi` DBs + roles. Supersedes the "core V32/V33" reservation —
+  core's next free number remains V32.
 
-**Stage 1 — connector registry + circuit breaker (3–4 d).** Sealed taxonomy compiles;
-resilience4j breakers; sliding-window limiter; Bulkhead; `RailResult` tests using the
-existing `ChannelDispatcherTest` no-op-tx pattern.
+**Stage 1 — connector registry + circuit breaker (3–4 d). ✅ DELIVERED 2026-11-19** — sealed
+  taxonomy compiles in `shared/…/rails/` (`ProviderProtocol`, `RailCapability`, `RailResult` +
+  `FailureKind` (incl. local `Backpressure`), `TransportChannel`, `RailStatus`, `RailFamily`,
+  `ProtocolAdapter`, `RailGuard` + `RailTransportException`, `ReversalClass`); resilience4j core
+  2.4.0 breakers/bulkheads; 429 Retry-After window-freeze; `StatusProbe` = no bulkhead lease;
+  9 tests (`RailGuardTest`, `RailTaxonomyTest`) covering breaker OPEN semantics, scheme-
+  rejection immunity, throttle freeze, bulkhead refusal, half-open probe closure, and
+  compile-time exhaustive switches. Gotcha captured: r4j 2.4 records call **durations** —
+  raw nanoTime would open the breaker on success alone. Stage 2+ adapters build on this.
 
-**Stage 2 — EMI wallets (3–4 d).** Wallet CRUD (self-service, `@FspOperation`),
-sufficient-funds precondition, deposit/withdrawal sagas, four-eyes adjustment flow,
-cross-ledger asset ledger for a sample custody rail.
+**Stage 2 — EMI wallets (3–4 d). ✅ DELIVERED 2026-11-21 (engine + ledger; REST/wire lands with
+  the gateway stages)** — `emi` module: `EmiTbService` (book 8xx wrapper, wallet = CREDIT_BOUND,
+  float = DEBIT_BOUND), `EmiWalletService` (`open` deterministic-TB-id + idempotent; `deposit`
+  unique (kind, bank ref) — a replayed statement never double-credits; `redeem` TB balance
+  precondition + daily cap counted only on BOOKED via `wallet_daily_turnover`; `balance`);
+  every movement = journal PENDING (deterministic Uuid5 transfer id) → TB → BOOKED/FAILED, no
+  provider I/O inside DB transactions. V2 migration (wallet_journal, wallet_daily_turnover).
+  12 unit tests + real-TB smoke runner (`--spring.profiles.active=demo-wallet`): deposit 100.00,
+  redeem 25.00 → wallet balance 75.00 == float mirror 75.00. Gotcha: TB cluster id is 0 in dev
+  (`tb format --cluster=0`) — a wrong cluster id hangs the client silently. Remaining for full
+  Stage-2 closure: `@FspOperation` REST + four-eyes adjustment flow (rides the Stage-3 wire work;
+  self-service wallet CRUD via portal widget).
 
-**Stage 3 — bill payments (4–5 d).** `BillPaymentSagaEngine`, the §5 ladder,
-biller connector adapter (`BillerRestProtocol`), probe disambiguation, TTL sweeper,
-customer UI surfaces (BFF routes).
+**Stage 3 — bill payments — ✅ DELIVERED 2026-11-22.** The authorization-hold saga
+engine lives in `backend/emi/src/main/java/com/fsp/emi/bill/` (V3 migration adds the
+append-only `saga_event` audit trail + biller `endpoint_url`):
+- `BillPaymentSagaEngine` — the §5 ladder over TB two-phase transfers: `start` places the
+  PENDING authorization hold (DR wallet pending → CR derived bill-clearing account,
+  `timeout = fsp.emi.saga-grace-seconds` = the §5.3 single disposition knob), `submit`
+  sends to the biller through the Stage-1 guard ladder, `confirm`/`probeDisambiguate`
+  post the pending (commit), `voidSaga` voids it, `sweepExpired()` is the TTL sweeper
+  (expired HOLD → auto-void; expired SUBMITTED → `PENDING_RECOGNITION`, void blocked;
+  VOID_UNKNOWN retries; self-healing probes for ambiguated sagas with probe support).
+- Doctrine honored: timeout-after-submit is NEVER a failure — ambiguous transports park
+  the saga in `PENDING_RECOGNITION`; four-eyes force-void (maker ≠ checker, audited in
+  `saga_event`) is the only non-probe resolver; TB `pending_transfer_expired` at the
+  grace deadline lands the saga in EXPIRED (funds already released, DB truth repaired).
+- Transfer ids all deterministic Uuid5 (`emi:saga:<id>:{hold,commit,void}`), so replays
+  are idempotent at TB (exists ⇒ success). `Breaker-open` (`CommUnreachable` with zero
+  observed time) treated as guard-local “nothing sent” → stays HOLD; observed > 0 → PR.
+- `BillerGateway` seam + `BillerRestGateway` (`BILLER_REST` adapter: JDK HttpClient,
+  credential fetched by env-var name only at call time, amount_minor string on the
+  wire, 429→RateLimited w/ Retry-After, 4xx→Rejected(permanent), 5xx→TemporarilyUnavailable,
+  timeout→`CommUnreachable` = outcome unknown) + `ConnectorCall` exactly-once layer-3 rows
+  (RECORDED before the hop; ACKED/REJECTED/PENDING/FAILED after).
+- 17 engine tests + 11 gateway wire tests (in-JVM HTTP stub) green; real-TB smoke
+  (`--spring.profiles.active=demo-biller`): hold N$125 → submit → commit → wallet 175.00
+  == expected, bill-clearing holds 125.00 (float-mirror invariant); pre-submit void
+  releases fully. Noted surprise (correct behavior): the CREDIT_BOUND wallet counts
+  *pending* debits — overlapping holds must fit within the committed balance.
+- Remaining for full Stage-3 closure: **REST WIRE DELIVERED 2026-11-22** — `emi/api`
+  exposes the self-service surface (8 `@EmiOperation` ops: wallet open/view/redeem, bill
+  pay/history/view/refresh/cancel) behind an `EmiIdentityFilter` zero-trust edge; the
+  gateway fetches emi's `/internal/ops/catalog` descriptor and routes `/v1/emi/**`
+  (permission-bearing ops get the core PDP decide before forwarding). Verified live:
+  descriptor + digest served, untrusted hops 401, machine plane 403, TB-backed wallet
+  opened over the wire with string minor-unit balance. Remaining: portal widget, dispute
+  (reversal-class A/B/C) flows, recon statement-driven recognition (Stage 6).
 
-**Stage 4 — SKU money (2–3 d).** Core order → EMI charge with linked pending,
-fulfilment confirm/void, price-fingerprint audit.
+**Stage 4 — SKU money (§7.1) — LANDED (2026-11-22).** Core order → EMI charge with
+linked pending chains, fulfilment confirm/void, price-fingerprint audit bond.
+- **Fingerprint audit bond (R1):** core computes `SHA-256("sku|<walletId>|<orderRef>|<merch>|<fee>|<tax>|<ccy>")` at quote time and passes `priceFingerprint` with every order; EMI re-hashes the parts and refuses any mismatch with `409 EMI_PRICE_FINGERPRINT_MISMATCH` **before touching money**. Golden vector pinned byte-identically in both test suites (`sku|...0001|ORD-1|100|10|5|NAD` → `7b70f8fb…7695`); replay with a changed fingerprint → `SKU_PRICE_FINGERPRINT_MISMATCH` on the core side. Silent repricing is structurally impossible.
+- **Linked pending chain (R6):** one TB call per `LegPhase {HOLD, COMMIT, VOID}`; hold = wallet DR pending → sku/fee/tax clearing CR (codes 305/306/307, no bounds + history; zero legs skipped) with all-but-last legs `FLAG_LINKED` (atomic all-or-nothing); confirm posts new transfers against the pending ids; void void-pends them. Hold timeout = `sagaGraceSeconds` (35 d); `PendingTransferExpired` repairs both sides to EXPIRED ("timeout is not failure", R2/R3) and the sweep is bounded-paged + `KeyLocks`-guarded.
+- **State machines:** EMI charge HOLD→CONFIRMED/VOIDED/EXPIRED (unknown transport stays HOLD — Uuid5 deterministic ids carry retries); core order CREATED→CHARGE_HELD→CHARGE_CONFIRMED/VOIDED/EXPIRED/FAILED, folded from EMI money-truth by `sync`. Post-commit void refused (`EMI_CHARGE_COMMITTED`/`SKU_ORDER_COMMITTED`) — confirmed charges resolve via dispute flow only.
+- **Wire:** 5 `@EmiOperation` ops (`emi.order.charge/confirm/cancel/view/history`) on the EMI zero-trust edge; 7 `@FspOperation` ops (component `orders`) on core (`sku.order.charge/confirm/cancel/sync/mirror/view/history`, all owner-scoped); mirror JE DR SKU-clearing **2211** / CR SKU-revenue **4011** posted with the fingerprint + order-ref in the description (core-book audit trail; four-eyes + je.post.immediate enforced).
+- **Verified:** 73 EMI tests green (charge engine + wire), core tests green, full build green, docs gates green. **Live smoke vs real TB (book 806):** charge 100/10/5 → HOLD (3-leg linked chain), replay idempotent (same charge id), confirm → wallet balance 7500→7385, zero-fee single-leg hold → void → balance unchanged.
+- Remaining: inventory-plugin fulfillment hookup (RESERVED→CONFIRMED flips the EMI confirm) folded into the Stage-5/6 order-completion lane.
 
-**Stage 5 — PSP clearing (4–5 d).** Merchant onboarding, acquiring sagas,
+**Stage 5 — PSP clearing — LANDED (2026-11-22).** Merchant onboarding, acquiring sagas,
 settlement sweeper (`closing_debit` clearing→payable), recon statement ingest.
+- **Money doctrine proven live:** capture = two-phase LINKED pending chain on book 805 —
+  leg0 DR settlement-float gross → CR clearing (`FLAG_LINKED`, all-but-last), leg1 DR
+clearing fee → CR fee-revenue (chain terminator, plain PENDING). Sweep resolves the chain
+  with post-pending legs (same linked layout), posts `closing_debit` (DR clearing NET → CR
+merchant-payable, code 503), and enforces the per-cycle zero-clearing invariant
+  (`psp_sweep_clearing_zero … zeroed_invariant=OK`) in-process via `assertClearingZero`.
+  Live smoke vs real TB proved the mis-layout (LINKED on the terminating fee leg) fails
+with `PendingTransferNotFound` at index 1 — the EMI-`ChargeService` doctrine was re-applied
+  and re-validated end-to-end (authorize → capture → backdated cycle sweep → SETTLED,
+  payable accrual, position drained, clearing zero).
+- **Bookkeeping mirror:** `clearing_position` rows (per connector/currency/day) are written
+  by capture (+gross) and decremented by the sweep (−gross — fee extraction and closing
+  debit together drain the whole gross, so the mirror tracks TB clearing exactly; a missing
+row heals deterministically at sweep). Exactly-once claim = `settlement_batch` row
+  (COMPLETED replay returns counts + `replay=true`); late captures for closed cycles are
+  swept into the next batch for the same (connector, currency, cycle) or surfaced by the
+  invariant worker (Stage 6).
+- **Recon ingest:** `POST /v1/psp/statement/ingest` — sha256 hash-claim-once over canonical
+  sorted rows (UNIQUE file_hash), ≤10k rows/file, taxonomy `UNKNOWN_RAIL_REF` /
+  `AMBIGUOUS_RAIL_REF` / `AMOUNT_OR_STATE_DRIFT`; demo ingest matched 1/1, replay-safe.
+- **Rail plane:** `AcquirerRestGateway` (shared `RailResult` taxonomies) + `AcquirerDemoGateway`
+  (deterministic, `FAIL-` prefix rejected, ref `demo-<bankCode>-<pspRef>`), `rail_call`
+  exactly-once ledger, `AcquireSweeper` re-drives unacknowledged acquires (48 h window →
+ `PSP_AUTH_WINDOW_EXCEEDED`); pending-expiry commit repairs VOIDED (`PSP_CAPTURE_TIMEOUT` —
+  "timeout is not failure").
+- **Wire & gateway:** 13 `@PspOperation` ops (merchants/acquisitions/capture/void/sweep/
+  statement/payables/catalog) on the PSP zero-trust edge (:8085, money string per §2b,
+  `PspIdentityFilter` forbids machine actors as humans); gateway `fetchServiceOps()` merges
+  EMI + PSP catalogs with the same internal-credential trust model —
+  `gateway_psp_catalog_updated operations=13` verified live.
+- **Demo hygiene:** `PspDemoRunner` (profile `demo-psp`) with idempotent
+  `maybeOnboard`/`activateIfPending` plus a `--psp-demo-repair` one-off manual closing-debit
+  for residue from earlier builds (never run outside the demo profile).
+- **Verified:** 43 PSP tests green (acquire sagas, settlement sweep incl. pending-expiry
+  repair, statement taxonomy, merchant state machine, controller contract), full
+  `./gradlew build` green; live smoke vs real TigerBeetle + Postgres green end-to-end.
 
 **Stage 6 — recon-worker (3–4 d).** Invariants per book and cross-book,
 daily + on-demand runs, page-on-violation (hooks into the notifications plane, §12.9 dispatch).

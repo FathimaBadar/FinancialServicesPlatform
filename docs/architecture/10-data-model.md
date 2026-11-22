@@ -33,7 +33,7 @@ erDiagram
 
 ```mermaid
 timeline
-    title Core DB migrations (next free number: V32 — V32/V33 reserved for chapter 13 Stage 0)
+    title Core DB migrations (next free number: V32 — psp/emi/recon run their own Flyway histories in their own DBs)
     V1 : core schema — tenants, persons, RBAC, books, JE, approvals
     V2 : idempotency_records
     V3 : idp_configs / idp_identities

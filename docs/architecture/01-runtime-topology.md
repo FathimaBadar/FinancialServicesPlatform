@@ -15,8 +15,8 @@
 | gateway | 8090 | stack profile | `backend/gateway` | catalog-watched routing (60 s refresh) |
 | plugin-kyc | 8083 | stack profile | `backend/plugins/kyc` | own DB/schema, machine credentials |
 | plugin-inventory | 8084 | stack profile | `backend/plugins/inventory` | own DB/schema, machine credentials |
-| **psp-service** | 8085 | **planned** (chapter 13, Stage 5) | `backend/psp` (new) | rails/connectors, clearing positions, merchant payable — own TB book, own schema |
-| **emi-service** | 8086 | **planned** (chapter 13, Stage 2) | `backend/emi` (new) | NAD-only e-money wallets, bill-payment sagas, closed-loop asset ledgers — own TB book |
+| **psp-service** | 8085 | **Stage 0 LANDED** (chapter 13, behavior through Stage 5) | `backend/psp` | rails/connectors, clearing positions, merchant payable — own DB, own Flyway (V1), own TB book (:805) |
+| **emi-service** | 8086 | **Stage 0+2+3 LANDED incl. REST wire** — schema + wallet engine + bill-payment saga engine + `@EmiOperation` REST (gateway-routed `/v1/emi/**`) | `backend/emi` | NAD-only e-money wallets, bill-payment sagas, closed-loop asset ledgers — own DB, own Flyway (V1–V3), own TB book (:806) |
 | PostgreSQL | 5432 | **always** (`postgres:17-alpine`) | compose | system of record for all services |
 | TigerBeetle | 127.0.0.1:3000 | **host binary** | `infrastructure/bin/tigerbeetle` 0.17.9 | io_uring does not survive container seccomp — deliberately *not* dockerized |
 

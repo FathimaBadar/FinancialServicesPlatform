@@ -37,7 +37,7 @@ Enforced by Flyway locations:
 2. NEVER let demo seed run in staging/production. The profile gate is the only mechanism — do not add code that seeds demo data outside `db/seed/demo`.
 3. Demo credentials exist ONLY in demo seed: username `psp-admin`, `psp-ops`, `merchant-admin`, `merchant-checker`, password `demo1234`. Password hashes are produced with pgcrypto `crypt(x, gen_salt('bf',10))` — identical bcrypt format to Spring Security.
 4. The platform admin bootstrap password is a Flyway placeholder `${fspBootstrapPassword}` supplied from `FSP_BOOTSTRAP_PASSWORD` (default `fsp-admin`, dev only; set the env in real environments).
-5. Schema migrations live in `db/migration/V<n>__<desc>.sql`. Applied migrations are **immutable** — never edit one; write a new one. Next: V32 (V32/V33 are reserved for chapter 13 Stage 0 EMI/PSP schemas; Flyway numbers `db/migration` and both seed folders in ONE sequence; V17/V18 are seed versions).
+5. Schema migrations live in `db/migration/V<n>__<desc>.sql`. Applied migrations are **immutable** — never edit one; write a new one. Next: V32. (psp/emi/recon own separate databases with their own Flyway histories — their migrations start at their own V1; core + both seed folders share ONE sequence; V17/V18 are seed versions.)
 6. If a demo profile feature needs runtime-only data (e.g. TB transfers), it belongs to a `@Profile("client-demo")` bean, not to SQL seed, and must be idempotent.
 
 ---

@@ -99,7 +99,7 @@ The one-page checklist every change is measured against:
 | 3 | One-line structured logs for every incident; MDC correlation; secrets never logged | log pattern + `AuditService` |
 | 4 | Optimistic `@Version` + state preconditions + `KeyLocks` dispatch serialization; never `synchronized` on singletons | `KeyLocks` |
 | 5 | Idempotency key on every `/v1` mutation; insert-first semantics; 5xx not cached | `IdempotencyFilter` |
-| 6 | Demo data only under `client-demo` seed; migrations immutable; next migration = V32 (V32/V33 reserved for chapter 13 Stage 0) | Flyway layout |
+| 6 | Demo data only under `client-demo` seed; migrations immutable; next migration = V32. psp/emi/recon own **separate databases with their own Flyway histories** (R5 isolation — not part of this sequence) | Flyway layout |
 | 7 | Four-eyes at person_id; machines can never make/check | service preconditions |
 | 8 | Minor units (`long`, `NUMERIC(20,0)`, string on wire); TB ledger id = ISO-4217 numeric | `Amount` contract |
 | 9 | Balanced JE ≥ 2 lines; direct debit-credit matching; deterministic uuid5 transfer ids; linked chain except final leg | `PostingPlanner` |

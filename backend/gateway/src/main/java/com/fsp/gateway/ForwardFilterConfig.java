@@ -137,7 +137,10 @@ public class ForwardFilterConfig {
             // Plugin routes come ONLY from REGISTERED manifests; core catalog routes always win.
             java.util.Optional<CatalogRouteTable.PluginOp> pluginOp =
                 coreSide ? catalog.matchPlugin(method, path) : java.util.Optional.empty();
-            if (coreSide && pluginOp.isEmpty() && !catalog.matches(method, path)) {
+            // Platform-service routes (emi/psp) come from the services' own descriptors.
+            java.util.Optional<CatalogRouteTable.ServiceOp> serviceOp =
+                coreSide ? catalog.matchService(method, path) : java.util.Optional.empty();
+            if (coreSide && pluginOp.isEmpty() && serviceOp.isEmpty() && !catalog.matches(method, path)) {
                 log.warn("gateway_route_rejected method={} path={}", method, path);
                 problem(response, 404, "ROUTE_NOT_IN_CATALOG",
                     "route is not a published FSP operation (catalog digest " + catalog.digest() + ")");
@@ -187,6 +190,21 @@ public class ForwardFilterConfig {
                     upstream.set("X-Correlation-Id", trace);
                 } else {
                     // Core: re-issue trusted internal identity (guide §2): claims → headers + internal credential.
+                    // Platform-service ops (emi/psp) ride the same trusted re-issue, with one
+                    // extension: a service op that DECLARED a permission key gets a core
+                    // /internal/authz/decide first (core is the sole PDP, guide §3.5) — owner-
+                    // scoped ops (empty permission) skip the RBAC hop and enforce ownership
+                    // in-domain at the service (identity headers, act-as is not honoured here).
+                    if (serviceOp.isPresent() && !serviceOp.get().permission().isBlank() && !machine) {
+                        if (!decideService(serviceOp.get(), claims, trace, response, path)) return;
+                    }
+                    if (serviceOp.isPresent() && machine) {
+                        log.warn("gateway_service_machine_rejected path={} op={}",
+                            path, serviceOp.get().operationId());
+                        problem(response, 403, "ACTOR_TYPE_REJECTED",
+                            "platform-service operations are person-only");
+                        return;
+                    }
                     upstream.set("X-FSP-Internal-Credential", props.getInternalCredential());
                     upstream.set("X-FSP-Tenant-Id", claims.tenantId());
                     upstream.set("X-FSP-Client-Id", claims.clientId());
@@ -247,10 +265,12 @@ public class ForwardFilterConfig {
                 return;
             }
 
-            // Plugin upstream routing: /v1/plugins/<code>/ routes forward to the plugin baseUrl
+            // Plugin upstream routing: /v1/plugins/<code>/ routes forward to the plugin baseUrl;
+            // /v1/emi/** (and later /v1/psp/**) routes forward to the owning service.
             String targetBase;
             if (coreSide) {
-                targetBase = pluginOp.map(CatalogRouteTable.PluginOp::baseUrl).orElse(props.getCoreBaseUrl());
+                targetBase = pluginOp.map(CatalogRouteTable.PluginOp::baseUrl).orElse(
+                    serviceOp.map(CatalogRouteTable.ServiceOp::baseUrl).orElse(props.getCoreBaseUrl()));
             } else {
                 targetBase = props.getIdpBaseUrl();
             }
@@ -589,6 +609,50 @@ public class ForwardFilterConfig {
             upstream.set("X-FSP-Actor-Assertion", assertion);
             log.info("gateway_plugin_admitted plugin={} op={} person={} tenant={} actAs={}",
                 op.code(), op.operationId(), claims.userId(), tenantId, actSessionId != null);
+            return true;
+        }
+
+        /**
+         * Core PDP decision for a permission-carrying platform-service op (guide §3.5):
+         * same contract as the plugin decide (uncached, revocation hits the next call).
+         * Owner-scoped ops (blank permission) never reach this — their resource ownership
+         * is enforced by the service itself against the verified identity headers.
+         */
+        private boolean decideService(CatalogRouteTable.ServiceOp op, JwtService.Claims claims,
+                                      String trace, HttpServletResponse response, String requestPath) throws IOException {
+            JsonNode decision;
+            try {
+                Map<String, Object> ask = new java.util.LinkedHashMap<>(Map.of(
+                    "permission", op.permission(), "tenantId", claims.tenantId(),
+                    "operationId", op.operationId()));
+                ResponseEntity<String> res = rest.method(HttpMethod.POST)
+                    .uri(props.getCoreBaseUrl() + "/internal/authz/decide")
+                    .header("X-FSP-Internal-Credential", props.getInternalCredential())
+                    .header("X-FSP-User-Id", claims.userId())
+                    .header("X-FSP-Tenant-Id", claims.tenantId())
+                    .header("X-FSP-Username", claims.username())
+                    .header("X-FSP-Client-Id", claims.clientId())
+                    .header("X-Correlation-Id", trace)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(mapper.writeValueAsString(ask))
+                    .retrieve().toEntity(String.class);
+                decision = mapper.readTree(res.getBody() == null ? "{}" : res.getBody());
+            } catch (Exception e) {
+                log.error("gateway_authz_unavailable path={} op={} detail={}", requestPath, op.operationId(), e.getMessage());
+                problem(response, 503, "AUTHZ_UNAVAILABLE", "Authorization decision unavailable");
+                return false;
+            }
+            if (!decision.path("allow").asBoolean(false)) {
+                String reason = decision.path("reason").asText("PERMISSION_DENIED");
+                log.warn("gateway_service_denied path={} op={} permission={} reason={}",
+                    requestPath, op.operationId(), op.permission(), reason);
+                response.setStatus(403);
+                response.setContentType("application/problem+json");
+                response.getWriter().write(mapper.writeValueAsString(Map.of(
+                    "status", 403, "code", reason, "title", reason, "permission", op.permission(),
+                    "detail", "This needs the " + op.permission() + " permission on your organization.")));
+                return false;
+            }
             return true;
         }
 

@@ -1,6 +1,12 @@
 
 # Auto-generated — every @FspOperation declared in core (routed only if listed here).
 | Operation id | Permission | Risk | Source |
+| approval.open | —(owner-scoped) | WRITE | `ApprovalController.java` |
+| approval.plugin.open | —(owner-scoped) | — | `PluginApprovalController.java` |
+| approval.queue.read | —(owner-scoped) | — | `ApprovalController.java` |
+| approval.resolve.approve | —(owner-scoped) | FOUR_EYES | `ApprovalController.java` |
+| approval.resolve.reject | —(owner-scoped) | FOUR_EYES | `ApprovalController.java` |
+| audit.list | —(owner-scoped) | — | `AuditController.java` |
 | bank.account.create | bank.account.create | FOUR_EYES | `BankAccountController.java` |
 | bank.account.list | bank.account.view | READ | `BankAccountController.java` |
 | journal.entry.approve | je.approve | — | `JournalController.java` |
@@ -26,4 +32,75 @@
 | notification.push.unsubscribe | notification.view | WRITE | `NotificationController.java` |
 | notification.read-all | notification.view | WRITE | `NotificationController.java` |
 | notification.unread-count | notification.view | — | `NotificationController.java` |
+| plugin.events.ack | —(owner-scoped) | — | `PluginEventsController.java` |
+| plugin.events.read | —(owner-scoped) | — | `PluginEventsController.java` |
+| plugin.install | —(owner-scoped) | — | `PluginInstallationController.java` |
+| plugin.installation.effective | —(owner-scoped) | — | `PluginInstallationController.java` |
+| plugin.installation.list | —(owner-scoped) | — | `PluginGovernanceController.java` |
+| plugin.installation.manage | —(owner-scoped) | — | `PluginInstallationController.java` |
+| plugin.installation.provisioning | —(owner-scoped) | — | `PluginProvisioningController.java` |
+| plugin.installation.ready | —(owner-scoped) | — | `PluginInstallationController.java` |
+| plugin.register | —(owner-scoped) | — | `PluginRegistryController.java` |
+| plugin.type.get | —(owner-scoped) | — | `PluginRegistryController.java` |
+| plugin.type.list | —(owner-scoped) | — | `PluginGovernanceController.java` |
+| rbac.permission.catalog | —(owner-scoped) | — | `RbacController.java` |
+| rbac.permission.me | —(owner-scoped) | — | `RbacController.java` |
+| role.create | —(owner-scoped) | — | `RoleAdminController.java` |
+| role.delete | —(owner-scoped) | — | `RoleAdminController.java` |
+| role.get | —(owner-scoped) | — | `RoleAdminController.java` |
+| role.list | —(owner-scoped) | — | `RoleAdminController.java` |
+| role.update | —(owner-scoped) | — | `RoleAdminController.java` |
+| sku.order.cancel | —(owner-scoped) | WRITE | `SkuOrderController.java` |
+| sku.order.charge | —(owner-scoped) | WRITE | `SkuOrderController.java` |
+| sku.order.confirm | —(owner-scoped) | WRITE | `SkuOrderController.java` |
+| sku.order.history | —(owner-scoped) | — | `SkuOrderController.java` |
+| sku.order.mirror | —(owner-scoped) | WRITE | `SkuOrderController.java` |
+| sku.order.sync | —(owner-scoped) | WRITE | `SkuOrderController.java` |
+| sku.order.view | —(owner-scoped) | — | `SkuOrderController.java` |
+| tenant.act-as.current | —(owner-scoped) | — | `ActAsController.java` |
+| tenant.act-as.end | —(owner-scoped) | — | `ActAsController.java` |
+| tenant.act-as.start | —(owner-scoped) | — | `ActAsController.java` |
+| tenant.child.create | —(owner-scoped) | — | `TenantChildrenController.java` |
+| tenant.children.page | —(owner-scoped) | — | `TenantController.java` |
+| tenant.children.read | —(owner-scoped) | — | `TenantController.java` |
+| tenant.create.psp | —(owner-scoped) | — | `TenantController.java` |
+| tenant.detail.read | —(owner-scoped) | — | `TenantController.java` |
+| tenant.subtree.read | —(owner-scoped) | — | `TenantSubtreeController.java` |
+| tenant.verification.record | —(owner-scoped) | — | `TenantVerificationController.java` |
+| ui.bundle.read | —(owner-scoped) | READ | `UiHarnessController.java` |
+| ui.layout.draft.read | —(owner-scoped) | READ | `UiHarnessController.java` |
+| ui.layout.draft.save | —(owner-scoped) | FOUR_EYES | `UiHarnessController.java` |
+| ui.layout.publish.submit | —(owner-scoped) | FOUR_EYES | `UiHarnessController.java` |
+| ui.layout.published.read | —(owner-scoped) | READ | `UiHarnessController.java` |
+| ui.truststore.read | —(owner-scoped) | READ | `UiHarnessController.java` |
+| ui.widget.list | —(owner-scoped) | READ | `UiHarnessController.java` |
+| ui.widget.register | —(owner-scoped) | WRITE | `UiHarnessController.java` |
+| user.activate | —(owner-scoped) | — | `UserAdminController.java` |
+| user.create | —(owner-scoped) | — | `UserAdminController.java` |
+| user.deactivate | —(owner-scoped) | — | `UserAdminController.java` |
+| user.get | —(owner-scoped) | — | `UserAdminController.java` |
+| user.list | —(owner-scoped) | — | `UserAdminController.java` |
+| user.remove | —(owner-scoped) | — | `UserAdminController.java` |
+| user.role.options | —(owner-scoped) | — | `UserAdminController.java` |
+| user.update | —(owner-scoped) | — | `UserAdminController.java` |
 |---|---|---|---|
+
+---
+
+# Auto-generated — @EmiOperation operations in emi (routed via emi's /internal/ops/catalog desc).
+
+| Operation id | Permission | Risk | Source |
+|---|---|---|---|
+| emi.wallet.open | —(owner-scoped) | WRITE | `WalletController.java` |
+| emi.wallet.view | —(owner-scoped) | — | `WalletController.java` |
+| emi.wallet.redeem | —(owner-scoped) | WRITE | `WalletController.java` |
+| emi.bill.pay | —(owner-scoped) | WRITE | `WalletController.java` |
+| emi.bill.history | —(owner-scoped) | — | `WalletController.java` |
+| emi.bill.view | —(owner-scoped) | — | `WalletController.java` |
+| emi.bill.refresh | —(owner-scoped) | — | `WalletController.java` |
+| emi.bill.cancel | —(owner-scoped) | WRITE | `WalletController.java` |
+| emi.order.charge | —(owner-scoped) | WRITE | `WalletController.java` |
+| emi.order.confirm | —(owner-scoped) | WRITE | `WalletController.java` |
+| emi.order.cancel | —(owner-scoped) | WRITE | `WalletController.java` |
+| emi.order.view | —(owner-scoped) | — | `WalletController.java` |
+| emi.order.history | —(owner-scoped) | — | `WalletController.java` |

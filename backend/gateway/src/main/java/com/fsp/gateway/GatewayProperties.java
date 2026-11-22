@@ -6,6 +6,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public final class GatewayProperties {
     private String coreBaseUrl = "http://localhost:8081";
     private String idpBaseUrl = "http://localhost:8082";
+    /** EMI service internal face (:8086) — routes derived from its /internal/ops/catalog. */
+    private String emiBaseUrl = "http://localhost:8086";
+    /** PSP service internal face (:8085) — routes derived from its /internal/ops/catalog. */
+    private String pspBaseUrl = "http://localhost:8085";
     private String issuer = "https://idp.fsp.local";
     private String audience = "fsp-financial-api";
     private String internalCredential = "dev-internal-credential";
@@ -17,6 +21,10 @@ public final class GatewayProperties {
 
     public String getCoreBaseUrl() { return coreBaseUrl; }
     public void setCoreBaseUrl(String v) { this.coreBaseUrl = v; }
+    public String getEmiBaseUrl() { return emiBaseUrl; }
+    public void setEmiBaseUrl(String v) { this.emiBaseUrl = v; }
+    public String getPspBaseUrl() { return pspBaseUrl; }
+    public void setPspBaseUrl(String v) { this.pspBaseUrl = v; }
     public String getIdpBaseUrl() { return idpBaseUrl; }
     public void setIdpBaseUrl(String v) { this.idpBaseUrl = v; }
     public String getIssuer() { return issuer; }

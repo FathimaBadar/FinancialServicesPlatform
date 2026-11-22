@@ -307,7 +307,8 @@ are initialized with `fsp.security.default-person-password` — env
 Successful boot lines to watch for:
 
 ```text
-core:    Flyway ... migrations applied (V1..V31)   → Tomcat started on 8081
+core:    Flyway ... migrations applied (V1..V32)   → Tomcat started on 8081
+emi:     emi descriptor live (catalog digest ...)   → Tomcat started on 8086
 idp:     idp JWKS available ...                    → Tomcat started on 8082
 gateway: catalog fetched (N operations)            → started on 8090  (boot FAILS if core unreachable — retry loop)
 bff:     Tomcat started on 8080
@@ -345,7 +346,13 @@ fixes):
 L1  engine:            podman machine list | docker ps          → running
 L2  postgres:          5432 open, compose ps → healthy
 L3  tigerbeetle:       3000 open; log clean (container logs / server.log)
-L4  core:              boot shows Flyway V31 applied; :8081 open
+L4  core:              boot shows Flyway V32 applied; :8081 open
+L4b emi:                GET :8086/internal/ops/catalog → descriptor JSON (13 ops)
+L4c psp:                GET :8085/internal/ops/catalog → descriptor JSON (13 ops);
+                        demo money lane: run psp with `--spring.profiles.active=demo-psp`
+                        (onboards DEMO-BANK connector + demo merchant, authorize → capture;
+                        `--psp-demo-sweep` sweeps a closed cycle — verify log line
+                        `psp_sweep_clearing_zero … zeroed_invariant=OK`)
 L5  idp:               GET http://127.0.0.1:8082/idp/jwks → key set JSON
 L6  gateway:           GET http://127.0.0.1:8090/v1/** with token → NOT 404 ROUTE_NOT_IN_CATALOG
 L7  bff chain:         GET :8080/bff/csrf → POST :8080/bff/auth/login (platform-admin/fsp-admin)
@@ -461,6 +468,8 @@ Each row: symptom → root cause → fix. Rung references point to §7's ladder.
 |---|---|
 | core boot: Flyway `validate failed` after you *edited* an applied migration | migrations are immutable (AGENTS §2) → `git checkout -- <file>`; if truly needed, new V-file |
 | Flyway `V17 already exists` conflict in team PRs | numbering collision → rebase and renumber to next free (checked by `make docs-check`) |
+| Flyway `Detected applied migration not resolved locally: N` | an applied migration was consolidated away — dev DBs keep the history row; config already sets `ignore-migration-patterns: "*:missing"` (never `*:all`), so this is the cue to check whether the deletion was intentional |
+| core→EMI hop fails `EMI_CURRENCY_UNSUPPORTED`/`ECONNREFUSED :8086` | emi not running or `FSP_EMI_URL` (core, default `http://localhost:8086`) points elsewhere → §4/§5 start order |
 | `password authentication failed for user fsp` | compose env vs core env drift → both default `fsp/fsp`; if you changed compose env, change core datasource env too |
 | demo login (`psp-admin/demo1234`) 404/no user | demo seed only loads under `client-demo` profile → run core with `--spring.profiles.active=client-demo` (§8) |
 | demo login fails on a *system-seeded* DB that later got `client-demo` | `client-demo` adds rows; if it was never run, run once with the profile ON the existing volume — it's additive |
@@ -472,6 +481,8 @@ Each row: symptom → root cause → fix. Rung references point to §7's ladder.
 | Symptom | Cause → Fix |
 |---|---|
 | gateway fails boot: "catalog unreachable" | core not up yet / wrong `FSP_CORE_URL` → start order §5; gateway retries then exits — restart it after core is green |
+| emi `/v1/emi/**` answers 401 `UNTRUSTED Origin` | the request did not pass the gateway (direct-to-8086 access) or `FSP_INTERNAL_CREDENTIAL` differs between gateway and emi — both must share the internal hop credential |
+| emi `/v1/emi/**` answers 403 `ACTOR_TYPE_REJECTED` | a client-credential (machine) token was used — EMI self-service ops are person-plane only |
 | gateway: `404 ROUTE_NOT_IN_CATALOG` on a route you *just added* | new `@FspOperation` not yet in the descriptor the gateway watches → restart core (boot gate re-inventories); gateway refreshes within 60 s |
 | `401 IDEMPOTENCY_KEY_REQUIRED` on a POST from curl | every `/v1` mutation needs the header (AGENTS §2e) → add e.g. `-H 'Idempotency-Key: 55b1…-v4'`; BFF forwards SPA's key automatically |
 | `403 MAKER_CANNOT_APPROVE` approving your own JE | **that's the invariant working** (four-eyes) → use a second admin; in UI it renders an explicit blocked state |

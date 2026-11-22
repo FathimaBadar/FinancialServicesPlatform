@@ -28,6 +28,7 @@ timeline
     V29 : notification channels
     V30 : auth plane dispatch
     V31 : push subscription version
+    V32 : sku orders
 
-**Next free migration number: V32.**
+**Next free migration number: V33.**
 ```

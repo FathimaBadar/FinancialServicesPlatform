@@ -63,15 +63,13 @@ export const MENU_ITEMS: MenuItem[] = [
     perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['menu.placeholder'] },
   { id: 'customers', label: 'Customer', icon: '☺', link: '/customers',
     perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['menu.placeholder'] },
-  // the organization directory (rule 4: gated by the union of its widgets). Picking an org shows
-  // ITS users and onboarding beside the list (read-only until you act as its admin).
+  // the organization directory: every org below the platform with its status + KYC standing
+  // (case, risk), and "New onboarding" opening the KYC application form in a drawer (the
+  // ladder's next rung under the signed-in org). Gated by the union of the widget's keys.
   { id: 'organizations', label: 'Organization', icon: '◈', link: '/organizations',
     perm: ['kyc.review', 'org.create'], portals: ['platform'], group: 'User Management',
-    // PSPs are created by "New onboarding" with the platform picked (the ladder's first rung)
-    widgets: ['kyc.orgs', 'users.organization', 'onboard.list'],
-    config: { 'users.organization': { scope: 'selected' }, 'onboard.list': { scope: 'selected' } },
-    // list + the picked org's users side by side (SME list/detail page)
-    span: { 'users.organization': { md: 6, lg: 8 } } },
+    widgets: ['onboard.list'],
+    config: { 'onboard.list': { scope: 'own' } } },
   { id: 'onboarding', label: 'Onboarding', icon: '⇲', link: '/onboarding',
     perm: ['org.create'], portals: ['platform'], group: 'Onboarding', widgets: ['onboard.list'] },
   { id: 'components', label: 'Component', icon: '▦', link: '/components',

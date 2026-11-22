@@ -50,12 +50,11 @@ describe('ADMIN-MENU · the admin console shows the specified menus and submenus
       expect(item?.perm.length).toBeGreaterThan(0);
     }
   });
-  it('organization screen is the directory → picked org’s users + onboarding (no PSP panel), gated by their union', () => {
+  it('organization screen is the org directory with KYC status + "New onboarding" (KYC form), gated by its keys', () => {
     const org = menuFor('platform').find((i) => i.label === 'Organization');
-    // PSPs are onboarded from the platform rung of "New onboarding"; the separate PSP panel is gone
-    expect(org?.widgets).toEqual(['kyc.orgs', 'users.organization', 'onboard.list']);
-    expect(org?.config?.['users.organization']).toEqual({ scope: 'selected' });
-    expect(org?.config?.['onboard.list']).toEqual({ scope: 'selected' });
+    // one widget: the directory of the signed-in org's subtree; New onboarding opens the KYC form
+    expect(org?.widgets).toEqual(['onboard.list']);
+    expect(org?.config?.['onboard.list']).toEqual({ scope: 'own' });
     expect(org?.perm).toEqual(expect.arrayContaining(['kyc.review', 'org.create']));
   });
   it('home falls back to a point the portal actually has (never a missing /overview)', () => {

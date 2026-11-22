@@ -104,6 +104,11 @@ export function RoleForm({ role, menu, catalog, held, canManage, busy, problem, 
 
       <section aria-labelledby="role-matrix">
         <SectionHeading id="role-matrix" title="Permissions Matrix" subtitle="One row per screen of the published menu. Active shows the screen in the menu; the other boxes grant what it can do." />
+        {menu.kind === 'ready' && (
+          <p className="text-dim mb-2 text-[12px]" data-menu-source>
+            Rows: the {menu.label} portal’s published menu, version <span className="mono">{menu.layout.layoutVersion}</span>
+          </p>
+        )}
         {menu.kind === 'ready' ? (
           <PermissionMatrix layout={menu.layout} catalog={catalog} selected={draft} held={held} editable={editable} onChange={setDraft} />
         ) : menu.kind === 'loading' ? (

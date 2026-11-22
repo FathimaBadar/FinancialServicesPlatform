@@ -103,3 +103,9 @@ export function deliveryKeyForTenant(t: { type: string; subType: string | null }
     : orgPortals.find((p) => p.admitsTypes?.includes(t.type));
   return hit?.deliveryKey ?? null;
 }
+
+/** Display name of the portal a delivery key belongs to (falls back to the key itself). */
+export function portalLabel(deliveryKey: string): string {
+  const all = [ADMIN_PORTAL, PORTAL_MANUFACTURER, PORTAL_DISTRIBUTOR, PORTAL_WHOLESALER, PORTAL_MERCHANT];
+  return all.find((p) => p.deliveryKey === deliveryKey)?.label ?? deliveryKey;
+}

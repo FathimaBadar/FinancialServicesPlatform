@@ -9,7 +9,7 @@ import type { SignedLayout } from '../../../../signed/signed-layout';
 import { verifyDelivery } from '../../../../signed/delivery';
 import type { Delivery } from '../../../../signed/delivery';
 import type { SignedBundle } from '../../../../signed/verify';
-import { deliveryKeyForTenant } from '../../../../portal-config';
+import { deliveryKeyForTenant, portalLabel } from '../../../../portal-config';
 import { toProblem } from '../../kit/problem';
 
 export interface RoleView {
@@ -80,7 +80,7 @@ export interface OrgPortalView {
 /** The role's portal's published menu, as the matrix sees it. */
 export type MenuState =
   | { kind: 'loading' }
-  | { kind: 'ready'; portal: string; layout: SignedLayout }
+  | { kind: 'ready'; portal: string; label: string; layout: SignedLayout }
   | { kind: 'missing'; portal: string | null }
   | { kind: 'closed'; portal: string; reason: string }
   | { kind: 'error'; message: string; retry: () => void };
@@ -133,7 +133,7 @@ export function usePublishedMenu(port: WidgetDataPortLike, orgId: string, mode: 
   if (menu.isPending) return { kind: 'loading' };
   const d = menu.data;
   switch (d.kind) {
-    case 'layout': return { kind: 'ready', portal, layout: d.layout };
+    case 'layout': return { kind: 'ready', portal, label: portalLabel(portal), layout: d.layout };
     case 'missing': return { kind: 'missing', portal };
     case 'reauth': return { kind: 'error', message: 'Your session has ended — sign in again.', retry: () => void menu.refetch() };
     case 'closed': return { kind: 'closed', portal, reason: d.reason };

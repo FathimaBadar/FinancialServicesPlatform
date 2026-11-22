@@ -40,9 +40,6 @@ export interface Finding {
   level: 'error' | 'warning';
   where: string;
   text: string;
-  /** Where in the layout the finding points (for "go to it") — indices of menus/screens. */
-  m?: number;
-  s?: number;
 }
 
 export const ID_RE = /^[a-z][a-z0-9-]{0,47}$/;
@@ -130,52 +127,51 @@ export function seedLayout(portal: BuilderPortal, defs: ReadonlyMap<string, Widg
   return { portal: portal.key, menus };
 }
 
-/** Live checks (SME validateLayout) — errors are what core would reject or the portal would break on.
- *  Findings carry menu/screen indices so the UI can jump to the problem (§4.5). */
+/** Live checks (SME validateLayout) — errors are what core would reject or the portal would break on. */
 export function validateLayout(
   layout: PortalLayout,
   defs: ReadonlyMap<string, WidgetDef>,
   portal: BuilderPortal,
 ): Finding[] {
   const out: Finding[] = [];
-  const err = (where: string, text: string, m?: number, s?: number) => out.push({ level: 'error', where, text, m, s });
-  const warn = (where: string, text: string, m?: number, s?: number) => out.push({ level: 'warning', where, text, m, s });
+  const err = (where: string, text: string) => out.push({ level: 'error', where, text });
+  const warn = (where: string, text: string) => out.push({ level: 'warning', where, text });
   if (!layout.menus.length) err('layout', 'needs at least one menu (core rejects an empty layout)');
   const menuIds = new Set<string>();
-  layout.menus.forEach((m, mi) => {
+  for (const m of layout.menus) {
     const mw = `menu “${m.label || m.id}”`;
-    if (!m.label.trim()) err(mw, 'label is empty', mi);
-    if (!ID_RE.test(m.id)) err(mw, `id “${m.id}” must be lower-case letters, digits or - (starting with a letter)`, mi);
-    if (menuIds.has(m.id)) err(mw, `id “${m.id}” is used twice`, mi);
+    if (!m.label.trim()) err(mw, 'label is empty');
+    if (!ID_RE.test(m.id)) err(mw, `id “${m.id}” must be lower-case letters, digits or - (starting with a letter)`);
+    if (menuIds.has(m.id)) err(mw, `id “${m.id}” is used twice`);
     menuIds.add(m.id);
-    if (!m.screens.length) err(mw, 'has no pages (core rejects a menu without screens)', mi);
+    if (!m.screens.length) err(mw, 'has no submenus (core rejects a menu without screens)');
     const screenIds = new Set<string>();
-    m.screens.forEach((s, si) => {
+    for (const s of m.screens) {
       const sw = `${m.label || m.id} › ${s.label || s.id}`;
-      if (!s.label.trim()) err(sw, 'label is empty', mi, si);
-      if (!ID_RE.test(s.id)) err(sw, `id “${s.id}” is not a valid route segment`, mi, si);
-      if (screenIds.has(s.id)) err(sw, `id “${s.id}” is used twice in this menu`, mi, si);
+      if (!s.label.trim()) err(sw, 'label is empty');
+      if (!ID_RE.test(s.id)) err(sw, `id “${s.id}” is not a valid route segment`);
+      if (screenIds.has(s.id)) err(sw, `id “${s.id}” is used twice in this menu`);
       screenIds.add(s.id);
-      if (!s.placedWidgets.length) warn(sw, 'empty page: nobody will see anything here', mi, si);
+      if (!s.placedWidgets.length) warn(sw, 'empty screen: nobody will see anything here');
       for (const it of s.placedWidgets) {
         const d = defs.get(it.widgetId);
         if (!d) {
-          err(sw, `${it.widgetId} is not in this build's registry`, mi, si);
+          err(sw, `${it.widgetId} is not in this build's registry`);
           continue;
         }
-        if (!worksIn(d, portal.context)) warn(sw, `${d.label} is not declared for ${portal.context}`, mi, si);
+        if (!worksIn(d, portal.context)) warn(sw, `${d.label} is not declared for ${portal.context}`);
         for (const t of TIERS) {
           const z = d.size[t];
           const v = it.span[t];
           if (z.kind === 'hidden') {
-            if (v !== undefined) err(sw, `${d.label} has a ${t} span but is hidden on ${t} (${z.reason})`, mi, si);
+            if (v !== undefined) err(sw, `${d.label} has a ${t} span but is hidden on ${t} (${z.reason})`);
           } else if (v !== undefined && (v < z.min || v > z.max)) {
-            err(sw, `${d.label} ${t} span ${v} is outside ${z.min}–${z.max}`, mi, si);
+            err(sw, `${d.label} ${t} span ${v} is outside ${z.min}–${z.max}`);
           }
         }
       }
-    });
-  });
+    }
+  }
   return out;
 }
 
@@ -197,40 +193,6 @@ export function parseLayout(json: string | null | undefined, portalKey: string):
     return l;
   } catch {
     return null;
-  }
-}
-
-/** "Start blank": one menu with one empty page — the first state is never an error. */
-export function blankLayout(portalKey: string): PortalLayout {
-  return {
-    portal: portalKey,
-    menus: [{ id: 'main', label: 'Main', screens: [{ id: 'page-1', label: 'Page 1', placedWidgets: [] }] }],
-  };
-}
-
-/** Structural equality for "did the draft change since live / since the server copy". */
-export function sameLayout(a: PortalLayout | null, b: PortalLayout | null): boolean {
-  if (!a || !b) return false;
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-/**
- * Auto-slug (§4.2): renaming re-derives the id from the label — but only when the id is
- * still the slug of the old label (an untouched, auto-derived id) and was never published
- * (published ids are immutable). Returns null when the id must stay as-is.
- */
-export function autoSlugId(currentId: string, prevLabel: string, newLabel: string, taken: readonly string[]): string | null {
-  if (currentId === '' || slug(prevLabel) !== currentId) return null;
-  const next = slug(newLabel);
-  if (!next || next === currentId || taken.includes(next)) return null;
-  return next;
-}
-
-export function clearLocalDraft(portalKey: string): void {
-  try {
-    localStorage.removeItem(DRAFT(portalKey));
-  } catch {
-    /* private mode / blocked storage */
   }
 }
 

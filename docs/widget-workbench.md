@@ -50,17 +50,7 @@ session is the only credential path (AGENTS §4).
 | **Widget page** | `/widget-workbench/w/<id>` | the widget isolated: preview across every grid tier (xs→lg), the exact frames the builder will use, live/fixture data toggle, network table of the sources it calls |
 | **Registry** | `/widget-workbench/registry` | all widgets + the operations & permissions each one needs; a quick "who breaks if I rename a permission" view |
 | **New widget (LLM)** | `/widget-workbench/new` | paste a widget pack; the page writes the files, type-checks, lints, registers and opens the preview. Bad packs are rejected with the rule they broke |
-| **Portal builder** | `/widget-workbench/builder` | assemble widgets into a portal layout (grid), review the diff and submit it for another admin's approval — once approved, core publishes + ES256-signs the layout and the portals draw it |
-
-### 3.1 The portal builder flow (four-eyes)
-
-1. **First visit** shows a chooser: *Start from the live portal* (recommended), *Start blank*, or *Import JSON*.
-2. **Build.** The left rail IS the portal sidebar (rename inline, drag to reorder, lock notes); the canvas is true-tier width with per-slot `+` chips (`/` opens the add-widget search; the drawer lists only widgets your session can actually render). Undo/redo with `Ctrl+Z` / `Ctrl+Shift+Z`; page deletion is instant with an *Undo* toast.
-3. **Submit.** The *Submit for approval* sheet shows blocking checks, what changes go live (a diff against the published layout), and the four-eyes controls: the maker submits, a DIFFERENT admin (`Approve and publish`) or rejects with a reason. While pending, the draft is locked.
-4. **Live.** The pill in the header always shows the state: `Live · vX`, `Live · vX · edited`, `Waiting for approval`, `Changes requested`, or `Draft (saved …)`.
-5. **Ids.** Menu/page ids that are already live render locked (🔒); renaming keeps auto-derived ids in sync with the label until a page is published once.
-
-Deep links `?view=submit` / `?view=export` open straight into the sheet/export (they seed the editor copy from the live portal when opened in a fresh browser, e.g. a checker following an approval notification).
+| **Portal builder** | `/widget-workbench/builder` | assemble widgets into a portal layout (grid), then publish the layout to the gates/screens that consume it |
 
 ## 4. Way A — author a pack with an LLM (usual route)
 
@@ -122,7 +112,7 @@ bun run widgets:skill      # regenerate docs/skills/fsp-widget-author/SKILL.md
 | Symptom | Cause → fix |
 |---|---|
 | Workbench shows no widgets | registry empty → is a widget `index.tsx` failing to parse? `bun run widgets:check` names the offender |
-| Widget greyed out in the add-widget drawer | your signed-in user lacks a `requires` permission — sign in as a role that has it (see `docs/setup-guide.md` §5.1 credential table); the drawer also shows a *server still needs to register this widget* note when the id is missing from `/api/ui/widgets` |
+| Widget greyed out in builder palette | your signed-in user lacks a `requires` permission — sign in as a role that has it (see `docs/setup-guide.md` §5.1 credential table) |
 | **New widget** rejects pack with `NEEDS BACKEND` | the pack calls an endpoint not in the skill's catalog → a developer adds/extends the endpoint first, regenerate the skill with `bun run widgets:skill` (digest updates), retry |
 | Live sources return 403 | expected — core re-checks RBAC; widget's `requires` doesn't match your role's grants |
 | Live sources return 401 | BFF session expired → re-login via the connection bar |

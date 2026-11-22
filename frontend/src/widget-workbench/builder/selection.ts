@@ -5,16 +5,11 @@ export type Sel =
   | { kind: 'widget'; m: number; s: number; id: string }
   | null;
 
-/**
- * Builder views: the canvas is the screen editor; `submit` opens the four-eyes sheet
- * (replaces the old "Publish" tab — §4.6); `export` is opened from the ⋯ menu.
- * `publish` stays accepted for old links and maps to `submit`.
- */
-export type BuilderView = 'canvas' | 'submit' | 'export';
+export type BuilderView = 'canvas' | 'sidebar' | 'publish' | 'export';
 
-export const BUILDER_VIEWS: readonly BuilderView[] = ['canvas', 'submit', 'export'];
-
-export function parseView(raw: string | null): BuilderView {
-  if (raw === 'publish') return 'submit';
-  return BUILDER_VIEWS.includes(raw as BuilderView) ? (raw as BuilderView) : 'canvas';
-}
+export const BUILDER_VIEWS: readonly { id: BuilderView; label: string }[] = [
+  { id: 'canvas', label: 'Screen' },
+  { id: 'sidebar', label: 'Sidebar preview' },
+  { id: 'publish', label: 'Publish' },
+  { id: 'export', label: 'Export' },
+];

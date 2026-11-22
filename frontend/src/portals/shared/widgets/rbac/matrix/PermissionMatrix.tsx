@@ -1,16 +1,14 @@
 import { Fragment, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { menuFor } from '../../../web-core/menu';
-import type { PortalId } from '../../../web-core/menu';
-import { cellsOf } from '../../core/manifest';
+import type { SignedLayout } from '../../../../signed/signed-layout';
 import { getWidget } from '../../registry';
 import { TriCheckbox } from './TriCheckbox';
 import { VERB_LABEL, buildMatrix, checkState, isActive, sharedGateLinks, toggleActive, toggleAll } from './model';
 import type { MatrixCell, MatrixRow, PermissionDef, PermissionMatrixModel, VerbColumn } from './model';
 
 export interface PermissionMatrixProps {
-  /** whose sidebar the rows mirror (the portal the role's holders sign in to) */
-  portal: PortalId;
+  /** the verified, PUBLISHED layout of the portal the role's holders sign in to — the rows ARE its menu */
+  layout: SignedLayout;
   catalog: PermissionDef[];
   selected: ReadonlySet<string>;
   /** keys this person holds — only those can be granted or revoked (no escalation) */
@@ -21,19 +19,15 @@ export interface PermissionMatrixProps {
 
 const HEAD = 'whitespace-nowrap px-3 py-3 text-[10.5px] font-bold uppercase tracking-[.08em]';
 
-const widgetKeys = (id: string): string[] => {
-  const def = getWidget(id);
-  return def ? cellsOf(def) : [];
-};
-
 /**
- * Menu × verb grid: one header row per sidebar group, one row per sidebar link (exactly the menu).
+ * Menu × verb grid: one header row per published menu, one row per screen (exactly that portal's
+ * published sidebar).
  * A group row selects its whole group; a link row has its own "select all"; each verb cell is ONE
  * box covering every key in it (listed in its tooltip); the Active box is the link itself (shows it
  * in the sidebar). Boxes the editor may not grant are locked, reason in the tooltip.
  */
-export function PermissionMatrix({ portal, catalog, selected, held, editable, onChange }: PermissionMatrixProps) {
-  const matrix: PermissionMatrixModel = useMemo(() => buildMatrix(menuFor(portal), catalog, widgetKeys), [portal, catalog]);
+export function PermissionMatrix({ layout, catalog, selected, held, editable, onChange }: PermissionMatrixProps) {
+  const matrix: PermissionMatrixModel = useMemo(() => buildMatrix(layout, catalog, getWidget), [layout, catalog]);
   const grantable = useMemo(() => (editable ? held : new Set<string>()), [editable, held]);
   const anyGrantable = (keys: readonly string[]) => keys.some((k) => grantable.has(k));
   const lockReason = editable ? 'You can only grant or revoke permissions you hold yourself' : undefined;
@@ -83,7 +77,7 @@ export function PermissionMatrix({ portal, catalog, selected, held, editable, on
         </thead>
         <tbody>
           {matrix.groups.map((g) => (
-            <Fragment key={g.label}>
+            <Fragment key={g.id}>
               <tr className="bg-surface-sunken">
                 <th scope="row" className="border-t border-line px-3 py-3 text-left text-[13px] font-bold">{g.label}</th>
                 <td className="text-dim border-t border-line px-3 py-3 text-center text-[12px] tabular-nums">

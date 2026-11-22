@@ -6,8 +6,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useWidgetRuntime } from '../../core/runtime';
-import { useSession } from '../../../web-core/session-core';
-import type { PortalId } from '../../../web-core/menu';
+import type { WidgetRuntimeProps } from '../../core/manifest';
 import { Button, PageHeader, Panel } from '../../../ui/atoms';
 import { NoticeBar } from '../../kit/Notice';
 import type { Notice } from '../../kit/Notice';
@@ -15,12 +14,12 @@ import { StatePanel } from '../../kit/StatePanel';
 import { isForbidden, toProblem } from '../../kit/problem';
 import { RoleForm } from './RoleForm';
 import { RoleTable } from './RoleTable';
-import { useCatalog, useRoleCommand, useRoles } from './model';
+import { useCatalog, usePublishedMenu, useRoleCommand, useRoles } from './model';
 import type { RoleCommand } from './model';
 
 const NEW = 'new';
 
-export function RbacMatrix() {
+export function RbacMatrix({ mode }: WidgetRuntimeProps) {
   const { port, context } = useWidgetRuntime();
   const orgId = context.orgId ?? '';
   const [params, setParams] = useSearchParams();
@@ -31,10 +30,10 @@ export function RbacMatrix() {
   const dismiss = useCallback(() => setNotice(null), []);
   const held = useMemo(() => new Set(context.permissions), [context.permissions]);
   const canManage = held.has('role.manage');
-  // the matrix mirrors the sidebar of the portal this org's users sign in to: the admin console for
-  // the platform's own roles, the org portals for a tenant's (also when the admin acts as one)
-  const { actAs } = useSession();
-  const menuPortal: PortalId = context.portal === 'PLATFORM' && !actAs ? 'platform' : 'org';
+  // the matrix rows are the PUBLISHED menu of the portal this org's people sign in to (the
+  // admin console for the platform's own roles, the org's sub-type portal for a tenant's — also
+  // when acting as one, since orgId is then the target) — never the coded menu registry
+  const menu = usePublishedMenu(port, orgId, mode);
 
   const list = roles.data ?? [];
   const view = params.get('role');
@@ -76,7 +75,7 @@ export function RbacMatrix() {
         <RoleForm
           key={formRole?.id ?? NEW}
           role={formRole}
-          portal={menuPortal}
+          menu={menu}
           catalog={catalog.data ?? []}
           held={held}
           canManage={canManage}

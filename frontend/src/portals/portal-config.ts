@@ -25,9 +25,6 @@ export interface PortalConfig {
   accent: string;
   /** distinct localStorage key so sessions never bleed across portals. */
   storageKey: string;
-  /** Signed-delivery enforcement (plans/signed-portal-delivery-plan.md §3): true → the
-   *  SignedMenuGate refuses a missing/tampered bundle (fail closed, no downgrade). */
-  signedDelivery: boolean;
   /** The portal name signed bundles are published under (core `ui_bundles.portal`, the
    *  portal builder's publish target) — NOT the menu PortalId ('platform' | 'org'). */
   deliveryKey: string;
@@ -39,7 +36,6 @@ export const ADMIN_PORTAL: PortalConfig = {
   label: 'Admin Console',
   accent: '#f0a10e',
   storageKey: 'fsp.platform.session',
-  signedDelivery: true,
   deliveryKey: 'admin',
 };
 
@@ -50,7 +46,6 @@ export const PORTAL_MANUFACTURER: PortalConfig = {
   label: 'Manufacturer',
   accent: '#f0a35e',
   storageKey: 'fsp.manufacturer.session',
-  signedDelivery: false,
   deliveryKey: 'manufacturer',
 };
 
@@ -60,7 +55,6 @@ export const PORTAL_DISTRIBUTOR: PortalConfig = {
   label: 'Distributor',
   accent: '#a78bfa',
   storageKey: 'fsp.distributor.session',
-  signedDelivery: false,
   deliveryKey: 'distributor',
 };
 
@@ -70,7 +64,6 @@ export const PORTAL_WHOLESALER: PortalConfig = {
   label: 'Wholesaler',
   accent: '#7cecff',
   storageKey: 'fsp.wholesaler.session',
-  signedDelivery: false,
   deliveryKey: 'wholesaler',
 };
 
@@ -80,7 +73,6 @@ export const PORTAL_MERCHANT: PortalConfig = {
   label: 'Merchant',
   accent: '#f2c94c',
   storageKey: 'fsp.merchant.session',
-  signedDelivery: false,
   deliveryKey: 'merchant',
 };
 
@@ -94,6 +86,20 @@ export const WORKBENCH_PORTAL: PortalConfig = {
   label: 'Widget workbench',
   accent: '#f0a10e',
   storageKey: 'fsp.widget-workbench.session',
-  signedDelivery: false,
   deliveryKey: 'widget-workbench',
 };
+
+/**
+ * The portal (signed-delivery key) an organization's people sign in to — the SAME admission
+ * rule as portal eligibility: the platform org → the admin console; a tenant → the org portal
+ * of its sub-type (or, for a legacy row with no sub-type, the portal whose admitsTypes names
+ * its type). null = no portal admits it, so it has no published menu (callers fail closed).
+ */
+export function deliveryKeyForTenant(t: { type: string; subType: string | null }): string | null {
+  if (t.type === 'PLATFORM') return ADMIN_PORTAL.deliveryKey;
+  const orgPortals = [PORTAL_MANUFACTURER, PORTAL_DISTRIBUTOR, PORTAL_WHOLESALER, PORTAL_MERCHANT];
+  const hit = t.subType
+    ? orgPortals.find((p) => p.tenantSubType === t.subType)
+    : orgPortals.find((p) => p.admitsTypes?.includes(t.type));
+  return hit?.deliveryKey ?? null;
+}

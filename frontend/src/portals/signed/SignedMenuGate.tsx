@@ -5,9 +5,9 @@
  * on SignedLayoutCtx for the shell + layout screens. Any tamper evidence renders the
  * fail-closed TamperedBoundary — never a degraded menu, never a cached layout.
  *
- * Policy: portals enrolled via `signedDelivery: true` (PortalConfig) REFUSE a missing
- * bundle too (a withheld delivery is a downgrade attack — fail closed). Unenrolled portals
- * boot from the build-time menu registry until their layout is published.
+ * Policy: a portal's menu comes ONLY from its published layout. A missing bundle renders
+ * "No menu configured" for every portal — fail closed, never the build-time menu registry
+ * (so a withheld delivery cannot downgrade a portal to a coded menu either).
  *
  * Authentication comes first: bundle delivery is an authenticated read, so the gate only
  * verifies once a session exists. No session, or a 401 (token expired/revoked), forces
@@ -20,42 +20,23 @@ import { Navigate } from 'react-router-dom';
 import { apiGet } from '../shared/web-core/api';
 import { FullscreenSpinner } from '../shared/web-core/guards';
 import { useSession } from '../shared/web-core/session-core';
+import { NoMenuConfigured } from './NoMenuConfigured';
 import { TamperedBoundary } from './TamperedBoundary';
-import { SignedLayoutCtx, signedLayoutSchema } from './signed-layout';
-import type { SignedLayout } from './signed-layout';
-import { reasonLabel, verifySignedBundle } from './verify';
+import { verifyDelivery } from './delivery';
+import type { Delivery } from './delivery';
+import { SignedLayoutCtx } from './signed-layout';
+import { reasonLabel } from './verify';
 import type { SignedBundle } from './verify';
 
 export interface SignedMenuGateProps {
   portal: string;
-  /** When true, an absent bundle is ALSO a closed verdict (no downgrade route). */
-  required: boolean;
+  /** the portal's display name, for the "no menu configured" screen */
+  label: string;
   children: ReactNode;
 }
 
-type Delivery =
-  | { kind: 'layout'; layout: SignedLayout }
-  | { kind: 'missing' }
-  | { kind: 'reauth' }
-  | { kind: 'closed'; reason: string; evidenceId: string };
-
-async function verifyDelivery(portal: string): Promise<Delivery> {
-  let bundle: SignedBundle;
-  try {
-    bundle = await apiGet<SignedBundle>(`/api/ui/bundles/${encodeURIComponent(portal)}`);
-  } catch (err) {
-    const status = (err as { status?: number }).status;
-    if (status === 401) return { kind: 'reauth' };
-    if (status === 404) return { kind: 'missing' };
-    return { kind: 'closed', reason: 'delivery_unreachable', evidenceId: crypto.randomUUID() };
-  }
-  const verdict = await verifySignedBundle(bundle);
-  if (!verdict.ok) return { kind: 'closed', reason: verdict.reason, evidenceId: verdict.evidenceId };
-  const parsed = signedLayoutSchema.safeParse(verdict.payload);
-  if (!parsed.success) return { kind: 'closed', reason: 'payload_shape', evidenceId: crypto.randomUUID() };
-  // a validly signed bundle of ANOTHER portal must never unlock this one (replay / swap)
-  if (parsed.data.portal !== portal) return { kind: 'closed', reason: 'portal_mismatch', evidenceId: crypto.randomUUID() };
-  return { kind: 'layout', layout: parsed.data };
+async function fetchVerified(portal: string): Promise<Delivery> {
+  return verifyDelivery(portal, () => apiGet<SignedBundle>(`/api/ui/bundles/${encodeURIComponent(portal)}`));
 }
 
 export function SignedMenuGate(props: SignedMenuGateProps): ReactNode {
@@ -64,7 +45,7 @@ export function SignedMenuGate(props: SignedMenuGateProps): ReactNode {
   const { data, isPending } = useQuery({
     // per user: a new sign-in always re-verifies, never reuses another identity's verdict
     queryKey: ['ui', 'signed-delivery', props.portal, session.user?.userId ?? null],
-    queryFn: () => verifyDelivery(props.portal),
+    queryFn: () => fetchVerified(props.portal),
     enabled: authed,
     staleTime: 60_000,
     retry: 0, // money-grade rule (ui-std §7): zero auto-retries — the outcome is surfaced
@@ -77,13 +58,7 @@ export function SignedMenuGate(props: SignedMenuGateProps): ReactNode {
   if (data.kind === 'closed') {
     return <TamperedBoundary portal={props.portal} reason={reasonLabel(data.reason)} evidenceId={data.evidenceId} />;
   }
-  if (data.kind === 'missing') {
-    return props.required ? (
-      <TamperedBoundary portal={props.portal} reason={reasonLabel('delivery_withheld')} evidenceId={crypto.randomUUID()} />
-    ) : (
-      // unenrolled portal: build-time registry until its layout publishes
-      <SignedLayoutCtx.Provider value={null}>{props.children}</SignedLayoutCtx.Provider>
-    );
-  }
+  // no published layout → no menu, said plainly (never a build-time fallback menu)
+  if (data.kind === 'missing') return <NoMenuConfigured label={props.label} />;
   return <SignedLayoutCtx.Provider value={data.layout}>{props.children}</SignedLayoutCtx.Provider>;
 }

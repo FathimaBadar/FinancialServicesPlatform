@@ -33,10 +33,11 @@ import type { CaseFormValues } from '../../kyc/manage/model';
 import { CaseForm } from '../../kyc/manage/CaseForm';
 
 const SORT_KEYS = ['legalName', 'status', 'createdAt', 'subType'] as const;
+type SortKey = (typeof SORT_KEYS)[number];
 
 function parseSort(s: string): { key: string; dir: 'asc' | 'desc' } {
   const [k, d = 'asc'] = s.split(',') as [string, string];
-  return { key: SORT_KEYS.includes(k as any) ? k : DEFAULT_QUERY.sort, dir: d === 'desc' ? 'desc' : 'asc' };
+  return { key: (SORT_KEYS as readonly string[]).includes(k) ? (k as SortKey) : DEFAULT_QUERY.sort, dir: d === 'desc' ? 'desc' : 'asc' };
 }
 
 interface OrgTableProps {

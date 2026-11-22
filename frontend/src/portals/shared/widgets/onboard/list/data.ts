@@ -31,8 +31,8 @@ function pageOf(rows: OrgRow[], q: OrgListQuery): OrgPage {
   if (tq.length >= 2) set = set.filter((r) => (r.legalName ?? '').toLowerCase().includes(tq));
   const [sk, sd = 'asc'] = q.sort.split(',') as [string, string];
   set = [...set].sort((a, b) => {
-    const av = (a as any)[sk] ?? '';
-    const bv = (b as any)[sk] ?? '';
+    const av = (a as unknown as Record<string, string | null>)[sk] ?? '';
+    const bv = (b as unknown as Record<string, string | null>)[sk] ?? '';
     const c = String(av ?? '').localeCompare(String(bv ?? ''));
     return sd === 'desc' ? -c : c;
   });

@@ -1,14 +1,12 @@
 /**
  * AppShell — the portal chrome (SME nav-shell + admin/org shell port):
- * topbar (brand w/ --portal-accent, user, sign out) + sidebar driven by THE
- * menu registry (menu.ts) filtered by held permission keys, + main scroll
+ * topbar (brand w/ --portal-accent, user, sign out) + sidebar drawn from the portal's
+ * PUBLISHED, signature-verified layout filtered by held permission keys, + main scroll
  * region. Sidebar collapses to a top-nav drawer on small screens.
  */
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
-import { navEntries } from '../web-core/menu';
-import type { PortalId } from '../web-core/menu';
-import { can, doLogout, useSession } from './session-core';
+import { doLogout, useSession } from './session-core';
 import type { PortalConfig } from '../../portal-config';
 import { layoutNavEntries, useSignedLayout } from '../../signed/signed-layout';
 import { getWidget } from '../widgets/registry';
@@ -17,12 +15,10 @@ import { onUnread } from './push-core';
 
 export function AppShell({
   portal,
-  portalId,
   showNav = true,
   children,
 }: {
   portal: PortalConfig;
-  portalId: PortalId;
   /** false for single-screen portals (e.g. a one-screen tool): no menu, full-width main. */
   showNav?: boolean;
   /** ignored — the router renders the matched child via <Outlet/> */
@@ -36,10 +32,9 @@ export function AppShell({
   useEffect(() => onUnread(setUnread), []);
 
   const layout = useSignedLayout();
-  // a verified, published layout draws the sidebar; otherwise the build-time menu registry
-  const nav = layout
-    ? layoutNavEntries(layout, permissions, getWidget)
-    : navEntries(portalId, (item) => can(permissions, item.perm));
+  // the sidebar is ONLY the verified, published layout (SignedMenuGate renders "No menu
+  // configured" before this shell when a portal has none — there is no coded fallback menu)
+  const nav = layout ? layoutNavEntries(layout, permissions, getWidget) : [];
 
   const navClass = (isActive: boolean) =>
     'block rounded-lg px-3 py-1.5 text-[13px] transition-colors ' +

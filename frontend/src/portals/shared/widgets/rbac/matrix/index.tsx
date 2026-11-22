@@ -11,7 +11,7 @@ const rbacMatrixWidget = defineWidget({
   category: 'Access',
   contexts: ['ANY'],
   requires: ['role.view', 'role.manage'],
-  sources: ['rbac.matrix.roles', 'rbac.matrix.catalog'],
+  sources: ['rbac.matrix.roles', 'rbac.matrix.catalog', 'rbac.matrix.org', 'rbac.matrix.menu'],
   commands: ['rbac.matrix.create', 'rbac.matrix.update', 'rbac.matrix.delete'],
   actions: [
     { id: 'role.create', label: 'Create Role', cell: 'role.manage', command: 'rbac.matrix.create', kind: 'primary' },

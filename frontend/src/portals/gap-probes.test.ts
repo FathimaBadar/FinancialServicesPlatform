@@ -100,3 +100,20 @@ describe('GAP-6 · merchant portal entry exists', () => {
     expect(portalEligible(configs.PORTAL_DISTRIBUTOR, user('TENANT'), tenant('TENANT', 'MERCHANT'))).toBe(false);
   });
 });
+
+describe('GAP-RBAC-MENU · the role matrix reads the PUBLISHED menu of the role’s own portal', () => {
+  it.each([
+    ['PLATFORM', null, 'admin'],
+    ['TENANT', 'MANUFACTURER', 'manufacturer'],
+    ['PSP', null, 'manufacturer'], // legacy PSP row with no sub-type yet (admitsTypes)
+    ['TENANT', 'DISTRIBUTOR', 'distributor'],
+    ['TENANT', 'WHOLESALER', 'wholesaler'],
+    ['TENANT', 'MERCHANT', 'merchant'],
+  ])('%s/%s signs in to %s', (type, subType, key) => {
+    expect(configs.deliveryKeyForTenant({ type, subType })).toBe(key);
+  });
+  it('an org with no portal has no menu (fail closed, never a guess)', () => {
+    expect(configs.deliveryKeyForTenant({ type: 'TENANT', subType: null })).toBeNull();
+    expect(configs.deliveryKeyForTenant({ type: 'TENANT', subType: 'UNKNOWN' })).toBeNull();
+  });
+});

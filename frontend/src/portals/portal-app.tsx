@@ -73,15 +73,15 @@ function Router({ portal, portalId }: { portal: PortalConfig; portalId: PortalId
       {
         path: '',
         element: (
-          <SignedMenuGate portal={portal.deliveryKey} required={portal.signedDelivery}>
-            <AppShell portal={portal} portalId={portalId}>
+          <SignedMenuGate portal={portal.deliveryKey} label={portal.label}>
+            <AppShell portal={portal}>
               <Outlet />
             </AppShell>
           </SignedMenuGate>
         ),
         children: [
-          // home: first published screen the user can see, else the coded overview
-          { index: true, element: <HomeRedirect portalId={portalId} /> },
+          // home: first published screen the user can see
+          { index: true, element: <HomeRedirect /> },
           // screens of the published, signature-verified layout (SME p/:menu/:screen)
           { path: 'p/:menuId/:screenId', element: <LayoutScreen /> },
           ...menu.map((item) => ({

@@ -6,15 +6,16 @@ import { FormField } from '../../kit/FormField';
 import { InlineConfirm } from '../../kit/InlineConfirm';
 import { PermissionMatrix } from './PermissionMatrix';
 import { SectionHeading } from './SectionHeading';
+import { StatePanel } from '../../kit/StatePanel';
 import { newRoleSchema } from './model';
-import type { NewRoleValues, PermissionDef, RoleView } from './model';
-import type { PortalId } from '../../../web-core/menu';
+import type { MenuState, NewRoleValues, PermissionDef, RoleView } from './model';
+import { reasonLabel } from '../../../../signed/verify';
 
 export interface RoleFormProps {
   /** absent = create a new role */
   role: RoleView | null;
-  /** whose sidebar the permissions matrix mirrors */
-  portal: PortalId;
+  /** the published menu of the portal the role's holders sign in to — the matrix rows */
+  menu: MenuState;
   catalog: PermissionDef[];
   held: ReadonlySet<string>;
   canManage: boolean;
@@ -32,7 +33,7 @@ type Errors = Partial<Record<keyof NewRoleValues, string>>;
  * Maker surface for one role (create or edit): Role Details + Permissions Matrix. Nothing applies
  * until a checker approves in Approvals — there is no approve control here (ui-std §5.2).
  */
-export function RoleForm({ role, portal, catalog, held, canManage, busy, problem, onCancel, onCreate, onRequestChange, onRequestDelete }: RoleFormProps) {
+export function RoleForm({ role, menu, catalog, held, canManage, busy, problem, onCancel, onCreate, onRequestChange, onRequestDelete }: RoleFormProps) {
   const creating = role === null;
   const [values, setValues] = useState<NewRoleValues>({ key: role?.key ?? '', name: role?.name ?? '' });
   const [errors, setErrors] = useState<Errors>({});
@@ -48,7 +49,8 @@ export function RoleForm({ role, portal, catalog, held, canManage, busy, problem
   const added = useMemo(() => [...draft].filter((k) => !base.includes(k)).sort(), [draft, base]);
   const removed = useMemo(() => base.filter((k) => !draft.has(k)).sort(), [draft, base]);
   const pending = role !== null && (role.status === 'PENDING_CREATE' || role.pendingApprovalId !== null);
-  const editable = canManage && !pending && role?.scope !== 'PLATFORM';
+  // no verified menu → nothing to grant against: the role can be read, not changed
+  const editable = canManage && !pending && role?.scope !== 'PLATFORM' && menu.kind === 'ready';
 
   const check = (only?: keyof NewRoleValues): NewRoleValues | null => {
     const r = newRoleSchema.safeParse(values);
@@ -101,8 +103,20 @@ export function RoleForm({ role, portal, catalog, held, canManage, busy, problem
       </section>
 
       <section aria-labelledby="role-matrix">
-        <SectionHeading id="role-matrix" title="Permissions Matrix" subtitle="One row per menu link. Active shows the link in the menu; the other boxes grant what it can do." />
-        <PermissionMatrix portal={portal} catalog={catalog} selected={draft} held={held} editable={editable} onChange={setDraft} />
+        <SectionHeading id="role-matrix" title="Permissions Matrix" subtitle="One row per screen of the published menu. Active shows the screen in the menu; the other boxes grant what it can do." />
+        {menu.kind === 'ready' ? (
+          <PermissionMatrix layout={menu.layout} catalog={catalog} selected={draft} held={held} editable={editable} onChange={setDraft} />
+        ) : menu.kind === 'loading' ? (
+          <StatePanel kind="loading" title="Loading the published menu" />
+        ) : menu.kind === 'missing' ? (
+          <StatePanel kind="empty"
+            title={menu.portal ? `The ${menu.portal} portal has no published menu yet` : 'This organization signs in to no portal'}
+            hint={menu.portal ? 'Permissions are granted per menu screen. Publish this portal’s layout in the portal builder, then come back.' : undefined} />
+        ) : menu.kind === 'closed' ? (
+          <StatePanel kind="error" title={`The ${menu.portal} portal’s published menu failed verification`} hint={reasonLabel(menu.reason)} />
+        ) : (
+          <StatePanel kind="error" title="Couldn’t load the published menu" hint={menu.message} onRetry={menu.retry} />
+        )}
       </section>
 
       {problem && <Alert kind="bad">{problem}</Alert>}

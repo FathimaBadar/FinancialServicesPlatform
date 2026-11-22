@@ -142,3 +142,66 @@ Squad extended coverage per operator request: session/replay families and classi
 
 Everything else from round 1 stands: the two P0s (god-key internal hop, `chainFor` tenant escape)
 remain the decisive breaches of both rounds.
+
+---
+
+# Round 3 — Dedicated RBAC-Bypass Assault (2026-11-22)
+
+Squad tasked to break the RBAC engine itself. Sources inspected (`FspOperationInterceptor`,
+`PermissionService`, `UserAdminService`, `RoleAdminService`, `RbacRepository`), then all probes
+fired live through the BROWSER plane only (no god-key) unless noted.
+
+## Scoreboard — round 3
+
+| Wave | Vector | Verdict | Severity |
+|---|---|---|---|
+| 11-pre | Unguarded endpoints scan: every `@`-mapping in core annotated 1:1 with `@FspOperation`; interceptor fails-closed for unannotated handlers | HELD | — |
+| 11-pre | Case/precision tricks (`je.create` vs `JE.CREATE` — DB key match is exact-string) | fail-closed | — |
+| 11a | psp-admin (a1) `requireOrg` at FOREIGN org 2712b509 (chain-bug) → `POST /users` stages `redteam-admin` + Tenant Admin anchor there | **BREACH** — 202 PENDING staged in foreign org | P0-component |
+| 11b/11c | Maker self-approval of own USER_CREATE | HELD — 403 `MAKER_CANNOT_APPROVE` | — |
+| 11d | Second pen psp-ops (no `user.manage`) approval attempt | HELD — 403 `PERMISSION_DENIED` | — |
+| 11d2 | merchant-admin pen (holds `user.manage` via chain bug, NOT checker-flagged) | HELD — 403 `CHECKER_NOT_ENABLED` | — (the flag saved the day) |
+| 11e | Mint 3rd pen in own org + self-activate (`activate` has NO four-eyes on the endpoint; staged approval instead) | BLOCKED by checker flow | note |
+| 11g | **merchant-checker (checker-flagged + `user.manage`) approves foreign-org USER_CREATE** → backdoor **ACTIVE** → forced password set → **logs in as Organization Administrator of foreign org, reads its ledger** | **BREACH — total org takeover** | **P0** |
+
+## The kill-chain (all browser-plane, no god-key)
+
+```
+PSP_ADMIN (attacker, org a1)
+  1. PermissionService.chainFor() adds actor.activeTenantId() to the TARGET's ancestor chain
+     → user.manage / role.manage effectively global across ALL tenant trees (requireOrg accepts)
+  2. POST /v1/tenants/<FOREIGN_ORG>/users {roleIds:[TENANT_ADMIN]}      → 202 PENDING backdoor
+  3. requireAssignable anchor-carve-out: Admin/CHECKER anchor roles are grantable WITHOUT
+     holding their keys, as long as subject ≠ self  → no privilege-ceiling proof required
+  4. SECOND attacker-controlled person (merchant-checker of a DIFFERENT org, checker-flagged,
+     also holds user.manage) approves the USER_CREATE → four-eyes satisfied at person-level
+  5. Backdoor ACTIVE + bootstrap password + forced-change → logs in as foreign-org ADMIN
+  6. Reads/writes foreign org ledger (verified live)
+```
+
+## Root causes (3 stacked)
+
+1. **P0 — `chainFor` tenant-escape (unchanged from round 1).** Makes `user.manage`, `role.manage`,
+   `je.create`, everything, effectively global for any role-holder. Every org-admin is a
+   super-admin at every OTHER org.
+2. **P1 — anchor-role carve-out needs tenant-affinity.** Granting a role in tenant T should require
+   the granter to hold the keys IN T's tree (not anywhere) AND the actor must belong to T's
+   subtree; the "born role" carve-out lets a foreign chain-bugged actor mint admins anywhere.
+3. **P1 — checker pens are fungible across orgs.** Four-eyes is enforced at person_id only, but
+   checker-flagged `user.manage` holders exist in a sibling org, and the chain-bug makes them
+   eligible checkers for ANY org's approvals. Checker eligibility must be scoped to the target
+   tenant's subtree AND require an `user.approve`-style key distinct from `user.manage`.
+
+## Defenses that held (credit)
+
+- `MAKER_CANNOT_APPROVE` (person-level four-eyes) — blocked every self-approval.
+- `CHECKER_NOT_ENABLED` — caught the non-checker pen; without this flag gate the chain
+  needed only TWO accounts.
+- `requireNotSelf` on user removal; `expectedVersion` optimistic-lock on every user mutation.
+- `load()` concealed-404 keeps person existence private across orgs (no enumeration).
+- Role-deletion protections (`ROLE_PROTECTED`, `ROLE_IN_USE`), staged role changes.
+
+## Cleanup
+
+Backdoor persons + staged approvals deleted; user_roles orphans purged. Sibling findings intact:
+P0 god-key, P0 chainFor, P1 carve-out/checker-fungibility, P1 session hijack, P2 lockout/headers.

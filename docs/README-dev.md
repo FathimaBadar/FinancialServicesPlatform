@@ -1,5 +1,8 @@
 # FSP Phase-0 — Local Development & Build Guide
 
+> **Full bootJar runbook (rebuild → deploy → start → verify, Linux + Windows):** [runbook-fsp-local.md](runbook-fsp-local.md)
+> — includes per-target internal-credential envs, JDK-25 pin, profiles, start order, stop-all, health checklist, and the known-incident table (JDK mismatch, gateway catalog fail-closed, stale-checkout vs DB version skew).
+
 ## Architecture Ports & Topology
 
 | Service | Technology | Port | Command |

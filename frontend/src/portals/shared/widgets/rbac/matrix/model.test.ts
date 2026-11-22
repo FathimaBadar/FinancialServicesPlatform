@@ -3,8 +3,11 @@ import { MENU_ITEMS } from '../../../web-core/menu';
 import { signedLayoutSchema } from '../../../../signed/signed-layout';
 import type { SignedLayout } from '../../../../signed/signed-layout';
 import { getWidget } from '../../registry';
-import { activeKey, buildMatrix, checkState, isActive, sharedGateLinks, toggleActive, toggleAll } from './model';
-import type { PermissionDef } from './model';
+import {
+  CELLS_PER_ROW, NOTHING_GRANTABLE, activeKey, buildMatrix, cellDiff, checkState, columnCell, roleDetailsSchema, roleKeyOf, rowCells,
+  toggleCell, toggleRows,
+} from './model';
+import type { Grantable, Grants, PermissionDef } from './model';
 
 /** The live core catalogue (permissions table) — key, component. */
 const LIVE: Array<[string, string]> = [
@@ -42,8 +45,11 @@ function published(over: Partial<SignedLayout> = {}): SignedLayout {
 }
 const rows = (l: SignedLayout) => buildMatrix(l, defs, getWidget).groups.flatMap((g) => g.rows);
 
+const none: Grants = { keys: new Set(), cells: new Set() };
+const everything: Grantable = { keys: new Set(LIVE.map(([k]) => k)), menu: { full: true, cells: new Set() } };
+
 describe('rbac.matrix · rows are exactly the PUBLISHED menu (never the coded registry)', () => {
-  it('one group per published menu, one row per screen, in published order, linked like the sidebar', () => {
+  it('one group per published menu, one row per submenu, in published order, linked like the sidebar', () => {
     const m = buildMatrix(published(), defs, getWidget);
     expect(m.groups.map((g) => [g.label, g.rows.map((r) => [r.label, r.link])])).toEqual([
       ['Access control', [['Roles', '/p/access/roles'], ['People', '/p/access/people']]],
@@ -54,71 +60,96 @@ describe('rbac.matrix · rows are exactly the PUBLISHED menu (never the coded re
     const coded = new Set(MENU_ITEMS.map((i) => i.label));
     for (const r of rows(published())) expect(coded.has(r.label), r.label).toBe(false);
   });
-  it('a row covers its placed widgets’ keys; the gate is what shows the screen', () => {
+  it('every row has the same six cells (5 actions + Active), keyed by the published ids', () => {
+    const role = rows(published()).find((r) => r.label === 'Roles')!;
+    expect(rowCells(role)).toEqual([
+      'access/roles:CREATE', 'access/roles:VIEW', 'access/roles:UPDATE', 'access/roles:DELETE', 'access/roles:AUTHORIZE', 'access/roles:ACTIVE',
+    ]);
+    expect(CELLS_PER_ROW).toBe(6);
+  });
+  it('an action box also carries the keys of that family the submenu’s widgets need', () => {
     const role = rows(published()).find((r) => r.label === 'Roles')!;
     expect(role.gate).toEqual(['role.manage', 'role.view']);
-    expect(role.cells.view.map((c) => c.key)).toEqual(['role.view']);
-    expect(role.cells.update.map((c) => c.key)).toEqual(['role.manage']);
+    expect(role.keys.view.map((c) => c.key)).toEqual(['role.view']);
+    expect(role.keys.update.map((c) => c.key)).toEqual(['role.manage']);
     const je = rows(published()).find((r) => r.label === 'Journal')!;
-    expect(je.keys).toEqual(expect.arrayContaining(['je.create', 'je.approve', 'audit.view']));
-    const all = new Set(LIVE.map(([k]) => k));
-    for (const r of rows(published())) for (const k of r.keys) expect(all.has(k)).toBe(true);
+    expect(je.keys.create.map((k) => k.key)).toContain('je.create');
+    expect(je.keys.authorize.map((k) => k.key)).toContain('je.approve');
   });
-  it('a widget the server did not approve (or of another major) grants nothing', () => {
-    expect(rows(published()).find((r) => r.label === 'Ghost')!.keys).toEqual([]);
+  it('a widget the server did not approve (or of another major), or one that reads nothing, carries no keys', () => {
+    const ghost = rows(published()).find((r) => r.label === 'Ghost')!;
+    expect(Object.values(ghost.keys).flat()).toEqual([]);
     const l = published({ widgets: published().widgets.map((w) => (w.id === 'rbac.matrix' ? { ...w, version: '9.0.0' } : w)) });
-    expect(rows(l).find((r) => r.label === 'Roles')!.keys).toEqual([]);
+    expect(Object.values(rows(l).find((r) => r.label === 'Roles')!.keys).flat()).toEqual([]);
+    const ph = published({
+      menus: [{ id: 'user-management', label: 'User Management', screens: [
+        { id: 'customers', label: 'Customer', placedWidgets: [{ id: 'p1', widgetId: 'menu.placeholder', span: {} }] }] }],
+      widgets: [{ id: 'menu.placeholder', version: getWidget('menu.placeholder')!.version, bundle: 'b', bundleHash: 'h', requires: [] }],
+    });
+    const c = rows(ph)[0];
+    expect(Object.values(c.keys).flat()).toEqual([]);
+    expect(rowCells(c)).toContain('user-management/customers:DELETE'); // the cells are there all the same
   });
 });
 
-describe('rbac.matrix · Active box (one more per link)', () => {
+describe('rbac.matrix · boxes grant menu cells (+ the screen’s keys)', () => {
   const m = buildMatrix(published(), defs, getWidget);
   const row = (label: string) => m.groups.flatMap((g) => g.rows).find((r) => r.label === label)!;
-  const everything = new Set(LIVE.map(([k]) => k));
 
-  it('is on when the role holds any key of the screen’s gate (the screen shows)', () => {
-    expect(isActive(row('Roles').gate, new Set(['role.view']))).toBe(true);
-    expect(isActive(row('Roles').gate, new Set(['user.manage']))).toBe(false);
+  it('ticking View grants the cell and the view-family keys; unticking removes both', () => {
+    const on = toggleCell(row('Roles'), 'view', none, everything);
+    expect([...on.cells]).toEqual(['access/roles:VIEW']);
+    expect([...on.keys]).toEqual(['role.view']);
+    const off = toggleCell(row('Roles'), 'view', on, everything);
+    expect(off.cells.size + off.keys.size).toBe(0);
   });
-  it('ticking grants the least-privilege gate key (view before manage)', () => {
-    expect(activeKey(row('Roles').gate, everything)).toBe('role.view');
-    expect([...toggleActive(row('Roles').gate, new Set(), everything)]).toEqual(['role.view']);
+  it('Active grants the cell plus the least gate key so the screen renders; unticking keeps the keys', () => {
+    expect(activeKey(row('Roles').gate, everything.keys)).toBe('role.view');
+    const on = toggleCell(row('Roles'), 'active', none, everything);
+    expect([...on.cells]).toEqual(['access/roles:ACTIVE']);
+    expect([...on.keys]).toEqual(['role.view']);
+    const off = toggleCell(row('Roles'), 'active', on, everything);
+    expect([...off.cells]).toEqual([]);
+    expect([...off.keys]).toEqual(['role.view']);
   });
-  it('unticking revokes the whole gate so the screen no longer shows', () => {
-    const next = toggleActive(row('Roles').gate, new Set(['role.view', 'role.manage', 'user.manage']), everything);
-    expect([...next]).toEqual(['user.manage']);
+  it('Delete exists on every row even when no widget has a delete key (cell only)', () => {
+    const on = toggleCell(row('People'), 'delete', none, everything);
+    expect([...on.cells]).toEqual(['access/people:DELETE']);
   });
-  it('never grants or revokes a key the editor does not hold', () => {
-    expect([...toggleActive(row('Roles').gate, new Set(), new Set(['user.manage']))]).toEqual([]);
-    expect([...toggleActive(row('Roles').gate, new Set(['role.view']), new Set())]).toEqual(['role.view']);
+  it('never grants a cell or key the editor does not hold (no escalation)', () => {
+    const limited: Grantable = { keys: new Set(['role.view']), menu: { full: false, cells: new Set(['access/roles:VIEW']) } };
+    expect([...toggleCell(row('Roles'), 'update', none, limited).cells]).toEqual([]);
+    const v = toggleCell(row('Roles'), 'view', none, limited);
+    expect([...v.cells]).toEqual(['access/roles:VIEW']);
+    expect(toggleCell(row('Roles'), 'view', none, NOTHING_GRANTABLE)).toBe(none);
   });
-  it('names the screens that share a gate key (unticking one hides them too)', () => {
-    const l = published({ menus: [...published().menus, { id: 'more', label: 'More', screens: [
-      { id: 'roles2', label: 'Roles again', placedWidgets: [{ id: 'p9', widgetId: 'rbac.matrix', span: {} }] }] }] });
-    const mm = buildMatrix(l, defs, getWidget);
-    const r = mm.groups.flatMap((g) => g.rows).find((x) => x.label === 'Roles')!;
-    expect(sharedGateLinks(mm, r)).toEqual(['Roles again']);
+  it('row / group select-all: all on, then all off; locked cells never move', () => {
+    const all = toggleRows([row('Roles')], none, everything);
+    expect(checkState(rowCells(row('Roles')), all.cells)).toBe('all');
+    expect(toggleRows([row('Roles')], all, everything).cells.size).toBe(0);
+    const g = m.groups[0].rows;
+    const grp = toggleRows(g, none, everything);
+    expect(grp.cells.size).toBe(g.length * CELLS_PER_ROW);
+    const limited: Grantable = { keys: new Set(), menu: { full: false, cells: new Set([columnCell(row('Roles'), 'active')]) } };
+    expect([...toggleRows(g, none, limited).cells]).toEqual(['access/roles:ACTIVE']);
+  });
+  it('reports what changed against the role', () => {
+    expect(cellDiff(['a/b:VIEW', 'a/b:ACTIVE'], new Set(['a/b:VIEW', 'a/b:CREATE']))).toEqual({ added: ['a/b:CREATE'], removed: ['a/b:ACTIVE'] });
   });
 });
 
-describe('rbac.matrix · select-all', () => {
-  it('ticking a cell grants all its keys; unticking revokes them all', () => {
-    const cell = ['kyc.approve', 'kyc.reject'];
-    const held = new Set(cell);
-    const on = toggleAll(cell, new Set(), held);
-    expect([...on].sort()).toEqual(cell);
-    expect(checkState(cell, on)).toBe('all');
-    expect([...toggleAll(cell, on, held)]).toEqual([]);
+describe('rbac.matrix · Role Details', () => {
+  it('derives the role key from its name', () => {
+    expect(roleKeyOf('Teller Supervisor')).toBe('TELLER_SUPERVISOR');
+    expect(roleKeyOf('  KYC — approver  ')).toBe('KYC_APPROVER');
+    expect(roleKeyOf('2nd line')).toBe('R_2ND_LINE');
   });
-  it('never grants a key the editor does not hold (no escalation)', () => {
-    const next = toggleAll(['je.view', 'je.create', 'je.approve'], new Set(), new Set(['je.view', 'je.create']));
-    expect([...next].sort()).toEqual(['je.create', 'je.view']);
-    const off = toggleAll(['je.view', 'je.create', 'je.approve'], new Set(['je.view', 'je.create', 'je.approve']), new Set(['je.view', 'je.create']));
-    expect([...off]).toEqual(['je.approve']);
-  });
-  it('reports row state all / some / none', () => {
-    expect(checkState(['a', 'b'], new Set(['a', 'b']))).toBe('all');
-    expect(checkState(['a', 'b'], new Set(['a']))).toBe('some');
-    expect(checkState(['a', 'b'], new Set())).toBe('none');
+  it('requires branch and department only when the organization has some', () => {
+    const v = { name: 'Teller Supervisor', description: 'Supervises tellers', branchId: '', departmentId: '' };
+    expect(roleDetailsSchema({ branch: false, department: false }).safeParse(v).success).toBe(true);
+    const r = roleDetailsSchema({ branch: true, department: true }).safeParse(v);
+    expect(r.success).toBe(false);
+    expect(r.error!.issues.map((i) => i.path[0]).sort()).toEqual(['branchId', 'departmentId']);
+    expect(roleDetailsSchema({ branch: false, department: false }).safeParse({ ...v, description: ' ' }).success).toBe(false);
   });
 });

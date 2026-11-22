@@ -13,6 +13,9 @@
  * verifies once a session exists. No session, or a 401 (token expired/revoked), forces
  * re-authentication through the hosted IdP sign-in (FAPI2 error-UX map: "invalid token →
  * force re-authentication") — never a tamper verdict, and nothing renders in between.
+ *
+ * Then the person's menu access (the Permissions Matrix cells their roles hold on this portal):
+ * a submenu shows only with its ACTIVE cell. Unreadable access → no menu (fail closed).
  */
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -20,11 +23,13 @@ import { Navigate } from 'react-router-dom';
 import { apiGet } from '../shared/web-core/api';
 import { FullscreenSpinner } from '../shared/web-core/guards';
 import { useSession } from '../shared/web-core/session-core';
+import { MenuAccessUnavailable } from './MenuAccessUnavailable';
 import { NoMenuConfigured } from './NoMenuConfigured';
+import { fetchMenuAccess } from './menu-access';
 import { TamperedBoundary } from './TamperedBoundary';
 import { verifyDelivery } from './delivery';
 import type { Delivery } from './delivery';
-import { SignedLayoutCtx } from './signed-layout';
+import { MenuAccessCtx, SignedLayoutCtx } from './signed-layout';
 import { reasonLabel } from './verify';
 import type { SignedBundle } from './verify';
 
@@ -50,6 +55,13 @@ export function SignedMenuGate(props: SignedMenuGateProps): ReactNode {
     staleTime: 60_000,
     retry: 0, // money-grade rule (ui-std §7): zero auto-retries — the outcome is surfaced
   });
+  const access = useQuery({
+    queryKey: ['ui', 'menu-access', props.portal, session.user?.userId ?? null],
+    queryFn: () => fetchMenuAccess(props.portal),
+    enabled: authed && data?.kind === 'layout',
+    staleTime: 60_000,
+    retry: 1, // an idempotent read (ui-std §7)
+  });
 
   if (session.status === 'loading') return <FullscreenSpinner label="Restoring session" />;
   if (!authed || data?.kind === 'reauth') return <Navigate to="/login" replace />;
@@ -60,5 +72,12 @@ export function SignedMenuGate(props: SignedMenuGateProps): ReactNode {
   }
   // no published layout → no menu, said plainly (never a build-time fallback menu)
   if (data.kind === 'missing') return <NoMenuConfigured label={props.label} />;
-  return <SignedLayoutCtx.Provider value={data.layout}>{props.children}</SignedLayoutCtx.Provider>;
+  if (access.data?.kind === 'reauth') return <Navigate to="/login" replace />;
+  if (access.isError) return <MenuAccessUnavailable label={props.label} onRetry={() => void access.refetch()} />;
+  if (access.isPending || !access.data) return <FullscreenSpinner label="Loading your menu access" />;
+  return (
+    <SignedLayoutCtx.Provider value={data.layout}>
+      <MenuAccessCtx.Provider value={access.data.access}>{props.children}</MenuAccessCtx.Provider>
+    </SignedLayoutCtx.Provider>
+  );
 }

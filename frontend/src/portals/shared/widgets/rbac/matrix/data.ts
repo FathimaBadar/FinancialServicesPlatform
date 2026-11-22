@@ -1,7 +1,7 @@
 /** rbac.matrix data contributions — organization roles (core RoleAdminController). */
 import type { DataSources } from '../../core/sources';
 import type { FixtureSet, FixtureRequest } from '../../core/ports';
-import type { OrgPortalView, PermissionDef, RoleChange, RoleView } from './model';
+import type { OrgPortalView, OrgUnit, OrgUnitPage, PermissionDef, RoleChange, RoleView } from './model';
 import { forbidUnless } from '../../kit/forbid';
 import { ApiError } from '../../../web-core/api';
 
@@ -12,6 +12,11 @@ export const sources: DataSources = {
   'rbac.matrix.org': { '*': { method: 'GET', path: '/api/tenants/{tenantId}' } },
   /** that portal's SIGNED delivery bundle — verified in the browser before any row is drawn */
   'rbac.matrix.menu': { '*': { method: 'GET', path: '/api/ui/bundles/{portal}' } },
+  /** what the EDITOR holds on that portal's menu — only that can be granted (no escalation) */
+  'rbac.matrix.access': { '*': { method: 'GET', path: '/api/me/menu-access?portal={portal}' } },
+  /** Role Details selects: the org's ACTIVE units, server-sorted by name (AGENTS §2f) */
+  'rbac.matrix.branches': { '*': { method: 'GET', path: '/api/tenants/{tenantId}/branches?status=ACTIVE&size=100&sort=name,asc' } },
+  'rbac.matrix.departments': { '*': { method: 'GET', path: '/api/tenants/{tenantId}/departments?status=ACTIVE&size=100&sort=name,asc' } },
 };
 
 export const commands: DataSources = {
@@ -53,6 +58,18 @@ const publishedLayout = (portal: string) => ({
     .map(([id, version]) => ({ id, version, bundle: 'fixture', bundleHash: 'sha256:fixture', requires: [] })),
 });
 
+const unitPage = (items: OrgUnit[]): OrgUnitPage => ({
+  items, page: 0, size: 100, totalElements: items.length, totalPages: 1, hasNext: false, sort: 'name,asc',
+});
+const BRANCHES: OrgUnit[] = [
+  { id: '00000000-0000-0000-0000-0000000000b1', code: 'HO', name: 'Head Office', status: 'ACTIVE' },
+  { id: '00000000-0000-0000-0000-0000000000b2', code: 'WHK', name: 'Windhoek Central', status: 'ACTIVE' },
+];
+const DEPARTMENTS: OrgUnit[] = [
+  { id: '00000000-0000-0000-0000-0000000000c1', code: 'FIN', name: 'Finance', status: 'ACTIVE' },
+  { id: '00000000-0000-0000-0000-0000000000c2', code: 'OPS', name: 'Operations', status: 'ACTIVE' },
+];
+
 const noLayout = (): never => {
   throw new ApiError({ status: 404, code: 'UI_BUNDLE_NOT_FOUND', title: 'Not found', detail: 'No signed bundle for this portal' });
 };
@@ -72,6 +89,14 @@ let roles: RoleView[] = [
     protectedRole: false,
     pendingApprovalId: null,
     pendingOperation: null,
+    description: 'Raises journal entries for the books',
+    branchId: BRANCHES[0].id,
+    branchName: BRANCHES[0].name,
+    departmentId: DEPARTMENTS[0].id,
+    departmentName: DEPARTMENTS[0].name,
+    portal: 'manufacturer',
+    menuCells: ['books/journal:ACTIVE', 'books/journal:CREATE', 'books/journal:VIEW'],
+    fullMenu: false,
   },
   {
     id: '00000000-0000-0000-0000-0000000000d4',
@@ -86,6 +111,14 @@ let roles: RoleView[] = [
     protectedRole: true,
     pendingApprovalId: null,
     pendingOperation: null,
+    description: 'Runs the organization',
+    branchId: null,
+    branchName: null,
+    departmentId: null,
+    departmentName: null,
+    portal: null,
+    menuCells: [],
+    fullMenu: true,
   },
 ];
 
@@ -116,11 +149,37 @@ export const fixtures: FixtureSet = {
     empty: noLayout,
     error: null,
   },
+  /** the fixture editor is the org's admin: the whole menu */
+  'rbac.matrix.access': {
+    default: (req: FixtureRequest) => ({ portal: req.params.portal ?? '', full: true, cells: [] }),
+    error: null,
+  },
+  'rbac.matrix.branches': {
+    default: (req: FixtureRequest) => {
+      forbidUnless(req.permissions, 'role.view');
+      return unitPage(BRANCHES);
+    },
+    empty: unitPage([]),
+    error: null,
+  },
+  'rbac.matrix.departments': {
+    default: (req: FixtureRequest) => {
+      forbidUnless(req.permissions, 'role.view');
+      return unitPage(DEPARTMENTS);
+    },
+    empty: unitPage([]),
+    error: null,
+  },
   'rbac.matrix.create': {
     default: (req: FixtureRequest): RoleChange => {
       forbidUnless(req.permissions, 'role.manage');
-      const b = req.body as { key?: string; name?: string };
+      const b = req.body as {
+        key?: string; name?: string; description?: string; branchId?: string | null; departmentId?: string | null;
+        permissionKeys?: string[]; menuCells?: string[];
+      };
       const v = roles.length + 1;
+      const branch = BRANCHES.find((u) => u.id === b.branchId);
+      const dept = DEPARTMENTS.find((u) => u.id === b.departmentId);
       roles = [...roles, {
         id: `00000000-0000-0000-0000-0000000000e${v}`,
         tenantId: ROLES_ORG,
@@ -128,12 +187,20 @@ export const fixtures: FixtureSet = {
         name: b.name ?? 'New role',
         scope: 'TENANT',
         status: 'PENDING_CREATE',
-        permissionKeys: [],
+        permissionKeys: b.permissionKeys ?? [],
         version: 1,
         assignedCount: 0,
         protectedRole: false,
         pendingApprovalId: `00000000-0000-0000-0000-0000000000e${v}`,
         pendingOperation: 'CREATE',
+        description: b.description ?? null,
+        branchId: branch?.id ?? null,
+        branchName: branch?.name ?? null,
+        departmentId: dept?.id ?? null,
+        departmentName: dept?.name ?? null,
+        portal: 'manufacturer',
+        menuCells: b.menuCells ?? [],
+        fullMenu: false,
       }];
       return change(`00000000-0000-0000-0000-0000000000e${v}`, 'CREATE');
     },

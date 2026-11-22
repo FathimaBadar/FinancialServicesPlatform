@@ -14,7 +14,7 @@ import { StatePanel } from '../../kit/StatePanel';
 import { isForbidden, toProblem } from '../../kit/problem';
 import { RoleForm } from './RoleForm';
 import { RoleTable } from './RoleTable';
-import { useCatalog, usePublishedMenu, useRoleCommand, useRoles } from './model';
+import { useCatalog, useEditorMenuAccess, useOrgUnits, usePublishedMenu, useRoleCommand, useRoles } from './model';
 import type { RoleCommand } from './model';
 
 const NEW = 'new';
@@ -34,6 +34,9 @@ export function RbacMatrix({ mode }: WidgetRuntimeProps) {
   // admin console for the platform's own roles, the org's sub-type portal for a tenant's — also
   // when acting as one, since orgId is then the target) — never the coded menu registry
   const menu = usePublishedMenu(port, orgId, mode);
+  const editorAccess = useEditorMenuAccess(port, menu.kind === 'ready' ? menu.portal : null);
+  const branches = useOrgUnits(port, orgId, 'branches');
+  const departments = useOrgUnits(port, orgId, 'departments');
 
   const list = roles.data ?? [];
   const view = params.get('role');
@@ -76,22 +79,25 @@ export function RbacMatrix({ mode }: WidgetRuntimeProps) {
           key={formRole?.id ?? NEW}
           role={formRole}
           menu={menu}
+          editorAccess={editorAccess.data ?? null}
           catalog={catalog.data ?? []}
+          branches={{ page: branches.data ?? null, error: branches.isError ? toProblem(branches.error).message : null }}
+          departments={{ page: departments.data ?? null, error: departments.isError ? toProblem(departments.error).message : null }}
           held={held}
           canManage={canManage}
           busy={cmd.isPending}
           problem={cmd.isError ? toProblem(cmd.error).message : null}
           onCancel={() => open(null)}
-          onCreate={(v, keys) => run({ kind: 'create', key: v.key, name: v.name, permissionKeys: keys }, `Role ${v.key} requested.`)}
-          onRequestChange={(keys) => formRole && run({ kind: 'update', role: formRole, permissionKeys: keys }, 'Change requested.')}
-          onRequestDelete={() => formRole && run({ kind: 'delete', role: formRole }, `Deletion of ${formRole.key} requested.`)}
+          onCreate={(key, details, grants) => run({ kind: 'create', key, details, grants }, `Role ${details.name} requested.`)}
+          onRequestChange={(details, grants) => formRole && run({ kind: 'update', role: formRole, details, grants }, 'Change requested.')}
+          onRequestDelete={() => formRole && run({ kind: 'delete', role: formRole }, `Deletion of ${formRole.name} requested.`)}
         />
       ) : (
         <div className="mx-auto max-w-5xl">
           <PageHeader
             title="Roles"
             subtitle="Manage system roles and access levels. Changes are four-eyes: you request, a checker approves."
-            actions={canManage ? <Button variant="primary" data-action="role.create" onClick={() => open(NEW)}>+ Create Role</Button> : undefined}
+            actions={canManage ? <Button variant="primary" data-action="role.create" onClick={() => open(NEW)}>+ Add Role</Button> : undefined}
           />
           {view && view !== NEW && <div className="mb-3"><StatePanel kind="empty" title="That role no longer exists" /></div>}
           {list.length ? <RoleTable roles={list} canManage={canManage} onOpen={open} /> : <StatePanel kind="empty" title="No roles yet" />}

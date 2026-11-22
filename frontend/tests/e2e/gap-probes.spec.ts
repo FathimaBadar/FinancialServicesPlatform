@@ -94,7 +94,8 @@ test('GAP-1c · roles API: a role change is four-eyes, maker cannot approve, che
 
   // escalation guard: proposing a key the maker does not hold is refused
   const esc = await api<{ code: string }>(mfrAdmin, 'POST', `/tenants/${psp.tenantId}/roles`, {
-    key: `ESCALATE_${suffix().toUpperCase()}`, name: 'Escalation probe', permissionKeys: ['platform.bootstrap'],
+    key: `ESCALATE_${suffix().toUpperCase()}`, name: 'Escalation probe', description: 'Escalation probe',
+    permissionKeys: ['platform.bootstrap'],
   });
   expect(esc.status).toBe(403);
   expect(esc.json.code).toBe('ROLE_NOT_ASSIGNABLE');

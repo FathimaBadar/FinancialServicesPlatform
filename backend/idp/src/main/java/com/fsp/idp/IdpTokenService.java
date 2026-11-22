@@ -43,12 +43,14 @@ public class IdpTokenService {
     private final JdbcTemplate jdbc;
     private final BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
     private final JwtService jwt;
+
+    private final LoginThrottle throttle;
     private final long ttlSeconds;
     private final IdpProperties props;
 
     public IdpTokenService(PPersonRepository persons, PTenantRepository tenants,
                            IdpConfigRepository configs, IdpAuthService auth, JdbcTemplate jdbc,
-                           IdpProperties props) {
+                           IdpProperties props, LoginThrottle throttle) {
         this.persons = persons;
         this.tenants = tenants;
         this.configs = configs;
@@ -56,6 +58,7 @@ public class IdpTokenService {
         this.jdbc = jdbc;
         this.ttlSeconds = props.getAccessTokenTtlSeconds();
         this.props = props;
+        this.throttle = throttle;
         this.jwt = new JwtService(resolveSigningKey(props.getSigningKeyPath()), props.getIssuer());
         if (!jwt.canSign()) {
             throw new IllegalStateException("idp_signing_key_missing run 'make pki' (idp-signing.pem)");
@@ -79,16 +82,20 @@ public class IdpTokenService {
         }
 
         PPerson person = persons.findByUsername(grant.username()).orElse(null);
+        throttle.check(grant.username());
         if (person == null || !bcrypt.matches(grant.password(), person.passwordHash)) {
+            throttle.failure(grant.username());
             log.warn("idp_login_failed username={} reason=invalid_credentials", grant.username());
             throw new IdpProblemException(new IdpDtos.IdpProblem(
                 "INVALID_CREDENTIALS", "Invalid username or password", 401));
         }
+        // status gates first — the throttle only clears on FULL sign-in success
         if (!"ACTIVE".equals(person.status)) {
             log.warn("idp_login_failed username={} reason=person_inactive", grant.username());
             throw new IdpProblemException(new IdpDtos.IdpProblem(
                 "PERSON_INACTIVE", "Account is not active", 403));
         }
+        throttle.success(grant.username());
         // F-8: persons born with the bootstrap password must set their own at first
         // sign-in — the hosted surface (authorize callback) intercepts this code and
         // renders the change page; a direct token grant simply gets the 403.

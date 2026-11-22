@@ -17,6 +17,8 @@ spring:
 
 fsp:
   psp:
+    # per-target secret — PSP's own inbound credential (red-team P0 fix, fail-closed)
+    internal-credential: ${FSP_INTERNAL_CREDENTIAL_PSP:}
     tigerbeetle:
       addresses: ${FSP_TB_ADDRESSES:127.0.0.1:3000}
       cluster-id: ${FSP_PSP_TB_CLUSTER_ID:0}

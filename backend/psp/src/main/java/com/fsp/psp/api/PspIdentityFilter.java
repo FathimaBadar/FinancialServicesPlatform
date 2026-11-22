@@ -50,6 +50,11 @@ public class PspIdentityFilter extends OncePerRequestFilter {
     }
 
     private void requireCredential(HttpServletRequest request) {
+        // Fail-closed: an unconfigured credential closes the internal plane.
+        if (credential == null || credential.isBlank()) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "INTERNAL_PLANE_CLOSED",
+                "internal credential not configured");
+        }
         String given = request.getHeader("X-FSP-Internal-Credential");
         if (given == null || !constantTimeEquals(given, credential)) {
             // no log of the presented value — only that the hop failed provenance

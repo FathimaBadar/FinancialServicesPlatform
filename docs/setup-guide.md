@@ -250,7 +250,19 @@ flowchart LR
 | kyc plugin | `cd backend/plugins/kyc && ../../gradlew bootRun` | `..\..\gradlew.bat bootRun` |
 
 One terminal per service. Each terminal wants the same env so defaults work:
-`FSP_BOOTSTRAP_PASSWORD=fsp-admin` (dev-only default), `FSP_INTERNAL_CREDENTIAL=dev-internal-credential`.
+`FSP_BOOTSTRAP_PASSWORD=fsp-admin` (dev-only default). The internal hop uses **per-target
+credentials** (no shared god-key — red-team hardening): generate one secret per service
+(`openssl rand -hex 24`) and set the matching env when booting each side of a hop:
+
+| Env variable | Holds the inbound secret of | Who must carry it outbound |
+|---|---|---|
+| `FSP_INTERNAL_CREDENTIAL` | core | gateway + recon-worker (as `FSP_INTERNAL_CREDENTIAL_CORE`) |
+| `FSP_INTERNAL_CREDENTIAL_EMI` | emi | core (core→EMI money hop), gateway (`/v1/emi/**`), recon-worker |
+| `FSP_INTERNAL_CREDENTIAL_PSP` | psp | gateway (`/v1/psp/**`), recon-worker |
+| `FSP_INTERNAL_CREDENTIAL_IDP` | idp | gateway (`/idp/policy/**` hop) |
+
+If a service's variable is unset, its internal plane is **fail-closed** (`INTERNAL_PLANE_CLOSED`
+/ 401) — never open.
 
 ### 5.1 Who you can log in as — **default dev credentials**
 
@@ -296,7 +308,7 @@ are initialized with `fsp.security.default-person-password` — env
 | What | Default | Where set |
 |---|---|---|
 | Postgres user / password | `fsp` / `fsp` (plugin container DB: `fsp_plugin_kyc` / `fsp_plugin_kyc`) | `infrastructure/docker-compose.yml` |
-| Internal hop credential | `dev-internal-credential` | env `FSP_INTERNAL_CREDENTIAL` (gateway + core + idp + bff must match) |
+| Internal hop credentials (per target) | none — must be injected | `FSP_INTERNAL_CREDENTIAL` (core), `FSP_INTERNAL_CREDENTIAL_EMI`, `FSP_INTERNAL_CREDENTIAL_PSP`, `FSP_INTERNAL_CREDENTIAL_IDP`; callers carry the matching per-target secret (table §5). Unset = fail-closed |
 | TLS identity password | `fsp-dev` | env `FSP_TLS_PASSWORD` (`make pki`) |
 | IdP key pin | — | signing key is a mounted file, not a password |
 
@@ -481,14 +493,14 @@ Each row: symptom → root cause → fix. Rung references point to §7's ladder.
 | Symptom | Cause → Fix |
 |---|---|
 | gateway fails boot: "catalog unreachable" | core not up yet / wrong `FSP_CORE_URL` → start order §5; gateway retries then exits — restart it after core is green |
-| emi `/v1/emi/**` answers 401 `UNTRUSTED Origin` | the request did not pass the gateway (direct-to-8086 access) or `FSP_INTERNAL_CREDENTIAL` differs between gateway and emi — both must share the internal hop credential |
+| emi `/v1/emi/**` answers 401 `UNTRUSTED Origin` | the request did not pass the gateway (direct-to-8086 access) or the gateway's `FSP_INTERNAL_CREDENTIAL_EMI` differs from emi's env of the same name (per-target credential, §5) |
 | emi `/v1/emi/**` answers 403 `ACTOR_TYPE_REJECTED` | a client-credential (machine) token was used — EMI self-service ops are person-plane only |
 | gateway: `404 ROUTE_NOT_IN_CATALOG` on a route you *just added* | new `@FspOperation` not yet in the descriptor the gateway watches → restart core (boot gate re-inventories); gateway refreshes within 60 s |
 | `401 IDEMPOTENCY_KEY_REQUIRED` on a POST from curl | every `/v1` mutation needs the header (AGENTS §2e) → add e.g. `-H 'Idempotency-Key: 55b1…-v4'`; BFF forwards SPA's key automatically |
 | `403 MAKER_CANNOT_APPROVE` approving your own JE | **that's the invariant working** (four-eyes) → use a second admin; in UI it renders an explicit blocked state |
 | `409 IDEMPOTENCY_IN_PROGRESS` | same key re-sent while original pending → wait 1 s (Retry-After) or send a fresh key |
 | login fails `NO_SESSION` at BFF | CSRF missing on POST → call `GET /bff/csrf` first, send `XSRF-TOKEN` cookie + matching header |
-| IdP logs `bad internal credential` | `FSP_INTERNAL_CREDENTIAL` differs between callers → same value for gateway/core/idp (`dev-internal-credential` default) |
+| IdP logs `bad internal credential` | the gateway's `FSP_INTERNAL_CREDENTIAL_IDP` differs from the IdP's env of the same name (per-target credential, §5) |
 | gateway logs `token verification failed` | clock skew / wrong issuer → check `FSP_IDP_ISSUER` identical on idp+gateway (default `https://idp.fsp.local`) |
 
 ### 11.6 Frontend (L8)

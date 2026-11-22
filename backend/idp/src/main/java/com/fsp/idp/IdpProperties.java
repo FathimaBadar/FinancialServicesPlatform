@@ -7,7 +7,9 @@ public final class IdpProperties {
     private String issuer = "https://idp.fsp.local";
     private long accessTokenTtlSeconds = 900;
     private String signingKeyPath = "../infrastructure/pki/dev/idp-signing.pem";
-    private String internalCredential = "dev-internal-credential";
+    // Red-team P0 fix: NO in-code default — deny-all until the operator injects the secret
+    // via env (FSP_INTERNAL_CREDENTIAL_IDP); only the gateway's /idp/policy hop uses it.
+    private String internalCredential = "";
     /** Portal origin the reset mail points at (V30 auth-plane); SPA hosts the reset form. */
     private String resetUrlBase = "http://localhost:5173";
 

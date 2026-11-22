@@ -13,7 +13,9 @@ public class PspProperties {
     private TigerBeetle tigerbeetle = new TigerBeetle();
     private Settlement settlement = new Settlement();
     private Acquire acquire = new Acquire();
-    private String internalCredential = "dev-internal-credential";
+    // Red-team P0 fix: NO in-code default — deny-all until the operator injects the secret
+    // via env (FSP_INTERNAL_CREDENTIAL_PSP).
+    private String internalCredential = "";
     private Outbox outbox = new Outbox();
 
     public TigerBeetle getTigerbeetle() { return tigerbeetle; }

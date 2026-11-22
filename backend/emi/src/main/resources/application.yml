@@ -22,7 +22,7 @@ fsp:
     # The one disposition knob (plan §5.3): every saga deadline derives from this.
     saga-grace-seconds: ${FSP_EMI_SAGA_GRACE_SECONDS:3024000}  # 35 d default
     # Zero-trust hop: only requests carrying this credential (gateway re-issues it) are trusted.
-    internal-credential: ${FSP_INTERNAL_CREDENTIAL:dev-internal-credential}
+    internal-credential: ${FSP_INTERNAL_CREDENTIAL_EMI:}
     # TTL disposition sweeper cadence (Stage 3): expired HOLDs auto-void, expired SUBMITTED
     # sagas park in PENDING_RECOGNITION, VOID_UNKNOWN rows retry, PR sagas self-probe.
     saga:

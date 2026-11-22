@@ -12,8 +12,12 @@ public class ReconProperties {
     private String emiBaseUrl = "http://localhost:8086";
     private String pspBaseUrl = "http://localhost:8085";
     private String coreBaseUrl = "http://localhost:8081";
-    /** Internal-hop credential (must match the services' expected credential; §1.4). */
-    private String internalCredential = "dev-internal-credential";
+    /** Per-target internal-hop credentials (red-team P0 fix: no shared god-key; the worker
+     *  carries each book-owner service's own secret; unset = plane closed, job logs probe
+     *  failures and pages nothing). */
+    private String coreInternalCredential = "";
+    private String pspInternalCredential = "";
+    private String emiInternalCredential = "";
     /** Tenant the recon worker acts under (platform root). */
     private String platformTenantId = "00000000-0000-0000-0000-000000000001";
     /** P0 dedupe window: the same violation key pages at most once per window. */
@@ -27,8 +31,12 @@ public class ReconProperties {
     public void setPspBaseUrl(String v) { this.pspBaseUrl = v; }
     public String getCoreBaseUrl() { return coreBaseUrl; }
     public void setCoreBaseUrl(String v) { this.coreBaseUrl = v; }
-    public String getInternalCredential() { return internalCredential; }
-    public void setInternalCredential(String v) { this.internalCredential = v; }
+    public String getCoreInternalCredential() { return coreInternalCredential; }
+    public void setCoreInternalCredential(String v) { this.coreInternalCredential = v; }
+    public String getPspInternalCredential() { return pspInternalCredential; }
+    public void setPspInternalCredential(String v) { this.pspInternalCredential = v; }
+    public String getEmiInternalCredential() { return emiInternalCredential; }
+    public void setEmiInternalCredential(String v) { this.emiInternalCredential = v; }
     public String getPlatformTenantId() { return platformTenantId; }
     public void setPlatformTenantId(String v) { this.platformTenantId = v; }
     public Duration getPageDedup() { return pageDedup; }

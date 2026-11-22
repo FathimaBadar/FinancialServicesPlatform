@@ -22,13 +22,13 @@ public class ReconGateway {
         this.props = props;
     }
 
-    private RestClient clientFor(String baseUrl) {
+    private RestClient clientFor(String baseUrl, String credential) {
         SimpleClientHttpRequestFactory f = new SimpleClientHttpRequestFactory();
         f.setConnectTimeout((int) Duration.ofSeconds(2).toMillis());
         f.setReadTimeout((int) Duration.ofSeconds(8).toMillis());
         return RestClient.builder().baseUrl(baseUrl)
             .requestFactory(f)
-            .defaultHeader("X-FSP-Internal-Credential", props.getInternalCredential())
+            .defaultHeader("X-FSP-Internal-Credential", credential == null ? "" : credential)
             .build();
     }
 
@@ -36,7 +36,7 @@ public class ReconGateway {
     public java.util.Optional<ReconFeeds.PspSnapshot> fetchPspSnapshot() {
         try {
             return java.util.Optional.ofNullable(
-                clientFor(props.getPspBaseUrl()).get()
+                clientFor(props.getPspBaseUrl(), props.getPspInternalCredential()).get()
                     .uri("/internal/recon/snapshot")
                     .retrieve().body(ReconFeeds.PspSnapshot.class));
         } catch (Exception e) {
@@ -48,7 +48,7 @@ public class ReconGateway {
     public java.util.Optional<ReconFeeds.EmiSnapshot> fetchEmiSnapshot() {
         try {
             return java.util.Optional.ofNullable(
-                clientFor(props.getEmiBaseUrl()).get()
+                clientFor(props.getEmiBaseUrl(), props.getEmiInternalCredential()).get()
                     .uri("/internal/recon/snapshot")
                     .retrieve().body(ReconFeeds.EmiSnapshot.class));
         } catch (Exception e) {
@@ -63,7 +63,7 @@ public class ReconGateway {
      */
     public boolean page(String invariant, String severity, String detail) {
         try {
-            clientFor(props.getCoreBaseUrl()).post()
+            clientFor(props.getCoreBaseUrl(), props.getCoreInternalCredential()).post()
                 .uri("/v1/recon/pages")
                 .header("X-FSP-Actor-Type", "MACHINE")
                 .header("X-FSP-Client-Id", "recon-worker")

@@ -26,6 +26,12 @@ public class BffProperties {
     public String getLoginRedirectUri() { return loginRedirectUri; }
     public void setLoginRedirectUri(String v) { this.loginRedirectUri = v; }
 
+    /** Red-team P1 fix: browser origins allowed to make state-changing BFF calls. */
+    private String allowedOrigins = "http://localhost:5173,http://127.0.0.1:5173";
+
+    public String getAllowedOrigins() { return allowedOrigins; }
+    public void setAllowedOrigins(String v) { this.allowedOrigins = v; }
+
     /** Single upstream: the API gateway routes /idp/** to the IdP and /v1/** to core. */
     public static class Gateway {
         private String baseUrl = "http://localhost:8090";

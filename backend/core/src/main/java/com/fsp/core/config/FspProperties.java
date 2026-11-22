@@ -22,11 +22,25 @@ public class FspProperties {
     public Sms getSms() { return sms; }
 
     public static class Security {
-        private String internalCredential = "dev-internal-credential";
-        private String defaultPersonPassword = "fsp-person-2026";
+        // Red-team P0 fix: NO in-code default. The internal hop is closed (deny-all) until the
+        // operator injects this service's secret via env (FSP_INTERNAL_CREDENTIAL for core).
+        // Callers (gateway, recon-worker) each carry a per-target secret; see AGENTS §1.4.
+        private String internalCredential = "";
+        /** Outbound hop core→EMI carries EMI's secret (per-target credentials). */
+        private String emiInternalCredential = "";
 
         public String getInternalCredential() { return internalCredential; }
         public void setInternalCredential(String v) { this.internalCredential = v; }
+        public String getEmiInternalCredential() { return emiInternalCredential; }
+        public void setEmiInternalCredential(String v) { this.emiInternalCredential = v; }
+        private String defaultPersonPassword = "fsp-person-2026";
+        /** Red-team P1 fix: machine-plane allowlist for the recon paging op — a forged
+         *  unregistered client id must never fire platform pages. */
+        private String reconPageAllowedClients = "recon-worker";
+
+        public String getReconPageAllowedClients() { return reconPageAllowedClients; }
+        public void setReconPageAllowedClients(String v) { this.reconPageAllowedClients = v; }
+
         public String getDefaultPersonPassword() { return defaultPersonPassword; }
         public void setDefaultPersonPassword(String v) { this.defaultPersonPassword = v; }
     }

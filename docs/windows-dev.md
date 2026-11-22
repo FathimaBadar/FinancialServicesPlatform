@@ -349,7 +349,10 @@ Only when you deviate from defaults:
 
 ```powershell
 $env:FSP_BOOTSTRAP_PASSWORD      = 'fsp-admin'       # core seed admin (dev only!)
-$env:FSP_INTERNAL_CREDENTIAL     = 'dev-internal-credential'
+$env:FSP_INTERNAL_CREDENTIAL     = '<generated: core inbound>'
+$env:FSP_INTERNAL_CREDENTIAL_EMI  = '<generated>'   # core/gateway/recon carry emi's secret
+$env:FSP_INTERNAL_CREDENTIAL_PSP  = '<generated>'   # gateway/recon carry psp's secret
+$env:FSP_INTERNAL_CREDENTIAL_IDP  = '<generated>'   # gateway carries idp's secret
 $env:FSP_PERSON_PASSWORD         = 'fsp-person-2026' # created-via-API persons
 $env:FSP_IDP_ISSUER              = 'https://idp.fsp.local'
 $env:FSP_TLS_PASSWORD            = 'fsp-dev'

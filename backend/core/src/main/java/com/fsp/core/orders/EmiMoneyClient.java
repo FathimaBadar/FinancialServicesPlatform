@@ -33,7 +33,7 @@ public class EmiMoneyClient {
     private final String internalCredential;
 
     public EmiMoneyClient(@Value("${fsp.orders.emi-base-url}") String emiBaseUrl,
-                          @Value("${fsp.security.internal-credential}") String internalCredential) {
+                          @Value("${fsp.security.emi-internal-credential}") String internalCredential) {
         this.base = emiBaseUrl;
         this.internalCredential = internalCredential;
         this.rest = RestClient.create();

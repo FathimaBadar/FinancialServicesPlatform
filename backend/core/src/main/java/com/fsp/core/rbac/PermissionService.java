@@ -101,7 +101,11 @@ public class PermissionService {
             if (part.isBlank()) continue;
             try { chain.add(UUID.fromString(part)); } catch (IllegalArgumentException ignored) {}
         }
-        chain.add(actor.activeTenantId());
+        // Security: the actor's OWN tenant must NOT qualify as target-ancestor reachability
+        // (red-team round 1/3: injecting activeTenantId let any role-holder escape to unrelated
+        // tenant trees — user.manage/role.manage effectively global). Reachability is target-tree
+        // membership only: platform-scope roles at the root reach every org by construction,
+        // subtree roles reach descendants, tenant roles reach that tenant only.
         return chain;
     }
 

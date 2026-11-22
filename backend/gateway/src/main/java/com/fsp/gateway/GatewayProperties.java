@@ -12,7 +12,21 @@ public final class GatewayProperties {
     private String pspBaseUrl = "http://localhost:8085";
     private String issuer = "https://idp.fsp.local";
     private String audience = "fsp-financial-api";
-    private String internalCredential = "dev-internal-credential";
+    /** Outbound hop to core only — red-team P0 fix: per-target secrets (this is core's),
+     *  NO in-code default; unset = gateway cannot open the internal plane. */
+    private String internalCredential = "";
+    /** Outbound hops to the book-owner services (per-target credentials, red-team P0 fix). */
+    private String emiInternalCredential = "";
+    private String pspInternalCredential = "";
+    /** Outbound hop to the IdP policy surface. */
+    private String idpInternalCredential = "";
+
+    public String getEmiInternalCredential() { return emiInternalCredential; }
+    public void setEmiInternalCredential(String v) { this.emiInternalCredential = v; }
+    public String getPspInternalCredential() { return pspInternalCredential; }
+    public void setPspInternalCredential(String v) { this.pspInternalCredential = v; }
+    public String getIdpInternalCredential() { return idpInternalCredential; }
+    public void setIdpInternalCredential(String v) { this.idpInternalCredential = v; }
     private int catalogRefreshSeconds = 60;
     private long maxBodyBytes = 1048576;
     /** PKCS#8 PEM with the P-256 key that signs actor assertions (dev: created on first boot). */

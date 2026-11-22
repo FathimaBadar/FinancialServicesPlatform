@@ -11,7 +11,10 @@ fsp:
     emi-base-url: ${FSP_EMI_URL:http://localhost:8086}
     psp-base-url: ${FSP_PSP_URL:http://localhost:8085}
     core-base-url: ${FSP_CORE_URL:http://localhost:8081}
-    internal-credential: ${FSP_INTERNAL_CREDENTIAL:dev-internal-credential}
+    # per-target credentials (red-team P0 fix): each book-owner service has its own secret
+    core-internal-credential: ${FSP_INTERNAL_CREDENTIAL_CORE:}
+    psp-internal-credential: ${FSP_INTERNAL_CREDENTIAL_PSP:}
+    emi-internal-credential: ${FSP_INTERNAL_CREDENTIAL_EMI:}
     platform-tenant-id: ${FSP_RECON_TENANT_ID:00000000-0000-0000-0000-000000000001}
     # P0 dedupe: the same violation key is paged at most once per window.
     page-dedup-minutes: ${FSP_RECON_DEDUP_MIN:1440}

@@ -205,7 +205,9 @@ public class ForwardFilterConfig {
                             "platform-service operations are person-only");
                         return;
                     }
-                    upstream.set("X-FSP-Internal-Credential", props.getInternalCredential());
+                    // Red-team P0 fix: per-target hop credentials — each upstream gets ITS OWN
+                    // secret (core/EMI/PSP); the gateway holds only its own view of each.
+                    upstream.set("X-FSP-Internal-Credential", targetCredential(serviceOp));
                     upstream.set("X-FSP-Tenant-Id", claims.tenantId());
                     upstream.set("X-FSP-Client-Id", claims.clientId());
                     if (machine) {
@@ -245,7 +247,7 @@ public class ForwardFilterConfig {
                         upstream.set("DPoP", dpopHeader);
                     }
                 } else if (path.startsWith("/idp/policy")) {
-                    upstream.set("X-FSP-Internal-Credential", props.getInternalCredential());
+                    upstream.set("X-FSP-Internal-Credential", props.getIdpInternalCredential());
                     String bearerUser = bearerUserId(authorization);
                     if (bearerUser != null) {
                         upstream.set("X-FSP-User-Id", bearerUser);
@@ -736,6 +738,17 @@ public class ForwardFilterConfig {
             int end = path.indexOf('/', start);
             if (end < 0) end = path.length();
             return path.substring(start, end);
+        }
+
+        /** Per-target internal-hop credential (red-team P0 fix): the gateway never holds one
+         *  god-key — core ops stamp core's secret, EMI ops EMI's, PSP ops PSP's; unknown
+         *  upstreams get the core secret (they are core-routed by construction). */
+        private String targetCredential(java.util.Optional<CatalogRouteTable.ServiceOp> serviceOp) {
+            return serviceOp.map(op -> switch (op.component()) {
+                case "emi" -> props.getEmiInternalCredential();
+                case "psp" -> props.getPspInternalCredential();
+                default -> props.getInternalCredential();
+            }).orElse(props.getInternalCredential());
         }
     }
 }

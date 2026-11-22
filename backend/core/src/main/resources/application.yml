@@ -28,7 +28,9 @@ server:
 
 fsp:
   security:
-    internal-credential: ${FSP_INTERNAL_CREDENTIAL:dev-internal-credential}
+    internal-credential: ${FSP_INTERNAL_CREDENTIAL:}
+    # Outbound hop core→EMI carries EMI's secret (per-target credentials, red-team P0 fix)
+    emi-internal-credential: ${FSP_INTERNAL_CREDENTIAL_EMI:}
     default-person-password: ${FSP_PERSON_PASSWORD:fsp-person-2026}
   tigerbeetle:
     cluster-id: 0

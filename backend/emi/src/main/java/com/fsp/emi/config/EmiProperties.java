@@ -15,7 +15,9 @@ public class EmiProperties {
     /** The one disposition knob (plan §5.3) — every saga deadline derives from this. */
     private long sagaGraceSeconds = 3024000; // 35 d
     /** Shared internal hop credential — proves a request came from the gateway (AGENTS §1.4). */
-    private String internalCredential = "dev-internal-credential";
+    // Red-team P0 fix: NO in-code default — deny-all until the operator injects the secret
+    // via env (FSP_INTERNAL_CREDENTIAL_EMI).
+    private String internalCredential = "";
 
     public TigerBeetle getTigerBeetle() { return tigerbeetle; }
     public Caps getCaps() { return caps; }

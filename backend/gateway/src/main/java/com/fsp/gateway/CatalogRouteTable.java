@@ -222,18 +222,20 @@ public class CatalogRouteTable {
      */
     private void refreshServiceOps() {
         List<ServiceOp> merged = new java.util.ArrayList<>();
-        merged.addAll(fetchServiceOps("emi", props.getEmiBaseUrl(), "/v1/emi/", "gateway_emi"));
-        merged.addAll(fetchServiceOps("psp", props.getPspBaseUrl(), "/v1/psp/", "gateway_psp"));
+        merged.addAll(fetchServiceOps("emi", props.getEmiBaseUrl(), "/v1/emi/", "gateway_emi",
+            props.getEmiInternalCredential()));
+        merged.addAll(fetchServiceOps("psp", props.getPspBaseUrl(), "/v1/psp/", "gateway_psp",
+            props.getPspInternalCredential()));
         serviceOps.clear();
         serviceOps.addAll(merged);
     }
 
     private List<ServiceOp> fetchServiceOps(String component, String baseUrl,
-                                            String namespace, String logPrefix) {
+                                            String namespace, String logPrefix, String credential) {
         try {
             ResponseEntity<String> res = rest.method(HttpMethod.GET)
                 .uri(baseUrl + "/internal/ops/catalog")
-                .header("X-FSP-Internal-Credential", props.getInternalCredential())
+                .header("X-FSP-Internal-Credential", credential)
                 .retrieve().toEntity(String.class);
             if (!res.getStatusCode().is2xxSuccessful() || res.getBody() == null) {
                 log.warn(logPrefix + "_catalog_fetch_failed status={}", res.getStatusCode().value());

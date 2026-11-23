@@ -10,7 +10,7 @@ import { OrgBranches } from './widget';
 
 const orgBranchesWidget = defineWidget({
   id: 'org.branches',
-  version: '1.0.0',
+  version: '1.0.1',
   label: 'Branches',
   description: 'Create, rename and delete the branches of an organization — each change is approved by a second person. Lists who created and who approved every branch.',
   category: 'Access',

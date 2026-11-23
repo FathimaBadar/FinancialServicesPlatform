@@ -27,34 +27,37 @@ export function BranchDetails({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const blocker = changeBlocker(branch, canManage);
   const decided = branch.status === 'REJECTED' ? 'Rejected' : 'Approved';
+  const showActions = canManage && (branch.status === 'ACTIVE' || branch.status === 'PENDING');
+  // Drawer layout (same as users.organization): a padded body that scrolls, and the maker
+  // actions in a footer bar under it — aligned with the drawer header's px-5, never clipped.
   return (
-    <div className="grid gap-4" data-testid="branch-details">
-      <div className="grid grid-cols-2 gap-3">
-        <KvPair label="Code" mono>{branch.code}</KvPair>
-        <KvPair label="Status"><BranchStatusChip branch={branch} /></KvPair>
-        <KvPair label="Created by">{branch.makerName}</KvPair>
-        <KvPair label="Created">{dateTime(branch.createdAt)}</KvPair>
-        <KvPair label="Approved by">{approvedByText(branch)}</KvPair>
-        <KvPair label={decided}>{dateTime(branch.decidedAt)}</KvPair>
-      </div>
-      {branch.status === 'REJECTED' && branch.decisionReason && (
-        <Alert kind="bad">Rejected: {branch.decisionReason}</Alert>
-      )}
+    <div className="flex h-full min-h-0 flex-col" data-testid="branch-details">
+      <div className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto p-5">
+        <section aria-label="Branch record" className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+          <KvPair label="Code" mono>{branch.code}</KvPair>
+          <KvPair label="Status"><BranchStatusChip branch={branch} /></KvPair>
+          <KvPair label="Created by">{branch.makerName}</KvPair>
+          <KvPair label="Created">{dateTime(branch.createdAt)}</KvPair>
+          <KvPair label="Approved by">{approvedByText(branch)}</KvPair>
+          <KvPair label={decided}>{dateTime(branch.decidedAt)}</KvPair>
+        </section>
+        {branch.status === 'REJECTED' && branch.decisionReason && (
+          <Alert kind="bad">Rejected: {branch.decisionReason}</Alert>
+        )}
 
-      {branch.pending && (
-        <PendingChangePanel
-          branch={branch}
-          pending={branch.pending}
-          busy={deciding}
-          problem={decisionProblem}
-          onDecide={onDecide}
-        />
-      )}
+        {branch.pending && (
+          <PendingChangePanel
+            branch={branch}
+            pending={branch.pending}
+            busy={deciding}
+            problem={decisionProblem}
+            onDecide={onDecide}
+          />
+        )}
 
-      {problem && <Alert kind="bad">{problem}</Alert>}
+        {problem && <Alert kind="bad">{problem}</Alert>}
 
-      {canManage && (branch.status === 'ACTIVE' || branch.status === 'PENDING') && (
-        confirmDelete ? (
+        {showActions && confirmDelete && (
           <InlineConfirm
             title={`Delete ${branch.name}?`}
             confirmLabel="Send deletion for approval"
@@ -65,23 +68,27 @@ export function BranchDetails({
           >
             A checker must approve the deletion. Until then the branch stays active and roles can keep using it.
           </InlineConfirm>
-        ) : (
-          <div className="grid gap-2">
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="ghost" data-action="branch.edit" disabled={blocker !== null || busy} onClick={onEdit}>
-                Rename
-              </Button>
-              <Button variant="danger" data-action="branch.delete" disabled={blocker !== null || busy}
-                onClick={() => setConfirmDelete(true)}>
-                Delete
-              </Button>
-            </div>
-            {blocker && <p className="text-dim text-right text-[12px]" data-testid="branch-change-blocked">{blocker}</p>}
+        )}
+      </div>
+
+      {showActions && !confirmDelete && (
+        <div className="grid gap-2 border-t border-line px-5 py-4">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="ghost" data-action="branch.edit" disabled={blocker !== null || busy} onClick={onEdit}>
+              Rename
+            </Button>
+            <Button variant="danger" data-action="branch.delete" disabled={blocker !== null || busy}
+              onClick={() => setConfirmDelete(true)}>
+              Delete
+            </Button>
           </div>
-        )
+          {blocker && <p className="text-dim text-right text-[12px]" data-testid="branch-change-blocked">{blocker}</p>}
+        </div>
       )}
       {!canManage && (
-        <p className="text-dim text-[12px]">View only — changing branches needs the role.manage permission.</p>
+        <p className="text-dim border-t border-line px-5 py-4 text-[12px]">
+          View only — changing branches needs the role.manage permission.
+        </p>
       )}
     </div>
   );

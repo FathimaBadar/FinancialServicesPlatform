@@ -176,13 +176,36 @@
     {
       "at": "2026-11-23T06:56:54.371Z",
       "event": "done"
+    },
+    {
+      "at": "2026-11-23T07:22:10.836Z",
+      "event": "verify-ok"
+    },
+    {
+      "at": "2026-11-23T07:22:35.024Z",
+      "event": "e2e-ok",
+      "detail": "workbench"
+    },
+    {
+      "at": "2026-11-23T07:24:20.328Z",
+      "event": "verify-ok"
+    },
+    {
+      "at": "2026-11-23T07:24:47.945Z",
+      "event": "e2e-ok",
+      "detail": "workbench+portal live"
+    },
+    {
+      "at": "2026-11-23T07:24:54.201Z",
+      "event": "registered",
+      "detail": "org.branches@1.0.1 by platform-admin"
     }
   ],
   "requirement": "Branches screen: create a branch (name), list with search, edit and delete; every change maker-checker approved; list shows name, who created, who approved, created date and time",
   "verify": {
-    "at": "2026-11-23T06:54:17.995Z",
+    "at": "2026-11-23T07:24:20.327Z",
     "ok": true,
-    "uiHash": "9f1ef221c2a1b0b1",
+    "uiHash": "802a115d382c2825",
     "steps": [
       {
         "step": "operations + code rules",
@@ -212,22 +235,22 @@
   },
   "e2e": {
     "workbench": {
-      "at": "2026-11-23T06:56:46.565Z",
+      "at": "2026-11-23T07:24:47.945Z",
       "ok": true,
-      "uiHash": "9f1ef221c2a1b0b1"
+      "uiHash": "802a115d382c2825"
     },
     "portal": {
-      "at": "2026-11-23T06:56:46.565Z",
+      "at": "2026-11-23T07:24:47.945Z",
       "ok": true,
-      "uiHash": "9f1ef221c2a1b0b1",
+      "uiHash": "802a115d382c2825",
       "live": true
     }
   },
   "registered": {
-    "at": "2026-11-23T06:31:54.823Z",
-    "version": "1.0.0",
+    "at": "2026-11-23T07:24:53.906Z",
+    "version": "1.0.1",
     "by": "platform-admin",
-    "uiHash": "9f1ef221c2a1b0b1"
+    "uiHash": "802a115d382c2825"
   },
   "acceptance": {
     "by": "FathimaBadar",

@@ -35,28 +35,31 @@ export function BranchForm({ branch, busy, serverError, onSubmit, onCancel }: Br
   };
 
   return (
-    <form className="grid gap-4" noValidate onSubmit={submit} data-testid="branch-form">
-      <p className="text-dim text-[13px]">
-        {branch
-          ? 'The new name is sent for approval. The branch keeps its current name until a checker approves it.'
-          : 'The new branch is sent for approval. It can be used once a different person approves it.'}
-      </p>
-      <FormField
-        label="Branch name"
-        value={name}
-        maxLength={NAME_MAX + 20}
-        autoComplete="off"
-        placeholder="e.g. Windhoek Maerua Mall"
-        data-testid="branch-name"
-        aria-invalid={Boolean(fieldError)}
-        error={fieldError ?? undefined}
-        hint={branch ? `Current name: ${branch.name}` : `2–${NAME_MAX} characters`}
-        onChange={(e) => setName(e.target.value)}
-        onBlur={() => setTouched(true)}
-      />
-      {unchanged && touched && <p className="text-dim text-[12px]">That is the current name — change it to send a rename.</p>}
-      {serverError && !serverError.onName && <Alert kind="bad">{serverError.text}</Alert>}
-      <div className="flex flex-wrap justify-end gap-2">
+    // Drawer layout (same as users.organization UserForm): padded scrolling body, buttons in a footer bar
+    <form className="flex h-full min-h-0 flex-col" noValidate onSubmit={submit} data-testid="branch-form">
+      <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto p-5">
+        <p className="text-dim text-[13px]">
+          {branch
+            ? 'The new name is sent for approval. The branch keeps its current name until a checker approves it.'
+            : 'The new branch is sent for approval. It can be used once a different person approves it.'}
+        </p>
+        <FormField
+          label="Branch name"
+          value={name}
+          maxLength={NAME_MAX + 20}
+          autoComplete="off"
+          placeholder="e.g. Windhoek Maerua Mall"
+          data-testid="branch-name"
+          aria-invalid={Boolean(fieldError)}
+          error={fieldError ?? undefined}
+          hint={branch ? `Current name: ${branch.name}` : `2–${NAME_MAX} characters`}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => setTouched(true)}
+        />
+        {unchanged && touched && <p className="text-dim text-[12px]">That is the current name — change it to send a rename.</p>}
+        {serverError && !serverError.onName && <Alert kind="bad">{serverError.text}</Alert>}
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-4">
         <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
         <Button
           type="submit"

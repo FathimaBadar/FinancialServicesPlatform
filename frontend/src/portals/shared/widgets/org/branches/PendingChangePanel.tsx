@@ -24,13 +24,13 @@ export function PendingChangePanel({ branch, pending, busy, problem, onDecide }:
   return (
     <section
       aria-label="Change awaiting approval"
-      className="rounded-xl border border-line-strong p-3"
+      className="grid gap-4 rounded-xl border border-line-strong p-4"
       data-testid="branch-pending"
     >
-      <h3 className="mb-2 text-sm font-semibold">
+      <h3 className="text-sm font-semibold">
         Awaiting approval · {OPERATION_LABEL[pending.operation]}
       </h3>
-      <div className="mb-3 text-sm" data-testid="branch-pending-diff">
+      <div className="-mt-2 text-sm" data-testid="branch-pending-diff">
         {pending.operation === 'BRANCH_CREATE' && <>Add the branch <strong>{pending.proposedName ?? branch.name}</strong>.</>}
         {pending.operation === 'BRANCH_UPDATE' && (
           <>
@@ -39,12 +39,12 @@ export function PendingChangePanel({ branch, pending, busy, problem, onDecide }:
         )}
         {pending.operation === 'BRANCH_DELETE' && <>Delete the branch <strong>{branch.name}</strong>. It stays active until this is approved.</>}
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
         <KvPair label="Requested by">{pending.requestedByName}</KvPair>
         <KvPair label="Requested">{dateTime(pending.requestedAt)}</KvPair>
         <KvPair label="Approval reference" mono>{shortRef(pending.approvalId)}</KvPair>
       </div>
-      {problem && <div className="mt-3"><Alert kind="bad">{problem}</Alert></div>}
+      {problem && <Alert kind="bad">{problem}</Alert>}
       {pending.canDecide ? (
         step ? (
           <DecisionStep
@@ -54,14 +54,14 @@ export function PendingChangePanel({ branch, pending, busy, problem, onDecide }:
             onConfirm={(reason) => onDecide(step === 'approve', reason)}
           />
         ) : (
-          <div className="mt-3 flex flex-wrap justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <Button variant="danger" data-action="branch.reject" disabled={busy} onClick={() => setStep('reject')}>Reject</Button>
             <Button variant="primary" data-action="branch.approve" disabled={busy} onClick={() => setStep('approve')}>Approve</Button>
           </div>
         )
       ) : (
         blocked && (
-          <div className="mt-3" data-testid="branch-pending-blocked">
+          <div data-testid="branch-pending-blocked">
             <Alert kind="info">{blocked}</Alert>
           </div>
         )

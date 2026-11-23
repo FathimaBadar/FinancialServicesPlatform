@@ -203,9 +203,11 @@ export function OrgBranches() {
     drawer = (
       <Drawer title={canEdit ? 'Rename branch' : (open?.name ?? 'Branch')} subtitle={open?.code} onClose={closeDrawer}>
         {open === undefined && one.isError && (
-          <StatePanel kind="error" title="Couldn’t open this branch" hint={problemText(toProblem(one.error))} onRetry={() => void one.refetch()} />
+          <div className="p-5">
+            <StatePanel kind="error" title="Couldn’t open this branch" hint={problemText(toProblem(one.error))} onRetry={() => void one.refetch()} />
+          </div>
         )}
-        {open === undefined && !one.isError && <BranchListSkeleton rows={2} />}
+        {open === undefined && !one.isError && <div className="p-5"><BranchListSkeleton rows={2} /></div>}
         {open !== undefined && canEdit && (
           <BranchForm
             key={`edit-${open.id}`}

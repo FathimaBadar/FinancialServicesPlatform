@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -302,13 +303,14 @@ public class UserAdminService {
 
         String payload;
         try {
-            payload = mapper.writeValueAsString(Map.of(
-                "fullName", proposedFullName,
-                "email", proposedEmail,
-                "phone", proposedPhone,
-                "roleIds", proposedRoles.stream().map(r -> r.id.toString()).toList(),
-                "checker", proposedChecker
-            ));
+            // LinkedHashMap, not Map.of: an absent email/phone is a legitimate JSON null here
+            Map<String, Object> proposed = new LinkedHashMap<>();
+            proposed.put("fullName", proposedFullName);
+            proposed.put("email", proposedEmail);
+            proposed.put("phone", proposedPhone);
+            proposed.put("roleIds", proposedRoles.stream().map(r -> r.id.toString()).toList());
+            proposed.put("checker", proposedChecker);
+            payload = mapper.writeValueAsString(proposed);
         } catch (Exception e) {
             throw ApiException.serviceUnavailable("PAYLOAD_SERIALIZE", "Failed to serialize update payload");
         }
@@ -474,8 +476,9 @@ public class UserAdminService {
             throw ApiException.badRequest("PAYLOAD_INVALID", "Update payload is not valid JSON");
         }
         if (patch.containsKey("fullName")) p.fullName = requireFullName(String.valueOf(patch.get("fullName")));
-        if (patch.containsKey("email")) p.email = normalizeEmail(String.valueOf(patch.get("email")));
-        if (patch.containsKey("phone")) p.phone = normalizePhone(String.valueOf(patch.get("phone")));
+        // (String) cast, not String.valueOf: a JSON null must stay null, not become "null"
+        if (patch.containsKey("email")) p.email = normalizeEmail((String) patch.get("email"));
+        if (patch.containsKey("phone")) p.phone = normalizePhone((String) patch.get("phone"));
         if (patch.containsKey("checker")) p.isChecker = Boolean.TRUE.equals(patch.get("checker"));
         if (patch.containsKey("roleIds")) {
             @SuppressWarnings("unchecked")

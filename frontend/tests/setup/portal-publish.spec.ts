@@ -46,6 +46,10 @@ test(`publish a signed "${PORTAL}" portal bundle (four-eyes)`, async ({ browser 
   await maker.goto('/widget-workbench/registry');
   await maker.waitForLoadState('networkidle');
   for (let i = 0; i < 50; i++) {
+    // every Register button is disabled while one registration is in flight — wait it out,
+    // or the click below waits on a disabled button until the test times out
+    await maker.waitForFunction(() => ![...document.querySelectorAll('button')]
+      .some((b) => /^Register \d/.test(b.textContent ?? '') && b.disabled));
     const next = maker.getByRole('button', { name: /^Register \d/ }).first();
     if ((await next.count()) === 0) break;
     await next.click();

@@ -45,9 +45,11 @@ function emit(unread: number | null) {
 /** One poll: unread count for the signed-in person (fail-soft — badge is cosmetic). */
 export async function pollUnread(): Promise<number | null> {
   try {
-    const r = await apiGet<{ unread: number }>('/api/notifications/unread-count');
-    emit(r.unread);
-    return r.unread;
+    // `pending` = not acted upon and not snoozed (the bell); older cores only send `unread`
+    const r = await apiGet<{ unread: number; pending?: number }>('/api/notifications/unread-count');
+    const n = r.pending ?? r.unread;
+    emit(n);
+    return n;
   } catch {
     // 403 (no notification.view) or session dropped — badge just stays unset
     emit(null);

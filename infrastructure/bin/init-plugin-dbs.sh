@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Creates the plugin databases + roles idempotently (dev):
-#   fsp_plugin_kyc (exists gap: was never bootstrapped anywhere — kept here too)
-#   fsp_plugin_inventory
+# Creates the service + plugin databases and roles idempotently (dev). The compose file only
+# creates `fsp` (core / idp / bff); every other service owns its own database:
+#   fsp_psp, fsp_emi                        (psp / emi services)
+#   fsp_plugin_kyc, fsp_plugin_inventory    (plugins — isolated, AGENTS §2.6)
 # Usage: ./infrastructure/bin/init-plugin-dbs.sh
 set -euo pipefail
 
@@ -21,8 +22,10 @@ SQL
 }
 
 docker exec -i "$CONTAINER" psql -U fsp -d fsp -v ON_ERROR_STOP=1 <<SQL
+$(sql_for fsp_psp fsp_psp)
+$(sql_for fsp_emi fsp_emi)
 $(sql_for fsp_plugin_kyc fsp_plugin_kyc)
 $(sql_for fsp_plugin_inventory fsp_plugin_inventory)
 SQL
 
-echo "plugin databases ready: fsp_plugin_kyc, fsp_plugin_inventory"
+echo "databases ready: fsp_psp, fsp_emi, fsp_plugin_kyc, fsp_plugin_inventory"

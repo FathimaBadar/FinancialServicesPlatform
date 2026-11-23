@@ -12,7 +12,7 @@ services:
       POSTGRES_USER: fsp
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - /home/ubuntu/fsp-data/postgres:/var/lib/postgresql/data
+      - ./fsp-data/postgres:/var/lib/postgresql/data
       - ./init-dbs.sql:/docker-entrypoint-initdb.d/99-fsp-plugin-dbs.sql:ro
     networks: [fsp-network]
     security_opt:
@@ -34,7 +34,7 @@ services:
       "if [ -s /data/0_0.tigerbeetle ]; then echo 'tb already formatted'; else
        format --cluster=0 --replica=0 --replica-count=1 /data/0_0.tigerbeetle; fi"
     volumes:
-      - /home/ubuntu/fsp-data/tigerbeetle:/data
+      - ./fsp-data/tigerbeetle:/data
     restart: "no"
 
   tigerbeetle:
@@ -47,7 +47,7 @@ services:
         ipv4_address: 10.200.0.10
     command: "start --addresses=0.0.0.0:3000 /data/0_0.tigerbeetle"
     volumes:
-      - /home/ubuntu/fsp-data/tigerbeetle:/data
+      - ./fsp-data/tigerbeetle:/data
     depends_on: [tigerbeetle-format]
     restart: unless-stopped
 

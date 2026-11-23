@@ -15,15 +15,32 @@ public final class RoleDtos {
      */
     public record RoleView(UUID id, UUID tenantId, String key, String name, String scope, String status,
                            List<String> permissionKeys, long version, int assignedCount, boolean protectedRole,
-                           UUID pendingApprovalId, String pendingOperation) {}
+                           UUID pendingApprovalId, String pendingOperation,
+                           String description, UUID branchId, String branchName, UUID departmentId, String departmentName,
+                           String portal, List<String> menuCells, boolean fullMenu) {}
 
-    public record CreateRole(String key, String name, List<String> permissionKeys) {}
+    /**
+     * {@code menuCells}: Permissions Matrix cells ({@code "<menu>/<submenu>:<ACTION>"}) on the
+     * published menu of the portal the organization's people sign in to.
+     */
+    public record CreateRole(String key, String name, String description, UUID branchId, UUID departmentId,
+                             List<String> permissionKeys, List<String> menuCells) {}
 
-    public record UpdateRole(String name, List<String> permissionKeys, Long expectedVersion) {}
+    /** Absent (null) fields stay as they are. */
+    public record UpdateRole(String name, String description, UUID branchId, UUID departmentId,
+                             List<String> permissionKeys, List<String> menuCells, Long expectedVersion) {}
 
     /** Answer of every write: the change is STAGED, not applied (HTTP 202). */
     public record RoleChange(UUID pendingApprovalId, String operationType, UUID roleId, String status) {}
 
     /** Approval payload — the maker's proposal, re-validated against the checker on apply. */
-    public record RoleProposal(String key, String name, List<String> permissionKeys, Long baseVersion) {}
+    public record RoleProposal(String key, String name, List<String> permissionKeys, Long baseVersion,
+                               String description, UUID branchId, UUID departmentId,
+                               String portal, List<String> menuCells) {
+
+        /** Proposals raised before menu cells existed (still pending in a dev DB) read with nulls. */
+        public RoleProposal(String key, String name, List<String> permissionKeys, Long baseVersion) {
+            this(key, name, permissionKeys, baseVersion, null, null, null, null, null);
+        }
+    }
 }

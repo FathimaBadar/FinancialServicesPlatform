@@ -8,10 +8,11 @@ import { NavLink, Outlet, Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { doLogout, useSession } from './session-core';
 import type { PortalConfig } from '../../portal-config';
-import { layoutNavEntries, useSignedLayout } from '../../signed/signed-layout';
+import { layoutNavEntries, useMenuAccess, useSignedLayout } from '../../signed/signed-layout';
 import { getWidget } from '../widgets/registry';
 import { useState, useEffect } from 'react';
 import { onUnread } from './push-core';
+import { NotificationBell } from './notifications/NotificationBell';
 
 export function AppShell({
   portal,
@@ -32,9 +33,10 @@ export function AppShell({
   useEffect(() => onUnread(setUnread), []);
 
   const layout = useSignedLayout();
+  const access = useMenuAccess();
   // the sidebar is ONLY the verified, published layout (SignedMenuGate renders "No menu
   // configured" before this shell when a portal has none — there is no coded fallback menu)
-  const nav = layout ? layoutNavEntries(layout, permissions, getWidget) : [];
+  const nav = layout ? layoutNavEntries(layout, permissions, getWidget, access) : [];
 
   const navClass = (isActive: boolean) =>
     'block rounded-lg px-3 py-1.5 text-[13px] transition-colors ' +
@@ -56,6 +58,7 @@ export function AppShell({
             </span>
           </Link>
           <div className="flex items-center gap-3">
+            <NotificationBell pending={unread} userId={user?.userId} orgId={actAs?.targetTenantId ?? user?.tenantId ?? ''} />
             {user && (
               <div className="text-right leading-tight">
                 <div className="text-xs font-semibold">{user.fullName}</div>

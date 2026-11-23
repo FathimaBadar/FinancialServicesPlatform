@@ -1,7 +1,7 @@
 # FSP Architecture — The Living Master Blueprint
 
 > **Governance:** Single source of truth for platform architecture.  
-> **Normative Sources:** [AGENTS.md](file:///home/arun/FinancialServicesPlatform/AGENTS.md) (Platform Rules) · [vision.md](file:///home/arun/FinancialServicesPlatform/vision.md) (Architecture v2) · [plans/phase-0-prd.md](file:///home/arun/FinancialServicesPlatform/plans/phase-0-prd.md) (PRD).
+> **Normative Sources:** [AGENTS.md](../AGENTS.md) (Platform Rules) · [vision.md](../vision.md) (Architecture v2) · [plans/phase-0-prd.md](../plans/phase-0-prd.md) (PRD).
 
 ---
 
@@ -72,19 +72,19 @@ For detailed specifications, sequence flows, and schemas, read the modular chapt
 
 | Chapter | Topic | What It Settles |
 |---|---|---|
-| [01. Runtime Topology](file:///home/arun/FinancialServicesPlatform/docs/architecture/01-runtime-topology.md) | Topology & Protocols | Service ports (:8080, :8081, :8082, :8090, :8083, :3000), request lifecycles, and omnichannel ingress (Web, App, USSD, SMS, POS). |
-| [02. Identity & Security](file:///home/arun/FinancialServicesPlatform/docs/architecture/02-identity-and-security.md) | FAPI 2.0 & Tokens | Actor types (PERSON, MACHINE, DELEGATED), DPoP proofs, operation catalog boot gate, and internal trusted hops. |
-| [03. Tenancy & RBAC](file:///home/arun/FinancialServicesPlatform/docs/architecture/03-tenancy-and-rbac.md) | Hierarchy & Grants | Subtree reachability (`hierarchy_path`), anchor roles, permission scopes, and act-as tenant ("sudo") delegation. |
-| [04. The Money Engine](file:///home/arun/FinancialServicesPlatform/docs/architecture/04-money-engine.md) | Books, CoA, JE & TB | Direct matching posting planner, posting state machine, `COMMIT_UNKNOWN` recovery protocol, and TigerBeetle driver isolation. |
-| [05. Approvals & Idempotency](file:///home/arun/FinancialServicesPlatform/docs/architecture/05-approvals-and-idempotency.md) | Four-Eyes & Deduplication | Generic approval engine, person_id separation, and `IdempotencyFilter` order 2 transport deduplication. |
-| [06. Audit & Evidence](file:///home/arun/FinancialServicesPlatform/docs/architecture/06-audit-and-outbox.md) | Audit & Outbox | One-transaction three-writes write path, evidence chains, structured logging contract, and correlation IDs. |
-| [07. Plugin Platform](file:///home/arun/FinancialServicesPlatform/docs/architecture/07-plugin-platform.md) | Out-of-Process Plugins | Separate OS process mandate, isolated DB schemas (`fsp_plugin_*`), actor assertions, and KYC onboarding saga. |
-| [08. REST Query Standards](file:///home/arun/FinancialServicesPlatform/docs/architecture/08-rest-query-standards.md) | Pagination, Sort & Search | Universal pagination (`page`/`size`), server-side sorting with safelists, and server-side search push-down across Core & Plugins. |
-| [09. Frontend & Portals](file:///home/arun/FinancialServicesPlatform/docs/architecture/09-frontend-portals.md) | Portals & Widget Harness | 5 portal apps from one SPA codebase, session hydration, widget codegen (`bun widgets:*`), and UI standards. |
-| [10. Data Model](file:///home/arun/FinancialServicesPlatform/docs/architecture/10-data-model.md) | Schemas & Migrations | ER diagram, Flyway migration ledger (generated via `refresh.cjs`), and system vs demo seed rules. |
-| [11. Operations & Live Docs](file:///home/arun/FinancialServicesPlatform/docs/architecture/11-operations-and-live-docs.md) | Ops, Tests & Maintenance | Dev happy path make targets, test pyramid, two-tier live doc update workflow (`refresh.cjs`), and glossary. |
-| [12. Notifications & Push](file:///home/arun/FinancialServicesPlatform/docs/architecture/12-notifications-and-push.md) | Inbox & Push Spine | Queue-shaped notifications, one push contract for Web Push/APNs/FCM (credential-gated adapters), data-minimized payloads under FAPI, and unread badge plumbing. |
-| [13. Money Movement & Rails](file:///home/arun/FinancialServicesPlatform/docs/architecture/13-money-movement-and-rails.md) | Bank Connectors, Bill Payments, PSP & EMI | Sealed provider-protocol taxonomy, per-bank transport/format profiles (ISO 8583, ISO 20022, REST, SFTP/MQ batches), pending-transfer bill-payment space ladder, exactly-once stack, circuit-breaker/moving-window doctrine, and BoN PSD-1/PSD-3/VAA regulatory traceability. |
+| [01. Runtime Topology](architecture/01-runtime-topology.md) | Topology & Protocols | Service ports (:8080, :8081, :8082, :8090, :8083, :3000), request lifecycles, and omnichannel ingress (Web, App, USSD, SMS, POS). |
+| [02. Identity & Security](architecture/02-identity-and-security.md) | FAPI 2.0 & Tokens | Actor types (PERSON, MACHINE, DELEGATED), DPoP proofs, operation catalog boot gate, and internal trusted hops. |
+| [03. Tenancy & RBAC](architecture/03-tenancy-and-rbac.md) | Hierarchy & Grants | Subtree reachability (`hierarchy_path`), anchor roles, permission scopes, and act-as tenant ("sudo") delegation. |
+| [04. The Money Engine](architecture/04-money-engine.md) | Books, CoA, JE & TB | Direct matching posting planner, posting state machine, `COMMIT_UNKNOWN` recovery protocol, and TigerBeetle driver isolation. |
+| [05. Approvals & Idempotency](architecture/05-approvals-and-idempotency.md) | Four-Eyes & Deduplication | Generic approval engine, person_id separation, and `IdempotencyFilter` order 2 transport deduplication. |
+| [06. Audit & Evidence](architecture/06-audit-and-outbox.md) | Audit & Outbox | One-transaction three-writes write path, evidence chains, structured logging contract, and correlation IDs. |
+| [07. Plugin Platform](architecture/07-plugin-platform.md) | Out-of-Process Plugins | Separate OS process mandate, isolated DB schemas (`fsp_plugin_*`), actor assertions, and KYC onboarding saga. |
+| [08. REST Query Standards](architecture/08-rest-query-standards.md) | Pagination, Sort & Search | Universal pagination (`page`/`size`), server-side sorting with safelists, and server-side search push-down across Core & Plugins. |
+| [09. Frontend & Portals](architecture/09-frontend-portals.md) | Portals & Widget Harness | 5 portal apps from one SPA codebase, session hydration, widget codegen (`bun widgets:*`), and UI standards. |
+| [10. Data Model](architecture/10-data-model.md) | Schemas & Migrations | ER diagram, Flyway migration ledger (generated via `refresh.cjs`), and system vs demo seed rules. |
+| [11. Operations & Live Docs](architecture/11-operations-and-live-docs.md) | Ops, Tests & Maintenance | Dev happy path make targets, test pyramid, two-tier live doc update workflow (`refresh.cjs`), and glossary. |
+| [12. Notifications & Push](architecture/12-notifications-and-push.md) | Inbox & Push Spine | Queue-shaped notifications, one push contract for Web Push/APNs/FCM (credential-gated adapters), data-minimized payloads under FAPI, and unread badge plumbing. |
+| [13. Money Movement & Rails](architecture/13-money-movement-and-rails.md) | Bank Connectors, Bill Payments, PSP & EMI | Sealed provider-protocol taxonomy, per-bank transport/format profiles (ISO 8583, ISO 20022, REST, SFTP/MQ batches), pending-transfer bill-payment space ladder, exactly-once stack, circuit-breaker/moving-window doctrine, and BoN PSD-1/PSD-3/VAA regulatory traceability. |
 
 ---
 

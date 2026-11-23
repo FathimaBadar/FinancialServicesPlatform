@@ -65,7 +65,7 @@ describe('users.list fixture plays the paged server', () => {
   it('returns an envelope with totals and counts', () => {
     const p = call({ tenantId: T, page: '0', size: '2', status: 'current', sort: 'username,asc' });
     expect(p.items).toHaveLength(2);
-    expect(p.totalElements).toBe(4);
+    expect(p.totalElements).toBe(5);
     expect(p.hasNext).toBe(true);
     expect(p.counts.ARCHIVED).toBe(1);
   });

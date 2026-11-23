@@ -32,7 +32,7 @@ export function UserList({ users, compact, meId, selectedId, onOpen }: UserListP
             >
               <span className="flex items-start justify-between gap-2">
                 <UserIdentity user={u} me={u.id === meId} />
-                <UserStatusBadge status={u.status} />
+                <UserStatusBadge status={u.status} activated={u.activated} />
               </span>
               <span className="mt-2 block">
                 <RoleChips roles={u.roles} />
@@ -82,7 +82,7 @@ export function UserList({ users, compact, meId, selectedId, onOpen }: UserListP
                 <RoleChips roles={u.roles} />
               </td>
               <td className="border-b border-line px-3 py-2.5">
-                <UserStatusBadge status={u.status} />
+                <UserStatusBadge status={u.status} activated={u.activated} />
               </td>
               <td className="text-dim whitespace-nowrap border-b border-line px-3 py-2.5 text-right text-xs tabular-nums">
                 {relativeTime(u.updatedAt)}

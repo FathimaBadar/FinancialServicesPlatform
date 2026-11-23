@@ -175,7 +175,7 @@ test('unhappy twin — REQUEST_INFO loop, REJECT, self-approve blocks, stalled r
   const checkerRole = roles.json.find((r) => r.key === 'TENANT_CHECKER')!.id;
   const second = `second.checker.${suffix()}`;
   const staged = await api<{ id: string }>(merAdmin, 'POST', `/tenants/${merTenantId}/users`, {
-    username: second, fullName: 'Second Checker', email: 'second@unhappy.example',
+    username: second, fullName: 'Second Checker', email: `${second}@unhappy.example`, primaryContact: 'EMAIL',
     roleIds: [checkerRole], checker: true,
   });
   expect(staged.status).toBe(202);

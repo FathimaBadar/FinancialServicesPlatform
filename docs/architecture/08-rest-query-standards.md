@@ -1,6 +1,6 @@
 # Architecture Chapter 8 — REST Collection Standards (Pagination, Sorting, Search)
 
-**Parent Document:** [docs/architecture.md](file:///home/arun/FinancialServicesPlatform/docs/architecture.md)
+**Parent Document:** [docs/architecture.md](../architecture.md)
 
 ---
 

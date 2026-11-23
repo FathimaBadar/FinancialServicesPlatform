@@ -54,6 +54,13 @@ session is the only credential path (AGENTS §4).
 
 ## 4. Way A — author a pack with an LLM (usual route)
 
+0. **Sync the backend API catalog first.** Open **New widget (LLM)** and click **Sync backend APIs**.
+   It scans every `@RestController` in core (every `@FspOperation` handler), diffs against the previous
+   scan (additions / deletions / changed signatures show as +/–/changed badges) and stores the catalog in
+   the browser. Only after a successful sync does the requirement input unlock — the LLM prompt
+   (`Copy LLM input`) then carries **every path the system provides right now, with signatures**, so the
+   LLM matches against real endpoints instead of inventing them. Re-sync whenever controllers change.
+
 1. **Start the authoring skill.** In pi (or any agent that can read the repo):
    load `docs/skills/fsp-widget-author/SKILL.md` (or `.agents/skills/fsp-widget/SKILL.md`) and give it the requirement, e.g.
    *"a widget showing pending JE approvals for my tenant, with approve/reject"*.

@@ -95,6 +95,14 @@ public class IdpTokenService {
             throw new IdpProblemException(new IdpDtos.IdpProblem(
                 "PERSON_INACTIVE", "Account is not active", 403));
         }
+        // V36: an invited person signs in only after activating (own password, contact proven).
+        // Unreachable with a correct password in practice (born with a random secret) — the
+        // explicit gate keeps it true even if a password were ever set another way.
+        if (person.primaryContact != null && person.contactVerifiedAt == null) {
+            log.warn("idp_login_failed username={} reason=activation_pending", grant.username());
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "ACTIVATION_PENDING", "Activate your account from the link or code we sent you", 403));
+        }
         throttle.success(grant.username());
         // F-8: persons born with the bootstrap password must set their own at first
         // sign-in — the hosted surface (authorize callback) intercepts this code and

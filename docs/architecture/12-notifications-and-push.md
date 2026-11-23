@@ -1,6 +1,6 @@
 # Architecture Chapter 12 — Notifications: In-App, Push, Email & SMS
 
-**Parent Document:** [docs/architecture.md](file:///home/arun/FinancialServicesPlatform/docs/architecture.md)
+**Parent Document:** [docs/architecture.md](../architecture.md)
 
 ---
 

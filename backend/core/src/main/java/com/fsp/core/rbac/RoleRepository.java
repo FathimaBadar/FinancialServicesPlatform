@@ -19,4 +19,15 @@ public interface RoleRepository extends JpaRepository<Role, UUID> {
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("update Role r set r.version = r.version + 1, r.name = :name where r.id = :id and r.version = :expected")
     int bumpVersion(@Param("id") UUID id, @Param("expected") long expected, @Param("name") String name);
+
+    /** {@link #bumpVersion} that also moves the role's details (same pinned-version guard). */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+        update Role r set r.version = r.version + 1, r.name = :name, r.description = :description,
+               r.branchId = :branchId, r.departmentId = :departmentId
+        where r.id = :id and r.version = :expected
+        """)
+    int bumpVersionWithDetails(@Param("id") UUID id, @Param("expected") long expected, @Param("name") String name,
+                               @Param("description") String description, @Param("branchId") UUID branchId,
+                               @Param("departmentId") UUID departmentId);
 }

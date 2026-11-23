@@ -18,20 +18,21 @@ export interface UsersOrganizationConfig {
 
 const usersOrganizationWidget = defineWidget<UsersOrganizationConfig>({
   id: 'users.organization',
-  version: '2.2.0',
+  version: '2.3.0',
   label: 'User management',
-  description: 'List, view, add, modify, deactivate, activate and remove the users of an organization.',
+  description: 'List, view, add, modify, deactivate, activate and remove the users of an organization. New users activate from an IdP link / SMS code and set their own password.',
   category: 'Access',
   contexts: ['ANY'],
   requires: ['user.manage'],
   sources: ['users.list', 'users.get', 'users.roles'],
-  commands: ['user.create', 'user.update', 'user.deactivate', 'user.activate', 'user.remove'],
+  commands: ['user.create', 'user.update', 'user.deactivate', 'user.activate', 'user.remove', 'user.activation.resend'],
   actions: [
     { id: 'user.create', label: 'Add user', cell: 'user.manage', command: 'user.create', kind: 'primary' },
     { id: 'user.update', label: 'Edit user', cell: 'user.manage', command: 'user.update' },
     { id: 'user.deactivate', label: 'Deactivate', cell: 'user.manage', command: 'user.deactivate', kind: 'ghost' },
     { id: 'user.activate', label: 'Activate', cell: 'user.manage', command: 'user.activate', kind: 'ghost' },
     { id: 'user.remove', label: 'Remove', cell: 'user.manage', command: 'user.remove', kind: 'danger' },
+    { id: 'user.activation.resend', label: 'Re-send activation', cell: 'user.manage', command: 'user.activation.resend', kind: 'ghost' },
   ],
   commandOperations: {
     'user.create': 'create',
@@ -39,6 +40,7 @@ const usersOrganizationWidget = defineWidget<UsersOrganizationConfig>({
     'user.deactivate': 'modify',
     'user.activate': 'modify',
     'user.remove': 'modify',
+    'user.activation.resend': 'modify',
   },
   // full width by default; may sit beside a list (min 6 of 12) as the detail of a picked org
   size: { xs: span.xs(4), sm: span.sm(8), md: span.md(6, 12), lg: span.lg(6, 12) },

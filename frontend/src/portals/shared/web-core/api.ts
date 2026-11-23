@@ -3,6 +3,8 @@
  * every call goes through the same-origin BFF — cookie session, CSRF double-submit,
  * token stays server-side (FAPI2 UI mandate). Never fetch, never cookies:false.
  */
+import { holdWhile } from './submit-guard';
+
 export interface ApiProblem {
   status: number;
   code?: string;
@@ -58,7 +60,16 @@ interface ApiOpts {
    * logical action; omitted → a fresh UUIDv4 per call.
    */
   idempotencyKey?: string;
+  /**
+   * Default true for mutations: an identical mutation (method + path + body) already on the
+   * wire is JOINED instead of re-sent, so a double-fire never reaches the server twice.
+   * Pass false only when two identical concurrent writes are genuinely intended.
+   */
+  dedupe?: boolean;
 }
+
+/** In-flight mutations keyed by method + path + body (submit-guard layer 3). */
+const inflightMutations = new Map<string, Promise<unknown>>();
 
 function newIdempotencyKey(): string {
   return crypto.randomUUID();
@@ -68,8 +79,24 @@ function newIdempotencyKey(): string {
  * Same-origin BFF call. `/api/...` rides BffProxyController → gateway → core;
  * `/bff/...` are the session-control endpoints. 401 → `AuthRequiredError`.
  */
-export async function api<T>(path: string, opts: ApiOpts = {}): Promise<T> {
+export function api<T>(path: string, opts: ApiOpts = {}): Promise<T> {
   const method = opts.method ?? 'GET';
+  if (method === 'GET') return send<T>(path, method, opts);
+  const key = opts.dedupe === false
+    ? null
+    : `${method} ${path} ${opts.body === undefined ? '' : JSON.stringify(opts.body)}`;
+  const joined = key ? inflightMutations.get(key) : undefined;
+  if (joined) return joined as Promise<T>;
+  const p = holdWhile(send<T>(path, method, opts));
+  if (key) {
+    inflightMutations.set(key, p);
+    const clear = () => { if (inflightMutations.get(key) === p) inflightMutations.delete(key); };
+    p.then(clear, clear);
+  }
+  return p;
+}
+
+async function send<T>(path: string, method: HttpMethod, opts: ApiOpts): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/problem+json, application/json' };
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
   if (method !== 'GET') {

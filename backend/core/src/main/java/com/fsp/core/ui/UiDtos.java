@@ -52,4 +52,17 @@ public final class UiDtos {
     public record TrustStoreView(String kid, String alg, String kty, String crv,
                                  String x, String y) {
     }
+
+    // ---------- backend API discovery (widget workbench LLM prompt) ----------
+
+    /** One discovered handler: HTTP method + path + signature + its @FspOperation metadata. */
+    public record BackendApiDto(
+            String controller, String method, String httpMethod, String path,
+            String operationId, String permission, String component, String risk, String title,
+            List<BackendParamDto> params) {
+    }
+
+    /** One handler parameter: name, Java simple type, where it binds from, required flag. */
+    public record BackendParamDto(String name, String type, String location, boolean required) {
+    }
 }

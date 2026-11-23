@@ -14,12 +14,13 @@ import type { LayoutGridCell } from './shared/widgets/core/LayoutGrid';
 import { WidgetHost } from './shared/widgets/core/host';
 import { getWidget } from './shared/widgets/registry';
 import { usePageSelection } from './shared/widgets/core/page-selection';
-import { placedDef, screenVisible, signedSpan, useSignedLayout } from './signed/signed-layout';
+import { placedDef, screenVisible, signedSpan, useMenuAccess, useSignedLayout } from './signed/signed-layout';
 
 export function LayoutScreen() {
   const { menuId, screenId } = useParams();
   const { status, permissions, eligible } = useSession();
   const layout = useSignedLayout();
+  const access = useMenuAccess();
   const { selection, onSelect } = usePageSelection();
 
   if (status === 'loading') return <FullscreenSpinner label="Restoring session" />;
@@ -30,7 +31,7 @@ export function LayoutScreen() {
 
   const menu = layout.menus.find((m) => m.id === menuId);
   const screen = menu?.screens.find((s) => s.id === screenId);
-  if (!menu || !screen || !screenVisible(layout, screen, permissions, getWidget)) {
+  if (!menu || !screen || !screenVisible(layout, menu, screen, permissions, getWidget, access)) {
     return <Navigate to="/no-access" replace />;
   }
 

@@ -57,6 +57,8 @@ public class IdpAuthService {
     private final UserMfaRepository mfas;
     private final JdbcTemplate jdbc;
     private final IdpProperties props;
+    /** the append-only trail, in the same transaction as each credential change */
+    private final IdpAudit audit;
 
     public IdpAuthService(PPersonRepository persons, PasswordResetRepository resets,
                           MfaChallengeRepository challenges, UserMfaRepository mfas,
@@ -67,6 +69,7 @@ public class IdpAuthService {
         this.mfas = mfas;
         this.jdbc = jdbc;
         this.props = props;
+        this.audit = new IdpAudit(jdbc);
     }
 
     // ============ self-service password reset (pre-auth) ============
@@ -77,6 +80,11 @@ public class IdpAuthService {
         PPerson person = persons.findByUsername(username).orElse(null);
         if (person == null || !person.status.equals("ACTIVE")) {
             log.info("idp_reset_requested outcome=silent username_provided=true");
+            return;
+        }
+        if (person.primaryContact != null && person.contactVerifiedAt == null) {
+            // V36: not activated yet — the activation (re-sent by staff) is the only way in
+            log.info("idp_reset_requested outcome=silent reason=awaiting_activation person={}", person.id);
             return;
         }
         if (person.email == null || !plausibleEmail(person.email)) {
@@ -108,6 +116,8 @@ public class IdpAuthService {
                 + "This one-time link works for " + RESET_TTL_MINUTES + " minutes and can be opened once:\n\n"
                 + props.getResetUrlBase() + "/#/reset?token=" + token + "\n\n"
                 + "If you did not request this, ignore the mail — your password stays as it is.");
+        audit.record(null, person.tenantId, "PASSWORD_RESET_REQUESTED", person.id,
+            "channel=EMAIL;resetId=" + row.id + ";expiresAt=" + row.expiresAt);
         log.info("idp_reset_requested person={} channel=EMAIL expiresInMin={}", person.id, RESET_TTL_MINUTES);
     }
 
@@ -124,7 +134,8 @@ public class IdpAuthService {
         PasswordReset row = resets
             .findFirstByTokenHashAndConsumedAtIsNullOrderByCreatedAtDesc(sha256Hex(token.trim()))
             .orElse(null);
-        if (row == null || row.expiresAt.isBefore(Instant.now())) {
+        // V36: an activation token is never a reset token (different page, different effects)
+        if (row == null || !"RESET".equals(row.purpose) || row.expiresAt.isBefore(Instant.now())) {
             throw problem("RESET_TOKEN_INVALID", "Reset link invalid or expired", 400);
         }
         if (row.attempts >= RESET_MAX_ATTEMPTS) {
@@ -142,6 +153,8 @@ public class IdpAuthService {
         persons.save(person);
         row.consumedAt = Instant.now();
         resets.save(row);
+        audit.record(person.id, person.tenantId, "PASSWORD_RESET_COMPLETED", person.id,
+            "resetId=" + row.id + ";at=" + Instant.now());
         log.info("idp_reset_confirmed person={}", person.id);
     }
 
@@ -292,7 +305,7 @@ public class IdpAuthService {
     // ============ cross-plane handoff: dispatch row + outbox evidence, same transaction ============
 
     /** Park ONE delivery row for core's AuthDispatchDispatcher + the outbox evidence row (AGENTS §2.5). */
-    private void dispatch(UUID personId, String purpose, String channel, String subject, String text) {
+    void dispatch(UUID personId, String purpose, String channel, String subject, String text) {
         UUID id = UUID.randomUUID();
         String trace = MDC.get("traceId");
         jdbc.update("""
@@ -326,16 +339,16 @@ public class IdpAuthService {
         }
     }
 
-    private static boolean constantTimeEquals(String a, String b) {
+    static boolean constantTimeEquals(String a, String b) {
         return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8));
     }
 
-    private static IdpProblemException problem(String code, String detail, int status) {
+    static IdpProblemException problem(String code, String detail, int status) {
         return new IdpProblemException(new IdpDtos.IdpProblem(code, detail, status));
     }
 
     /** F-8 password policy, mirrored for the self-service reset (10–128 chars). */
-    private static void passwordPolicy(String newPassword) {
+    static void passwordPolicy(String newPassword) {
         if (newPassword == null || newPassword.length() < RESET_MIN_LENGTH
             || newPassword.length() > RESET_MAX_LENGTH) {
             throw problem("RESET_POLICY_LENGTH",
@@ -345,7 +358,7 @@ public class IdpAuthService {
 
     /** Same shape check as the notify plane's ChannelAddresses.isPlausibleEmail —
      *  local copy because the IdP must not couple to core classes. */
-    private static boolean plausibleEmail(String email) {
+    static boolean plausibleEmail(String email) {
         return email != null && email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     }
 }

@@ -225,7 +225,7 @@ If you installed a full Ubuntu distro anyway (see §8):
 
 ```bash
 wsl -d Ubuntu
-cd /mnt/c/Users/<you>/FinancialServicesPlatform   # or your repo clone inside WSL
+cd /mnt/c/Users/<you>/FinancialServicesPlatform   # (or wherever you cloned the repo) — run from the repo root
 make tb-start && make tb-stop                     # the real ELF binary on Linux — identical to mac/linux
 ```
 

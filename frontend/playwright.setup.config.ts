@@ -16,5 +16,8 @@ export default defineConfig({
     baseURL: process.env.FSP_SPA_URL ?? 'http://localhost:5173',
     trace: 'retain-on-failure',
     ...devices['Desktop Chrome'],
+    // the builder docks its inspector beside the canvas only on a wide desktop (≥1500px);
+    // narrower, it floats over the canvas and covers the publish controls
+    viewport: { width: 1680, height: 1000 },
   },
 });

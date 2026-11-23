@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { cellsOf, requiresRows } from '../../core/manifest';
 import type { WidgetDataPortLike, WidgetDef } from '../../core/manifest';
-import { placedDef, screenLink } from '../../../../signed/signed-layout';
+import { menuCell, placedDef, screenLink } from '../../../../signed/signed-layout';
+import type { MenuAccess, MenuAction } from '../../../../signed/signed-layout';
+import { parseMenuAccess } from '../../../../signed/menu-access';
 import { signedLayoutSchema } from '../../../../signed/signed-layout';
 import type { SignedLayout } from '../../../../signed/signed-layout';
 import { verifyDelivery } from '../../../../signed/delivery';
@@ -25,6 +27,36 @@ export interface RoleView {
   protectedRole: boolean;
   pendingApprovalId: string | null;
   pendingOperation: string | null;
+  /** what the role is for (Role Description) */
+  description: string | null;
+  branchId: string | null;
+  branchName: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  /** the portal its menu cells are keyed to (null = it holds none) */
+  portal: string | null;
+  /** Permissions Matrix cells, "<menu>/<submenu>:<ACTION>" */
+  menuCells: string[];
+  /** built-in roles hold the whole menu implicitly */
+  fullMenu: boolean;
+}
+
+/** A branch or department (core OrgUnitController). */
+export interface OrgUnit {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+}
+
+export interface OrgUnitPage {
+  items: OrgUnit[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+  sort: string;
 }
 
 export interface PermissionDef {
@@ -41,12 +73,28 @@ export interface RoleChange {
   status: string;
 }
 
-/** Role Name = the role key; Role Description = its display name (FSP has no separate description). */
-export const newRoleSchema = z.object({
-  key: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9_]{1,47}$/, '2–48 characters: A–Z, 0–9 and _, starting with a letter'),
-  name: z.string().trim().min(2, 'Describe the role').max(80, 'Keep it under 80 characters'),
-});
-export type NewRoleValues = z.infer<typeof newRoleSchema>;
+/** "Teller Supervisor" → "TELLER_SUPERVISOR": the role's unique key, derived from its name. */
+export function roleKeyOf(name: string): string {
+  let k = name.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (k && !/^[A-Z]/.test(k)) k = `R_${k}`;
+  return k.slice(0, 48);
+}
+
+/**
+ * Role Details (Add Role form). Branch / Department are required whenever the organization has
+ * any (`unitsRequired`) — the same rule core enforces (BRANCH_REQUIRED / DEPARTMENT_REQUIRED).
+ */
+export function roleDetailsSchema(unitsRequired: { branch: boolean; department: boolean }) {
+  return z.object({
+    name: z.string().trim().min(2, 'Name the role').max(80, 'Keep it under 80 characters')
+      .refine((v) => /^[A-Z][A-Z0-9_]{1,47}$/.test(roleKeyOf(v)), 'Use at least 2 letters or digits, starting with a letter'),
+    description: z.string().trim().min(2, 'Describe the role’s responsibilities').max(500, 'Keep it under 500 characters'),
+    branchId: unitsRequired.branch ? z.string().min(1, 'Choose a branch') : z.string(),
+    departmentId: unitsRequired.department ? z.string().min(1, 'Choose a department') : z.string(),
+  });
+}
+export type RoleDetailsValues = z.infer<ReturnType<typeof roleDetailsSchema>>;
 
 export const rbacKeys = {
   all: (orgId: string) => ['rbac', orgId] as const,
@@ -59,6 +107,30 @@ export function useRoles(port: WidgetDataPortLike, orgId: string) {
     queryKey: rbacKeys.roles(orgId),
     queryFn: () => port.request<RoleView[]>('rbac.matrix.roles', { tenantId: orgId }),
     enabled: orgId !== '',
+  });
+}
+
+/** The organization's ACTIVE branches / departments for the Role Details selects (server-sorted by name). */
+export function useOrgUnits(port: WidgetDataPortLike, orgId: string, kind: 'branches' | 'departments') {
+  return useQuery({
+    queryKey: ['rbac', orgId, kind] as const,
+    queryFn: () => port.request<OrgUnitPage>(`rbac.matrix.${kind}`, { tenantId: orgId }),
+    enabled: orgId !== '',
+    staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * What the EDITOR holds on the role's portal menu (core /me/menu-access) — only those cells can
+ * be granted or revoked (no escalation; core re-checks: ROLE_MENU_NOT_ASSIGNABLE).
+ */
+export function useEditorMenuAccess(port: WidgetDataPortLike, portal: string | null) {
+  return useQuery({
+    queryKey: ['rbac-menu-access', portal] as const,
+    queryFn: async (): Promise<MenuAccess> => parseMenuAccess(portal!, await port.request<unknown>('rbac.matrix.access', { portal: portal! })),
+    enabled: portal !== null,
+    staleTime: 60_000,
+    retry: 1,
   });
 }
 
@@ -140,9 +212,22 @@ export function usePublishedMenu(port: WidgetDataPortLike, orgId: string, mode: 
   }
 }
 
+/** What a role grants: permission keys (API rights) + menu cells (the matrix). */
+export interface Grants {
+  keys: ReadonlySet<string>;
+  cells: ReadonlySet<string>;
+}
+
+export interface RoleDetailsBody {
+  name: string;
+  description: string;
+  branchId: string | null;
+  departmentId: string | null;
+}
+
 export type RoleCommand =
-  | { kind: 'create'; key: string; name: string; permissionKeys: string[] }
-  | { kind: 'update'; role: RoleView; permissionKeys: string[] }
+  | { kind: 'create'; key: string; details: RoleDetailsBody; grants: Grants }
+  | { kind: 'update'; role: RoleView; details: RoleDetailsBody; grants: Grants }
   | { kind: 'delete'; role: RoleView };
 
 export function useRoleCommand(port: WidgetDataPortLike, orgId: string) {
@@ -151,10 +236,14 @@ export function useRoleCommand(port: WidgetDataPortLike, orgId: string) {
     mutationFn: (c: RoleCommand): Promise<RoleChange> => {
       switch (c.kind) {
         case 'create':
-          return port.command<RoleChange>('rbac.matrix.create', { key: c.key, name: c.name, permissionKeys: c.permissionKeys }, { tenantId: orgId });
+          return port.command<RoleChange>('rbac.matrix.create', {
+            key: c.key, ...c.details, permissionKeys: [...c.grants.keys].sort(), menuCells: [...c.grants.cells].sort(),
+          }, { tenantId: orgId });
         case 'update':
-          return port.command<RoleChange>('rbac.matrix.update', { permissionKeys: c.permissionKeys, expectedVersion: c.role.version },
-            { tenantId: orgId, roleId: c.role.id });
+          return port.command<RoleChange>('rbac.matrix.update', {
+            ...c.details, permissionKeys: [...c.grants.keys].sort(), menuCells: [...c.grants.cells].sort(),
+            expectedVersion: c.role.version,
+          }, { tenantId: orgId, roleId: c.role.id });
         case 'delete':
           return port.command<RoleChange>('rbac.matrix.delete', undefined,
             { tenantId: orgId, roleId: c.role.id, expectedVersion: String(c.role.version) });
@@ -179,50 +268,59 @@ export function byComponent(defs: PermissionDef[]): Array<[string, PermissionDef
   return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
-/* ───────────────────────────── permission matrix (menu screen × verb) ─────────────────────────────
+/* ───────────────────────────── permission matrix (published submenu × action) ─────────────────────────────
  * Rows are EXACTLY the role's portal's PUBLISHED menu — the signed, verified layout core delivers
  * (the same one that draws that portal's sidebar), never the coded menu registry: one header row
- * per published menu, one row per screen, in published order. A screen's keys = every key its
- * placed widgets name (requires + action cells) — counting only widgets the server approved for
- * that portal at this build's major version, exactly like the sidebar — limited to keys the
- * catalogue has. The FSP catalogue is flat keys `<resource>.<verb>` (no verb grid server-side);
- * the matrix only PRESENTS each screen's keys by verb family. A cell is ONE box: ticking it grants
- * every key in it (Authorize = kyc.approve + kyc.reject).
+ * per published menu, one row per submenu, in published order.
  *
- * "Active" is one more box per screen: on when the role holds any key of the screen's gate (what
- * its placed widgets require — the screen then shows in the sidebar); ticking it grants one gate
- * key, unticking revokes the gate. Keys no screen uses are not shown, and editing a role never
- * strips them.
+ * Columns are fixed (Select all · Create · View · Update · Delete · Authorize · Active). Every box
+ * is a MENU CELL core stores on the role ("<menu>/<submenu>:<ACTION>"):
+ *   - Active = the submenu shows in that portal's sidebar;
+ *   - Create/View/Update/Delete/Authorize = what its screen may do.
+ * Ticking an action box ALSO grants the permission keys of that action family that the submenu's
+ * placed widgets need (e.g. View on Roles → role.view), so the screen actually works; ticking
+ * Active also grants the least key that makes the screen render. Unticking removes the cell and
+ * that family's keys; it never touches keys no submenu uses (editing a role never strips them).
+ * Widgets that read and send nothing (the "Coming soon" placeholder) contribute no keys.
  */
-export type VerbColumn = 'create' | 'view' | 'update' | 'authorize';
+export type MatrixColumn = 'create' | 'view' | 'update' | 'delete' | 'authorize';
 
-export const VERB_COLUMNS: readonly VerbColumn[] = ['create', 'view', 'update', 'authorize'];
+export const MATRIX_COLUMNS: readonly MatrixColumn[] = ['create', 'view', 'update', 'delete', 'authorize'];
 
-export const VERB_LABEL: Record<VerbColumn, string> = {
-  create: 'Create', view: 'View', update: 'Update', authorize: 'Authorize',
+export const COLUMN_LABEL: Record<MatrixColumn, string> = {
+  create: 'Create', view: 'View', update: 'Update', delete: 'Delete', authorize: 'Authorize',
 };
 
-const VERB_TO_COLUMN: Record<string, VerbColumn> = {
-  create: 'create', register: 'create', install: 'create', onboard_child: 'create', bootstrap: 'create',
+const COLUMN_ACTION: Record<MatrixColumn, MenuAction> = {
+  create: 'CREATE', view: 'VIEW', update: 'UPDATE', delete: 'DELETE', authorize: 'AUTHORIZE',
+};
+
+/** Cells per row: the five action columns + Active. */
+export const CELLS_PER_ROW = MATRIX_COLUMNS.length + 1;
+
+const VERB_TO_COLUMN: Record<string, MatrixColumn> = {
+  create: 'create', register: 'create', install: 'create', onboard_child: 'create', bootstrap: 'create', upload: 'create',
   view: 'view', review: 'view',
   manage: 'update', activate: 'update', open: 'update', close: 'update', run: 'update', act_as: 'update',
-  approve: 'authorize', reject: 'authorize', approve_child: 'authorize',
+  delete: 'delete', remove: 'delete', archive: 'delete', revoke: 'delete',
+  approve: 'authorize', reject: 'authorize', approve_child: 'authorize', authorize: 'authorize',
 };
 
-export interface MatrixCell {
+export interface MatrixKey {
   key: string;
   title: string;
   risk: PermissionDef['risk'];
 }
 
 export interface MatrixRow {
-  /** the screen's route (/p/<menu>/<screen>), unique per portal */
+  menuId: string;
+  screenId: string;
+  /** the submenu's route (/p/<menu>/<screen>), unique per portal */
   link: string;
   label: string;
-  cells: Record<VerbColumn, MatrixCell[]>;
-  /** every key the screen covers (its placed widgets' keys) */
-  keys: string[];
-  /** the screen's gate — holding any one shows it (the Active box) */
+  /** permission keys each action box also grants (from the submenu's placed widgets) */
+  keys: Record<MatrixColumn, MatrixKey[]>;
+  /** the screen's gate — the least of these is granted with Active so the screen renders */
   gate: string[];
 }
 
@@ -232,12 +330,9 @@ export interface MatrixGroup {
   /** the published menu's label (the sidebar group header) */
   label: string;
   rows: MatrixRow[];
-  keys: string[];
 }
 
 export interface PermissionMatrixModel {
-  /** only the verb families the rows actually use */
-  columns: VerbColumn[];
   groups: MatrixGroup[];
 }
 
@@ -246,8 +341,13 @@ export function splitKey(key: string): { resource: string; verb: string } {
   return i < 0 ? { resource: key, verb: '' } : { resource: key.slice(0, i), verb: key.slice(i + 1) };
 }
 
-export function columnOf(key: string): VerbColumn {
+export function columnOf(key: string): MatrixColumn {
   return VERB_TO_COLUMN[splitKey(key).verb] ?? 'update';
+}
+
+/** A widget that reads and sends nothing grants nothing (e.g. the "Coming soon" placeholder). */
+function grantsKeys(def: WidgetDef): boolean {
+  return (def.sources?.length ?? 0) > 0 || (def.commands?.length ?? 0) > 0;
 }
 
 /**
@@ -261,55 +361,54 @@ export function buildMatrix(
 ): PermissionMatrixModel {
   const byKey = new Map(defs.map((d) => [d.key, d] as const));
   const known = (ks: Iterable<string>) => [...new Set(ks)].filter((k) => byKey.has(k)).sort();
-  const used = new Set<VerbColumn>();
   const groups: MatrixGroup[] = [];
   for (const menu of layout.menus) {
-    const group: MatrixGroup = { id: menu.id, label: menu.label, rows: [], keys: [] };
+    const group: MatrixGroup = { id: menu.id, label: menu.label, rows: [] };
     for (const screen of menu.screens) {
       const placed = screen.placedWidgets
         .map((p) => placedDef(layout, p, registry))
-        .filter((d): d is WidgetDef => d !== null);
-      const keys = known(placed.flatMap((d) => cellsOf(d)));
-      const cells: Record<VerbColumn, MatrixCell[]> = { create: [], view: [], update: [], authorize: [] };
-      for (const k of keys) {
+        .filter((d): d is WidgetDef => d !== null && grantsKeys(d));
+      const keys: Record<MatrixColumn, MatrixKey[]> = { create: [], view: [], update: [], delete: [], authorize: [] };
+      for (const k of known(placed.flatMap((d) => cellsOf(d)))) {
         const d = byKey.get(k)!;
-        const col = columnOf(k);
-        used.add(col);
-        cells[col].push({ key: k, title: d.title, risk: d.risk });
+        keys[columnOf(k)].push({ key: k, title: d.title, risk: d.risk });
       }
-      group.rows.push({ link: screenLink(menu, screen), label: screen.label, cells, keys, gate: known(placed.flatMap((d) => requiresRows(d))) });
-      for (const k of keys) if (!group.keys.includes(k)) group.keys.push(k);
+      group.rows.push({
+        menuId: menu.id, screenId: screen.id, link: screenLink(menu, screen), label: screen.label, keys,
+        gate: known(placed.flatMap((d) => requiresRows(d))),
+      });
     }
     groups.push(group);
   }
-  return { columns: VERB_COLUMNS.filter((c) => used.has(c)), groups };
+  return { groups };
 }
 
 export type CheckState = 'all' | 'some' | 'none';
 
-export function checkState(keys: readonly string[], selected: ReadonlySet<string>): CheckState {
-  const n = keys.filter((k) => selected.has(k)).length;
-  return n === 0 ? 'none' : n === keys.length ? 'all' : 'some';
+export function columnCell(row: MatrixRow, column: MatrixColumn | 'active'): string {
+  return menuCell(row.menuId, row.screenId, column === 'active' ? 'ACTIVE' : COLUMN_ACTION[column]);
 }
 
-/**
- * "Select all" over a set of keys: only keys the editor may grant change (no escalation); if every
- * grantable key is already on, they all go off, otherwise they all go on.
- */
-export function toggleAll(keys: readonly string[], selected: ReadonlySet<string>, grantable: ReadonlySet<string>): Set<string> {
-  const mine = keys.filter((k) => grantable.has(k));
-  const next = new Set(selected);
-  const allOn = mine.length > 0 && mine.every((k) => next.has(k));
-  for (const k of mine) {
-    if (allOn) next.delete(k);
-    else next.add(k);
-  }
-  return next;
+/** Every cell of a row, Active last. */
+export function rowCells(row: MatrixRow): string[] {
+  return [...MATRIX_COLUMNS.map((c) => columnCell(row, c)), columnCell(row, 'active')];
 }
 
-/** Active = the link shows: the role holds ANY key of the link's gate (OR, like the sidebar). */
-export function isActive(gate: readonly string[], selected: ReadonlySet<string>): boolean {
-  return gate.some((k) => selected.has(k));
+export function checkState(items: readonly string[], selected: ReadonlySet<string>): CheckState {
+  const n = items.filter((k) => selected.has(k)).length;
+  return n === 0 ? 'none' : n === items.length ? 'all' : 'some';
+}
+
+/** What the editor may change: the keys they hold + the menu cells they hold (no escalation). */
+export interface Grantable {
+  keys: ReadonlySet<string>;
+  menu: MenuAccess;
+}
+
+export const NOTHING_GRANTABLE: Grantable = { keys: new Set(), menu: { full: false, cells: new Set() } };
+
+export function canGrantCell(g: Grantable, cell: string): boolean {
+  return g.menu.full || g.menu.cells.has(cell);
 }
 
 /** The one key ticking Active grants: the gate's view-family key if it has one, else its first grantable key. */
@@ -318,24 +417,52 @@ export function activeKey(gate: readonly string[], grantable: ReadonlySet<string
   return mine.find((k) => columnOf(k) === 'view') ?? mine[0] ?? null;
 }
 
-/**
- * Toggle a link's Active box. On → grant one gate key (the least privilege that shows the link).
- * Off → revoke every gate key the editor may revoke, so the link no longer shows.
- */
-export function toggleActive(gate: readonly string[], selected: ReadonlySet<string>, grantable: ReadonlySet<string>): Set<string> {
-  const next = new Set(selected);
-  if (isActive(gate, selected)) {
-    for (const k of gate) if (grantable.has(k)) next.delete(k);
+function setCell(row: MatrixRow, column: MatrixColumn | 'active', on: boolean, cur: Grants, g: Grantable): Grants {
+  const cell = columnCell(row, column);
+  if (!canGrantCell(g, cell)) return cur;
+  const keys = new Set(cur.keys);
+  const cells = new Set(cur.cells);
+  if (on) {
+    cells.add(cell);
+    if (column === 'active') {
+      if (!row.gate.some((k) => keys.has(k))) {
+        const k = activeKey(row.gate, g.keys);
+        if (k) keys.add(k);
+      }
+    } else {
+      for (const k of row.keys[column]) if (g.keys.has(k.key)) keys.add(k.key);
+    }
   } else {
-    const k = activeKey(gate, grantable);
-    if (k) next.add(k);
+    cells.delete(cell);
+    if (column !== 'active') for (const k of row.keys[column]) if (g.keys.has(k.key)) keys.delete(k.key);
+  }
+  return { keys, cells };
+}
+
+/** One box: on ↔ off (locked boxes do nothing). */
+export function toggleCell(row: MatrixRow, column: MatrixColumn | 'active', cur: Grants, g: Grantable): Grants {
+  return setCell(row, column, !cur.cells.has(columnCell(row, column)), cur, g);
+}
+
+/**
+ * "Select all" over rows: if every cell the editor may grant is already on, they all go off;
+ * otherwise they all go on. Boxes the editor may not grant never change.
+ */
+export function toggleRows(rows: readonly MatrixRow[], cur: Grants, g: Grantable): Grants {
+  const mine = rows.flatMap((r) => rowCells(r).filter((c) => canGrantCell(g, c)));
+  const allOn = mine.length > 0 && mine.every((c) => cur.cells.has(c));
+  let next = cur;
+  for (const r of rows) {
+    for (const col of [...MATRIX_COLUMNS, 'active' as const]) next = setCell(r, col, !allOn, next, g);
   }
   return next;
 }
 
-/** Other links that share a gate key with this one — unticking its Active box hides them too. */
-export function sharedGateLinks(m: PermissionMatrixModel, row: MatrixRow): string[] {
-  return m.groups.flatMap((g) => g.rows)
-    .filter((r) => r.link !== row.link && r.gate.some((k) => row.gate.includes(k)))
-    .map((r) => r.label);
+/** Cells added / removed against the role as it is. */
+export function cellDiff(before: readonly string[], after: ReadonlySet<string>): { added: string[]; removed: string[] } {
+  const b = new Set(before);
+  return {
+    added: [...after].filter((c) => !b.has(c)).sort(),
+    removed: [...b].filter((c) => !after.has(c)).sort(),
+  };
 }

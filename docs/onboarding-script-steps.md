@@ -76,10 +76,10 @@ platform pair (four-eyes needs maker ≠ checker; a browser context per persona)
 The KYC plugin is the onboarding engine. It must exist as a registered type and
 be installed on the Manufacturer before any KYC case can be filed.
 
-1. `[API]` As platform-admin: `GET /api/platform/plugins/kyc/1.0.0`.
+1. `[API]` As platform-admin: `GET /api/platform/plugins/kyc/1.1.0`.
    If already registered (a previous run), skip to step 4.
 2. `[API]` As platform-admin (the **maker**): `POST /api/platform/plugins` with
-   `{code:"kyc", version:"1.0.0", baseUrl:"http://localhost:8083", manifest:
+   `{code:"kyc", version:"1.1.0", baseUrl:"http://localhost:8083", manifest:
    <backend/plugins/kyc/plugin-manifest.json>, manifestHash: sha256(manifest)}`.
    **Assert** it lands as `PENDING_APPROVAL` with an approval opened.
 3. `[API]` As admin-checker (the **checker**): find the pending
@@ -95,9 +95,9 @@ be installed on the Manufacturer before any KYC case can be filed.
    **Assert** HTTP 200 with `tenantId`; note the created usernames.
    The tenant is ACTIVE/VERIFIED at birth (the platform vouches for PSPs).
 5. `[UI]` As platform-admin (maker): open `/admin/plugins?org=<mfr>` and
-   **Request installation** of `kyc 1.0.0` on the Manufacturer
+   **Request installation** of `kyc 1.1.0` on the Manufacturer
    (plugins.governance screen; an equivalent `POST /api/tenants/{mfr}/plugins`
-   with `{code:"kyc", version:"1.0.0"}` exists for the API lane) → pending
+   with `{code:"kyc", version:"1.1.0"}` exists for the API lane) → pending
    PLUGIN_INSTALL.
 6. `[UI · act-as]` The approval lives on the **PSP's own queue** — the PSP
    consents to a machine client entering its perimeter (customer-consent model,

@@ -18,13 +18,14 @@
 export type PortalId = 'platform' | 'org';
 
 export type MenuWidget =
-  | 'kyc.orgs' | 'kyc.manage' | 'kyc.application'
+  | 'kyc.orgs' | 'kyc.manage' | 'kyc.application' | 'kyc.customers'
   | 'onboard.psp' | 'onboard.list'
   | 'approvals.queue' | 'journal.entry' | 'audit.trail'
   | 'rbac.matrix' | 'permissions.catalogue' | 'plugins.governance'
-  | 'users.organization'
+  | 'users.organization' | 'users.reset'
   | 'ledger.accounts' | 'period.control' | 'bank.accounts'
   | 'overview.tiles'
+  | 'inventory.placeholder'
   | 'menu.placeholder';
 
 export interface MenuItem {
@@ -54,26 +55,24 @@ export const MENU_ITEMS: MenuItem[] = [
   // ================= platform (admin console) — the admin sidebar spec, menu for menu:
   //   User Management → Back Office User, Reset Password, Customer, Organization
   //   Role Management → Component, Sub Component, Branch, Department, Role
-  // plus Onboarding and Approvals (user and role changes are four-eyes and are decided only there).
-  // Reset Password / Customer / Component / Sub Component / Branch / Department have no feature
+  // plus Approvals (user and role changes are four-eyes and are decided only there). No separate
+  // Onboarding menu here: Organization is the org directory AND its "New onboarding" entry.
+  // Component / Sub Component / Branch / Department have no feature
   // behind them yet: they land on menu.placeholder, gated by the key their feature will need.
   { id: 'back-office-users', label: 'Back Office User', icon: '☰', link: '/users',
     perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['users.organization'] },
   { id: 'reset-password', label: 'Reset Password', icon: '⚷', link: '/reset-password',
-    perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['menu.placeholder'] },
+    perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['users.reset'] },
+  // customer KYC (the KYC plugin's widget): register → customer activates → checker activates
   { id: 'customers', label: 'Customer', icon: '☺', link: '/customers',
-    perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['menu.placeholder'] },
-  // the organization directory (rule 4: gated by the union of its widgets). Picking an org shows
-  // ITS users and onboarding beside the list (read-only until you act as its admin).
+    perm: ['kyc.review'], portals: ['platform'], group: 'User Management', widgets: ['kyc.customers'] },
+  // the organization directory: every org below the platform with its status + KYC standing
+  // (case, risk), and "New onboarding" opening the KYC application form in a drawer (the
+  // ladder's next rung under the signed-in org). Gated by the union of the widget's keys.
   { id: 'organizations', label: 'Organization', icon: '◈', link: '/organizations',
     perm: ['kyc.review', 'org.create'], portals: ['platform'], group: 'User Management',
-    // PSPs are created by "New onboarding" with the platform picked (the ladder's first rung)
-    widgets: ['kyc.orgs', 'users.organization', 'onboard.list'],
-    config: { 'users.organization': { scope: 'selected' }, 'onboard.list': { scope: 'selected' } },
-    // list + the picked org's users side by side (SME list/detail page)
-    span: { 'users.organization': { md: 6, lg: 8 } } },
-  { id: 'onboarding', label: 'Onboarding', icon: '⇲', link: '/onboarding',
-    perm: ['org.create'], portals: ['platform'], group: 'Onboarding', widgets: ['onboard.list'] },
+    widgets: ['onboard.list'],
+    config: { 'onboard.list': { scope: 'own' } } },
   { id: 'components', label: 'Component', icon: '▦', link: '/components',
     perm: ['role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['menu.placeholder'] },
   { id: 'sub-components', label: 'Sub Component', icon: '▤', link: '/sub-components',
@@ -91,17 +90,36 @@ export const MENU_ITEMS: MenuItem[] = [
   // ---------------- governance (governance-first like SME)
   { id: 'overview', label: 'Overview', icon: '◫', link: '/overview',
     perm: ['audit.view'], portals: ['org'], widgets: ['overview.tiles'] },
-  // organizations onboard children through the KYC plugin (org.onboard_child)
+  // ---------------- Onboarding: organizations onboard children through the KYC plugin
   { id: 'onboarding', label: 'Onboarding', icon: '⇲', link: '/onboarding',
-    perm: ['org.onboard_child'], portals: ['org'], widgets: ['kyc.manage'] },
+    perm: ['org.onboard_child'], portals: ['org'], group: 'Onboarding', widgets: ['kyc.manage'] },
   { id: 'network', label: 'My network', icon: '⑃', link: '/network',
-    perm: ['kyc.review'], portals: ['org'], widgets: ['kyc.orgs'] },
-  { id: 'users', label: 'User management', icon: '☰', link: '/users',
-    perm: ['user.manage'], portals: ['org'], widgets: ['users.organization'] },
+    perm: ['kyc.review'], portals: ['org'], group: 'Onboarding', widgets: ['kyc.orgs'] },
+
+  // ---------------- User Management (same widget as the admin console's Back Office User):
+  // add users to THIS organization — four-eyes USER_CREATE, then the IdP sends the new user
+  // an activation (email link / SMS code) and they set their own password. Nobody else does.
+  { id: 'users', label: 'Users', icon: '☰', link: '/users',
+    perm: ['user.manage'], portals: ['org'], group: 'User Management', widgets: ['users.organization'] },
+  { id: 'org-reset-password', label: 'Reset password', icon: '⚷', link: '/reset-password',
+    perm: ['user.manage'], portals: ['org'], group: 'User Management', widgets: ['users.reset'] },
+
+  // ---------------- Role Management (same widgets as the admin console's Role Management)
+  { id: 'rbac', label: 'Roles and permissions', icon: '⚿', link: '/rbac',
+    perm: ['role.view', 'role.manage'], portals: ['org'], group: 'Role Management', widgets: ['rbac.matrix'] },
+  { id: 'permissions', label: 'All permissions', icon: '⌗', link: '/permissions',
+    perm: ['audit.view', 'role.manage', 'kyc.review'], portals: ['org'],
+    group: 'Role Management', widgets: ['permissions.catalogue'] },
+
+  // ---------------- Inventory (the inventory plugin plane; its widgets land on these screens)
+  { id: 'inventory', label: 'Inventory', icon: '▦', link: '/inventory',
+    perm: ['inventory.view'], portals: ['org'], group: 'Inventory', widgets: ['inventory.placeholder'] },
 
   // ---------------- KYC (one screen family: the directory / queue / case)
   { id: 'kyc-reviews', label: 'Review queue', icon: '✓', link: '/kyc/reviews',
     perm: ['kyc.approve', 'kyc.reject'], portals: ['org'], group: 'KYC', widgets: ['kyc.manage'] },
+  { id: 'kyc-customers', label: 'Customers', icon: '☺', link: '/kyc/customers',
+    perm: ['kyc.review'], portals: ['org'], group: 'KYC', widgets: ['kyc.customers'] },
   { id: 'kyc-decisions', label: 'My organization', icon: '◈', link: '/kyc',
     perm: ['kyc.review'], portals: ['org'], group: 'KYC', widgets: ['kyc.application'] },
 
@@ -116,17 +134,12 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: 'ledger-audit', label: 'Audit trail', icon: '☰', link: '/audit',
     perm: ['audit.view'], portals: ['org'], group: 'Operations', widgets: ['audit.trail'] },
 
-  // ---------------- access + ledger setup
-  { id: 'rbac', label: 'Roles and permissions', icon: '⚿', link: '/rbac',
-    perm: ['role.view', 'role.manage'], portals: ['org'], group: 'Access', widgets: ['rbac.matrix'] },
-  { id: 'permissions', label: 'All permissions', icon: '⌗', link: '/permissions',
-    perm: ['audit.view', 'role.manage', 'kyc.review'], portals: ['org'],
-    group: 'Access', widgets: ['permissions.catalogue'] },
+  // ---------------- ledger setup
   { id: 'ledger', label: 'Chart of accounts', icon: '▣', link: '/ledger',
-    perm: ['gl.account.view'], portals: ['org'], group: 'Access', widgets: ['ledger.accounts'] },
+    perm: ['gl.account.view'], portals: ['org'], group: 'Ledger', widgets: ['ledger.accounts'] },
   { id: 'periods', label: 'Accounting periods', icon: '◷', link: '/periods',
     perm: ['gl.account.view', 'period.open', 'period.close'], portals: ['org'],
-    group: 'Access', widgets: ['period.control'] },
+    group: 'Ledger', widgets: ['period.control'] },
 ];
 
 export function menuFor(portal: PortalId): MenuItem[] {

@@ -1,6 +1,6 @@
 # Architecture Chapter 4 — The Money Engine (Books, CoA, JE & TigerBeetle)
 
-**Parent Document:** [docs/architecture.md](file:///home/arun/FinancialServicesPlatform/docs/architecture.md)
+**Parent Document:** [docs/architecture.md](../architecture.md)
 
 ---
 
@@ -118,6 +118,6 @@ dispositions resolves it — **commit** (confirmed), **void** (reversible window
 ambiguity). A timeout on an already-submitted message is **never** a failure; only a
 definitive `RailResult.Rejected(permanent=true)` voids immediately. Normative shapes, the
 exactly-once stack, and the failure doctrine live in
-[chapter 13](file:///home/arun/FinancialServicesPlatform/docs/architecture/13-money-movement-and-rails.md);
+[chapter 13](13-money-movement-and-rails.md);
 the executable plan (stages, regulatory citations) in
-[plans/bank-connectors-bill-payments-plan.md](file:///home/arun/FinancialServicesPlatform/plans/bank-connectors-bill-payments-plan.md).
+[plans/bank-connectors-bill-payments-plan.md](../../plans/bank-connectors-bill-payments-plan.md).

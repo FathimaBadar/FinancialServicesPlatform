@@ -30,6 +30,10 @@ timeline
     V31 : push subscription version
     V32 : sku orders
     V33 : recon permission
+    V34 : role menu grants org units
+    V36 : customer activation
+    V37 : auth channel width
+    V38 : notification snooze resolve
 
-**Next free migration number: V34.**
+**Next free migration number: V39.**
 ```

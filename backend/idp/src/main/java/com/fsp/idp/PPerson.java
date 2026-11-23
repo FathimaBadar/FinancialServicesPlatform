@@ -37,6 +37,15 @@ public class PPerson {
     @Column
     public String phone;
 
+    /** V36: EMAIL | PHONE — where the activation goes; null for persons born before V36. */
+    @Column(name = "primary_contact")
+    public String primaryContact;
+    /** V36: stamped HERE when the person completed activation (set their own password). */
+    @Column(name = "contact_verified_at")
+    public java.time.Instant contactVerifiedAt;
+    @Column(name = "is_customer", nullable = false)
+    public boolean isCustomer;
+
     /** Optimistic-lock passthrough on the canonical row: IdP writes (password reset,
      *  hosted change) compare-and-swap on persons.version exactly like core does —
      *  a concurrent core update to the same person fails HERE instead of being clobbered. */

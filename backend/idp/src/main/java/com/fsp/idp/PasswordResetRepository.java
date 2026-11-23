@@ -14,6 +14,9 @@ public interface PasswordResetRepository extends JpaRepository<PasswordReset, UU
 
     Optional<PasswordReset> findFirstByTokenHashAndConsumedAtIsNullOrderByCreatedAtDesc(String tokenHash);
 
+    /** V36: the live activation of a person (at most one live row per person — V30 partial unique). */
+    Optional<PasswordReset> findFirstByPersonIdAndPurposeAndConsumedAtIsNullOrderByCreatedAtDesc(UUID personId, String purpose);
+
     /** Supersede: a newly requested reset invalidates all pending rows for the person. */
     @Modifying
     @Query("update PasswordReset r set r.consumedAt = :at where r.personId = :personId and r.consumedAt is null")

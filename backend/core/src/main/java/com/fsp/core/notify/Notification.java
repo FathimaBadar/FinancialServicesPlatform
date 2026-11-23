@@ -90,6 +90,14 @@ public class Notification {
     @Column(name = "sms_via")
     public String smsVia;
 
+    /** V38: hidden from the pending inbox until this instant (the person parked it). */
+    @Column(name = "snoozed_until")
+    public Instant snoozedUntil;
+
+    /** V38: acted upon — the approval was decided (by anyone) or the notice was dismissed. */
+    @Column(name = "resolved_at")
+    public Instant resolvedAt;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     public Instant createdAt;
 }

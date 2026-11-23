@@ -57,19 +57,66 @@ public class NotificationController {
             @RequestParam(value = "size", required = false) Integer size,
             @RequestParam(value = "q", required = false) String q,
             @RequestParam(value = "unread", required = false) Boolean unread,
+            @RequestParam(value = "state", required = false) String state,
             @RequestParam(value = "sort", required = false) String sort) {
         Actor actor = actor(request);
-        long unreadTotal = service.unreadCount(actor.personId());
-        return service.listPage(actor.personId(), page, size, q, unread, sort, unreadTotal);
+        return service.listPage(actor.personId(), page, size, q, unread, state, sort);
     }
 
-    /** Cheap poll target for the badge (no rows over the wire). */
+    /** Cheap poll target for the badge (no rows over the wire). {@code pending} = not acted
+     *  upon and not snoozed — what the bell shows; {@code unread} kept for older clients. */
     @FspOperation(id = "notification.unread-count", permission = "notification.view", component = "notify",
         title = "Read the pending notification count")
     @GetMapping("/unread-count")
     public ResponseEntity<Map<String, Object>> unread(HttpServletRequest request) {
         Actor actor = actor(request);
-        return ResponseEntity.ok(Map.of("unread", service.unreadCount(actor.personId())));
+        return ResponseEntity.ok(Map.of(
+            "unread", service.unreadCount(actor.personId()),
+            "pending", service.pendingCount(actor.personId())));
+    }
+
+    public record SnoozeRequest(String until) {}
+
+    /** Park a notification until {@code until} (ISO-8601 instant); it returns to the pending inbox then. */
+    @FspOperation(id = "notification.snooze", permission = "notification.view", component = "notify",
+        risk = FspOperation.OperationRisk.WRITE, title = "Snooze one of your notifications")
+    @PostMapping("/{id}/snooze")
+    public NotificationService.NotificationView snooze(@PathVariable UUID id, @RequestBody SnoozeRequest body,
+                                                       HttpServletRequest request) {
+        Actor actor = actor(request);
+        java.time.Instant until;
+        try {
+            until = body == null || body.until() == null ? null : java.time.Instant.parse(body.until());
+        } catch (java.time.format.DateTimeParseException e) {
+            throw ApiException.badRequest("SNOOZE_UNTIL_INVALID", "until must be an ISO-8601 instant");
+        }
+        return service.snooze(actor.personId(), id, until);
+    }
+
+    @FspOperation(id = "notification.wake", permission = "notification.view", component = "notify",
+        risk = FspOperation.OperationRisk.WRITE, title = "Bring a snoozed notification back now")
+    @PostMapping("/{id}/wake")
+    public NotificationService.NotificationView wake(@PathVariable UUID id, HttpServletRequest request) {
+        Actor actor = actor(request);
+        return service.wake(actor.personId(), id);
+    }
+
+    @FspOperation(id = "notification.dismiss", permission = "notification.view", component = "notify",
+        risk = FspOperation.OperationRisk.WRITE, title = "Dismiss an informational notification")
+    @PostMapping("/{id}/dismiss")
+    public ResponseEntity<Void> dismiss(@PathVariable UUID id, HttpServletRequest request) {
+        Actor actor = actor(request);
+        service.dismiss(actor.personId(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @FspOperation(id = "notification.read", permission = "notification.view", component = "notify",
+        risk = FspOperation.OperationRisk.WRITE, title = "Mark one notification read")
+    @PostMapping("/{id}/read")
+    public ResponseEntity<Void> read(@PathVariable UUID id, HttpServletRequest request) {
+        Actor actor = actor(request);
+        service.markRead(actor.personId(), id);
+        return ResponseEntity.noContent().build();
     }
 
     @FspOperation(id = "notification.read-all", permission = "notification.view", component = "notify",

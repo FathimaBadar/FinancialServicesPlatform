@@ -47,7 +47,7 @@ class TenantChildrenLadderTest {
     @Test
     void aDistributorCannotOnboardAManufacturer() {
         UUID dist = parent("TENANT", "DISTRIBUTOR");
-        assertThatThrownBy(() -> service.createChild(dist, "Acme", "MANUFACTURER", "acme.admin", null, maker))
+        assertThatThrownBy(() -> service.createChild(dist, "Acme", "MANUFACTURER", "acme.admin", null, null, null, maker))
             .isInstanceOf(ApiException.class)
             .satisfies(e -> org.assertj.core.api.Assertions.assertThat(((ApiException) e).getCode()).isEqualTo("CHILD_SUBTYPE_NOT_ALLOWED"));
         verify(tenants, never()).save(any());
@@ -56,7 +56,7 @@ class TenantChildrenLadderTest {
     @Test
     void aMerchantOnboardsNothing() {
         UUID merchant = parent("TENANT", "MERCHANT");
-        assertThatThrownBy(() -> service.createChild(merchant, "Shop", null, "shop.admin", null, maker))
+        assertThatThrownBy(() -> service.createChild(merchant, "Shop", null, "shop.admin", null, null, null, maker))
             .isInstanceOf(ApiException.class)
             .satisfies(e -> org.assertj.core.api.Assertions.assertThat(((ApiException) e).getCode()).isEqualTo("CHILD_NOT_ALLOWED"));
         verify(tenants, never()).save(any());

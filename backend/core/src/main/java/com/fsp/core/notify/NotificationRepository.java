@@ -25,6 +25,44 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     @Query("select count(n) from Notification n where n.personId = :personId and n.readAt is null")
     long countUnread(@Param("personId") UUID personId);
 
+    /** Pending = not acted upon and not snoozed right now (V38) — the bell badge. */
+    @Query("""
+        select count(n) from Notification n
+        where n.personId = :personId and n.resolvedAt is null
+          and (n.snoozedUntil is null or n.snoozedUntil <= :now)
+        """)
+    long countPending(@Param("personId") UUID personId, @Param("now") Instant now);
+
+    /** Every person's pointer at one resource stops being pending (approval decided). */
+    @Modifying
+    @Query("""
+        update Notification n set n.resolvedAt = :at
+        where n.resourceType = :resourceType and n.resourceId = :resourceId and n.resolvedAt is null
+        """)
+    int resolveForResource(@Param("resourceType") String resourceType, @Param("resourceId") UUID resourceId,
+                           @Param("at") Instant at);
+
+    /** Owner-scoped single-row writes: person id in the predicate, so another person's id matches nothing. */
+    @Modifying
+    @Query("""
+        update Notification n set n.snoozedUntil = :until
+        where n.id = :id and n.personId = :personId and n.resolvedAt is null
+        """)
+    int snooze(@Param("id") UUID id, @Param("personId") UUID personId, @Param("until") Instant until);
+
+    @Modifying
+    @Query("update Notification n set n.readAt = :at where n.id = :id and n.personId = :personId and n.readAt is null")
+    int markRead(@Param("id") UUID id, @Param("personId") UUID personId, @Param("at") Instant at);
+
+    @Modifying
+    @Query("""
+        update Notification n set n.resolvedAt = :at, n.readAt = coalesce(n.readAt, :at)
+        where n.id = :id and n.personId = :personId and n.resolvedAt is null
+        """)
+    int dismiss(@Param("id") UUID id, @Param("personId") UUID personId, @Param("at") Instant at);
+
+    java.util.Optional<Notification> findByIdAndPersonId(UUID id, UUID personId);
+
     /** Push queue cursor: rows older than the settle window that no dispatcher has claimed. */
     @Query("""
         select n from Notification n

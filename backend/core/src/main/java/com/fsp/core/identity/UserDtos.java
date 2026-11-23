@@ -14,9 +14,15 @@ public final class UserDtos {
     public record RoleRef(UUID id, String key, String name) {}
 
     /** One person of an organization. Never carries credentials. */
+    /**
+     * primaryContact: where the IdP sends the activation (EMAIL | PHONE); null for legacy
+     * users born with the bootstrap password. activated: whether they set their own password
+     * from it (null when there is no activation — legacy users).
+     */
     public record UserView(UUID id, UUID tenantId, String username, String fullName, String email,
                            String phone, String status, boolean isApplicant, boolean checker, List<RoleRef> roles,
-                           long version, Instant createdAt, Instant updatedAt, Instant archivedAt) {}
+                           long version, Instant createdAt, Instant updatedAt, Instant archivedAt,
+                           String primaryContact, Boolean activated) {}
 
     /**
      * One page of an organization's users (AGENTS §2f envelope). {@code counts} is per status over
@@ -35,8 +41,12 @@ public final class UserDtos {
                              boolean assignable) {}
 
     /** checker: may resolve four-eyes approvals (docs/checker-flag.md); null = false. */
+    /** No password: the IdP sends an activation to the primary contact (EMAIL | PHONE) once
+     *  the USER_CREATE is approved, and the user sets their own password from it. */
     public record CreateUser(String username, String fullName, String email, String phone,
-                             List<UUID> roleIds, Boolean checker) {}
+                             List<UUID> roleIds, Boolean checker, String primaryContact) {}
+
+    public record ActivationSent(UUID personId, String channel) {}
 
     /** Partial update; null fields are left unchanged. roleIds == null keeps current roles. */
     public record UpdateUser(String fullName, String email, String phone, List<UUID> roleIds,

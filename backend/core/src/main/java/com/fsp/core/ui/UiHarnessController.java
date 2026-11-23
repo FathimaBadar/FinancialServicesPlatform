@@ -27,13 +27,15 @@ public class UiHarnessController {
     private final PortalLayoutService layouts;
     private final UiBundleService bundles;
     private final UiSigner signer;
+    private final ApiDiscoveryService discovery;
 
     public UiHarnessController(WidgetRegistryService registry, PortalLayoutService layouts,
-                               UiBundleService bundles, UiSigner signer) {
+                               UiBundleService bundles, UiSigner signer, ApiDiscoveryService discovery) {
         this.registry = registry;
         this.layouts = layouts;
         this.bundles = bundles;
         this.signer = signer;
+        this.discovery = discovery;
     }
 
     @FspOperation(id = "ui.widget.register", component = "ui", risk = FspOperation.OperationRisk.WRITE,
@@ -50,6 +52,16 @@ public class UiHarnessController {
     public List<UiDtos.WidgetView> list(HttpServletRequest request) {
         Actor actor = actor(request);
         return registry.list(actor).stream().map(UiHarnessController::toView).toList();
+    }
+
+    /** Live backend API surface (method + path + signature + @FspOperation metadata) for
+     *  the widget workbench LLM prompt — every @RestController handler the system exposes right now. */
+    @FspOperation(id = "ui.backend.apis.read", component = "ui", risk = FspOperation.OperationRisk.READ,
+            permission = "", resource = "TENANT", title = "Discover the live backend API surface (paths + signatures)")
+    @GetMapping("/backend-apis")
+    public List<UiDtos.BackendApiDto> backendApis(HttpServletRequest request) {
+        actor(request);
+        return discovery.discover(request);
     }
 
     @FspOperation(id = "ui.layout.draft.save", component = "ui", risk = FspOperation.OperationRisk.FOUR_EYES,

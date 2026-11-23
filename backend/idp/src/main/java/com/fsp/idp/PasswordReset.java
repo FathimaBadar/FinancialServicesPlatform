@@ -39,6 +39,14 @@ public class PasswordReset {
     @Column(nullable = false)
     public int attempts;
 
+    /** V36: RESET (self-service) | ACTIVATION (first password, proves the primary contact). */
+    @Column(nullable = false)
+    public String purpose = "RESET";
+
+    /** V36: EMAIL (link token) | SMS (one-time code bound to the person). */
+    @Column(nullable = false)
+    public String channel = "EMAIL";
+
     @Column(name = "created_at", nullable = false, updatable = false)
     public Instant createdAt = Instant.now();
 }

@@ -1,6 +1,6 @@
 # Architecture Chapter 10 — Data Model & Storage
 
-**Parent Document:** [docs/architecture.md](file:///home/arun/FinancialServicesPlatform/docs/architecture.md)
+**Parent Document:** [docs/architecture.md](../architecture.md)
 
 ---
 

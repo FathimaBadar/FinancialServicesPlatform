@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -168,6 +169,7 @@ public class UserAdminService {
         return (root, query, cb) -> {
             List<Predicate> where = new ArrayList<>();
             where.add(cb.equal(root.get("tenantId"), tenantId));
+            where.add(cb.isFalse(root.get("isCustomer"))); // V36: customers are not staff users
             if (statuses != null) where.add(root.get("status").in(statuses));
             if (like != null) {
                 // role-name match: an org role this person holds whose name matches
@@ -233,19 +235,19 @@ public class UserAdminService {
             throw ApiException.conflict("USERNAME_TAKEN", "Username '%s' is already in use".formatted(username));
         }
         String fullName = requireFullName(in.fullName());
-        String email = normalizeEmail(in.email());
-        String phone = normalizePhone(in.phone());
+        // FAPI 2.0: no password is set by staff. The IdP owns the credential — once the
+        // USER_CREATE is approved it sends a one-time link (email) / code (SMS) to the primary
+        // contact and the user chooses their own password (V36 activation; same as customers).
+        String primary = in.primaryContact() == null || in.primaryContact().isBlank()
+            ? (in.email() != null && !in.email().isBlank() ? "EMAIL" : "PHONE")
+            : in.primaryContact().trim().toUpperCase(Locale.ROOT);
+        PersonProvisioning.Contact contact = PersonProvisioning.contact(in.email(), in.phone(), primary);
         List<Role> grant = resolveRoles(tenantId, in.roleIds());
         requireAssignable(actor, tenantId, grant, null);
 
         // Stage the person in PENDING state — no sign-in, no roles until checker approves.
-        // F-8: born with the bootstrap password → forced first-login change at the IdP.
-        Person p = provisioning.createPerson(tenantId, username, fullName, email,
-            props.getSecurity().getDefaultPersonPassword(), false, true);
-        p.status = STATUS_PENDING;
-        p.phone = phone;
-        p.updatedAt = Instant.now();
-        Person saved = persons.save(p);
+        Person saved = provisioning.createInvitedPerson(tenantId, username, fullName, contact.email(),
+            contact.phone(), contact.primary(), STATUS_PENDING, false, false);
 
         String payload;
         try {
@@ -283,19 +285,32 @@ public class UserAdminService {
         String proposedFullName = in.fullName() == null ? p.fullName : requireFullName(in.fullName());
         String proposedEmail = in.email() == null ? p.email : normalizeEmail(in.email());
         String proposedPhone = in.phone() == null ? p.phone : normalizePhone(in.phone());
+        // the IdP reaches an invited user only through the primary contact — it can't be cleared
+        if ("EMAIL".equals(p.primaryContact) && proposedEmail == null) {
+            throw ApiException.badRequest("CONTACT_REQUIRED", "Email is the user's primary contact and can't be removed");
+        }
+        if ("PHONE".equals(p.primaryContact) && proposedPhone == null) {
+            throw ApiException.badRequest("CONTACT_REQUIRED", "Phone is the user's primary contact and can't be removed");
+        }
+        if (p.primaryContact != null && proposedPhone != null) {
+            String e164 = com.fsp.core.notify.channel.ChannelAddresses.normaliseE164(proposedPhone);
+            if (e164 == null) throw ApiException.badRequest("PHONE_INVALID", "Phone must be in international format, e.g. +264 81 123 4567");
+            proposedPhone = e164;
+        }
         List<Role> proposedRoles = in.roleIds() == null ? currentRoles(p) : resolveRoles(tenantId, in.roleIds());
         requireAssignable(actor, tenantId, proposedRoles, p.id);
         boolean proposedChecker = in.checker() == null ? p.isChecker : in.checker();
 
         String payload;
         try {
-            payload = mapper.writeValueAsString(Map.of(
-                "fullName", proposedFullName,
-                "email", proposedEmail,
-                "phone", proposedPhone,
-                "roleIds", proposedRoles.stream().map(r -> r.id.toString()).toList(),
-                "checker", proposedChecker
-            ));
+            // LinkedHashMap, not Map.of: an absent email/phone is a legitimate JSON null here
+            Map<String, Object> proposed = new LinkedHashMap<>();
+            proposed.put("fullName", proposedFullName);
+            proposed.put("email", proposedEmail);
+            proposed.put("phone", proposedPhone);
+            proposed.put("roleIds", proposedRoles.stream().map(r -> r.id.toString()).toList());
+            proposed.put("checker", proposedChecker);
+            payload = mapper.writeValueAsString(proposed);
         } catch (Exception e) {
             throw ApiException.serviceUnavailable("PAYLOAD_SERIALIZE", "Failed to serialize update payload");
         }
@@ -339,6 +354,66 @@ public class UserAdminService {
         log.info("user_remove_requested personId={} tenant={} by={} (awaiting checker approval)",
             p.id, tenantId, actor.personId());
         return before;
+    }
+
+    @Transactional
+    public UserDtos.UserView passwordResetRequest(UUID tenantId, UUID personId, Long expectedVersion, Actor actor) {
+        requireOrg(actor, tenantId);
+        Person p = load(tenantId, personId);
+        requireVersion(p, expectedVersion);
+        requireNotSelf(actor, p, "request a password reset for");
+        if ("ARCHIVED".equals(p.status)) {
+            throw ApiException.conflict("USER_STATE", "A removed user cannot be reset");
+        }
+        if ("PENDING".equals(p.status)) {
+            throw ApiException.conflict("USER_STATE", "User has a pending change awaiting approval; resolve it first");
+        }
+        if ("DISABLED".equals(p.status)) {
+            throw ApiException.conflict("USER_STATE", "A deactivated user can't reset their password; reactivate them first");
+        }
+        // The IdP sends a reset LINK by email only (never a secret over SMS) — a request that
+        // can't be delivered is refused here with the reason, never approved into a silent no-op.
+        if (p.primaryContact != null && p.contactVerifiedAt == null) {
+            throw ApiException.conflict("ACTIVATION_PENDING",
+                "This user hasn't set a password yet — re-send their activation instead");
+        }
+        if (p.email == null || p.email.isBlank()) {
+            throw ApiException.conflict("NO_EMAIL", "A reset link goes by email — add an email address to this user first");
+        }
+        UserDtos.UserView before = viewOf(p);
+        approvals.open(tenantId, ApprovalRequest.OpType.USER_PASSWORD_RESET, p.id, actor,
+            "password-reset-request:" + p.username, null);
+        record(actor, tenantId, "USER_PASSWORD_RESET_REQUESTED", p.id, before, before);
+        log.info("user_password_reset_requested personId={} tenant={} by={} (awaiting checker approval)",
+            p.id, tenantId, actor.personId());
+        return before;
+    }
+
+    /**
+     * The approved user hasn't set their password yet: a new activation may be sent (it
+     * supersedes the earlier link / code). Read-only check — the IdP call happens after.
+     */
+    @Transactional(readOnly = true)
+    public Person requireAwaitingActivation(UUID tenantId, UUID personId, Actor actor) {
+        requireOrg(actor, tenantId);
+        Person p = load(tenantId, personId);
+        if (p.primaryContact == null) {
+            throw ApiException.conflict("NO_ACTIVATION", "This user signs in with an existing password; use a password reset");
+        }
+        if (p.contactVerifiedAt != null) {
+            throw ApiException.conflict("ALREADY_ACTIVATED", "This user already set their password");
+        }
+        if (!"ACTIVE".equals(p.status)) {
+            throw ApiException.conflict("USER_STATE", "The activation is sent once the user is approved and active");
+        }
+        return p;
+    }
+
+    /** Audit: who asked the IdP to re-issue this user's activation (ids + channel only). */
+    @Transactional
+    public void recordActivationResent(UUID tenantId, Person p, Actor actor) {
+        audit.record(actor.personId(), null, tenantId, null, "USER_ACTIVATION_RESENT", "PERSON", p.id.toString(),
+            null, audit.hashState("channel=" + p.primaryContact + ";at=" + Instant.now()), false);
     }
 
     // ---------------------------------------------------------------- helpers
@@ -401,8 +476,9 @@ public class UserAdminService {
             throw ApiException.badRequest("PAYLOAD_INVALID", "Update payload is not valid JSON");
         }
         if (patch.containsKey("fullName")) p.fullName = requireFullName(String.valueOf(patch.get("fullName")));
-        if (patch.containsKey("email")) p.email = normalizeEmail(String.valueOf(patch.get("email")));
-        if (patch.containsKey("phone")) p.phone = normalizePhone(String.valueOf(patch.get("phone")));
+        // (String) cast, not String.valueOf: a JSON null must stay null, not become "null"
+        if (patch.containsKey("email")) p.email = normalizeEmail((String) patch.get("email"));
+        if (patch.containsKey("phone")) p.phone = normalizePhone((String) patch.get("phone"));
         if (patch.containsKey("checker")) p.isChecker = Boolean.TRUE.equals(patch.get("checker"));
         if (patch.containsKey("roleIds")) {
             @SuppressWarnings("unchecked")
@@ -497,7 +573,8 @@ public class UserAdminService {
     /** Concealed 404: a person of another org is indistinguishable from a missing one. */
     private Person load(UUID tenantId, UUID personId) {
         Person p = persons.findById(personId).orElse(null);
-        if (p == null || !tenantId.equals(p.tenantId)) {
+        // V36: customers are managed by the KYC plugin flow, never by staff user admin
+        if (p == null || !tenantId.equals(p.tenantId) || p.isCustomer) {
             throw ApiException.notFound("USER_NOT_FOUND", "User not found in this organization");
         }
         return p;
@@ -606,7 +683,8 @@ public class UserAdminService {
 
     private static UserDtos.UserView view(Person p, List<UserDtos.RoleRef> roleRefs) {
         return new UserDtos.UserView(p.id, p.tenantId, p.username, p.fullName, p.email, p.phone, p.status,
-            p.isApplicant, p.isChecker, roleRefs, p.version, p.createdAt, p.updatedAt, p.archivedAt);
+            p.isApplicant, p.isChecker, roleRefs, p.version, p.createdAt, p.updatedAt, p.archivedAt,
+            p.primaryContact, p.primaryContact == null ? null : p.contactVerifiedAt != null);
     }
 
     /** Audit (hashes only — never PII) + outbox event in the same transaction (AGENTS §3.6/§3.7). */

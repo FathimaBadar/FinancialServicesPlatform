@@ -7,6 +7,7 @@ import com.fsp.core.approval.ApprovalService;
 import com.fsp.core.audit.AuditService;
 import com.fsp.core.common.Actor;
 import com.fsp.core.common.ApiException;
+import com.fsp.core.orgunit.OrgUnitService;
 import com.fsp.core.outbox.OutboxService;
 import com.fsp.core.tenant.TenantRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -47,6 +49,11 @@ import java.util.regex.Pattern;
  *   <li>One open change per role ({@code ROLE_CHANGE_PENDING}); PLATFORM-scoped roles and the
  *       two anchor roles every organization is born with cannot be deleted ({@code ROLE_PROTECTED});
  *       a role still assigned to people cannot be deleted ({@code ROLE_IN_USE}).</li>
+ *   <li>Menu cells (the Permissions Matrix) must name submenus of the PUBLISHED menu of the portal
+ *       the organization's people sign in to — at request time and again at apply time — and the
+ *       maker must hold every cell they grant or revoke ({@link MenuAccessService}).</li>
+ *   <li>Branch / department: the organization's own ACTIVE units; required whenever the
+ *       organization has any ({@link OrgUnitService}).</li>
  * </ul>
  */
 @Slf4j
@@ -71,11 +78,18 @@ public class RoleAdminService {
     private final AuditService audit;
     private final OutboxService outbox;
     private final ObjectMapper mapper;
+    private final MenuAccessService menuAccess;
+    private final RoleMenuGrantRepository menuGrants;
+    private final OrgUnitService orgUnits;
 
     public RoleAdminService(RoleRepository roles, RbacRepository rbac, RolePermissionRepository rolePermissions,
                             PermissionRepository catalog, TenantRepository tenants, PermissionService permissions,
                             ApprovalService approvals, ApprovalRequestRepository approvalRows,
-                            AuditService audit, OutboxService outbox, ObjectMapper mapper) {
+                            AuditService audit, OutboxService outbox, ObjectMapper mapper,
+                            MenuAccessService menuAccess, RoleMenuGrantRepository menuGrants, OrgUnitService orgUnits) {
+        this.menuAccess = menuAccess;
+        this.menuGrants = menuGrants;
+        this.orgUnits = orgUnits;
         this.roles = roles;
         this.rbac = rbac;
         this.rolePermissions = rolePermissions;
@@ -102,7 +116,10 @@ public class RoleAdminService {
             if (!ApprovalRequest.OpType.ROLE_CREATE.equals(a.operationType)) continue;
             RoleDtos.RoleProposal p = proposal(a);
             out.add(new RoleDtos.RoleView(a.targetResourceId, tenantId, p.key(), p.name(), "TENANT", "PENDING_CREATE",
-                sorted(p.permissionKeys()), 0, 0, false, a.id, a.operationType));
+                sorted(p.permissionKeys()), 0, 0, false, a.id, a.operationType,
+                p.description(), p.branchId(), orgUnits.nameOf(OrgUnitService.Kind.BRANCH, p.branchId()),
+                p.departmentId(), orgUnits.nameOf(OrgUnitService.Kind.DEPARTMENT, p.departmentId()),
+                p.portal(), p.menuCells() == null ? List.of() : p.menuCells(), false));
         }
         out.sort(Comparator.comparing(RoleDtos.RoleView::key));
         return out;
@@ -127,20 +144,27 @@ public class RoleAdminService {
                 "Role key must be 2–48 characters: A–Z, 0–9 and '_', starting with a letter");
         }
         String name = requireName(in.name() == null || in.name().isBlank() ? key : in.name());
+        String description = requireDescription(in.description());
         boolean taken = roles.findByTenantId(tenantId).stream().anyMatch(r -> r.key.equals(key))
             || pendingByTarget(tenantId).values().stream()
                 .anyMatch(a -> ApprovalRequest.OpType.ROLE_CREATE.equals(a.operationType) && key.equals(proposal(a).key()));
         if (taken) throw ApiException.conflict("ROLE_KEY_TAKEN", "Role key '%s' is already in use".formatted(key));
+        UUID branchId = requireUnit(OrgUnitService.Kind.BRANCH, tenantId, in.branchId());
+        UUID departmentId = requireUnit(OrgUnitService.Kind.DEPARTMENT, tenantId, in.departmentId());
         List<String> keys = requireCatalogKeys(in.permissionKeys());
+        String portal = menuAccess.portalOf(tenantId);
+        List<String> cells = requireMenuCells(portal, in.menuCells());
         requireHeld(actor, tenantId, new LinkedHashSet<>(keys), key);
+        requireHeldCells(actor, tenantId, portal, new TreeSet<>(cells), key);
 
         UUID roleId = UUID.randomUUID(); // reserved; the row is created only on approval
-        RoleDtos.RoleProposal p = new RoleDtos.RoleProposal(key, name, keys, null);
+        RoleDtos.RoleProposal p = new RoleDtos.RoleProposal(key, name, keys, null, description, branchId, departmentId,
+            portal, cells);
         ApprovalRequest row = approvals.open(tenantId, ApprovalRequest.OpType.ROLE_CREATE, roleId, actor,
-            "role-create:" + key + ":" + keys, json(p));
+            "role-create:" + json(p), json(p));
         record(actor.personId(), null, tenantId, "ROLE_CREATE_REQUESTED", roleId, null, p);
-        log.info("role_create_requested tenant={} roleKey={} keys={} approvalId={} by={}",
-            tenantId, key, keys.size(), row.id, actor.personId());
+        log.info("role_create_requested tenant={} roleKey={} keys={} menuCells={} approvalId={} by={}",
+            tenantId, key, keys.size(), cells.size(), row.id, actor.personId());
         return new RoleDtos.RoleChange(row.id, row.operationType, roleId, row.status);
     }
 
@@ -155,18 +179,31 @@ public class RoleAdminService {
         List<String> current = rbac.permissionKeysForRole(r.id);
         List<String> proposed = in.permissionKeys() == null ? current : requireCatalogKeys(in.permissionKeys());
         String name = in.name() == null ? r.name : requireName(in.name());
+        String description = in.description() == null ? r.description : requireDescription(in.description());
+        UUID branchId = in.branchId() == null ? r.branchId : requireUnit(OrgUnitService.Kind.BRANCH, tenantId, in.branchId());
+        UUID departmentId = in.departmentId() == null ? r.departmentId
+            : requireUnit(OrgUnitService.Kind.DEPARTMENT, tenantId, in.departmentId());
+        String portal = menuAccess.portalOf(tenantId);
+        List<String> currentCells = menuGrants.cellsForRole(r.id);
+        List<String> proposedCells = in.menuCells() == null ? currentCells : requireMenuCells(portal, in.menuCells());
         Set<String> touched = diff(current, proposed);
-        if (touched.isEmpty() && name.equals(r.name)) {
+        Set<String> touchedCells = diff(currentCells, proposedCells);
+        boolean detailsSame = name.equals(r.name) && Objects.equals(description, r.description)
+            && Objects.equals(branchId, r.branchId) && Objects.equals(departmentId, r.departmentId);
+        if (touched.isEmpty() && touchedCells.isEmpty() && detailsSame) {
             throw ApiException.badRequest("ROLE_NO_CHANGE", "The proposal is identical to the current role");
         }
         requireHeld(actor, tenantId, touched, r.key);
+        requireHeldCells(actor, tenantId, portal, touchedCells, r.key);
 
-        RoleDtos.RoleProposal p = new RoleDtos.RoleProposal(r.key, name, proposed, r.version);
+        RoleDtos.RoleProposal p = new RoleDtos.RoleProposal(r.key, name, proposed, r.version, description, branchId,
+            departmentId, portal, proposedCells);
         ApprovalRequest row = approvals.open(tenantId, ApprovalRequest.OpType.ROLE_UPDATE, r.id, actor,
-            "role-update:" + r.key + ":" + proposed + ":v" + r.version, json(p));
+            "role-update:" + json(p), json(p));
         record(actor.personId(), null, tenantId, "ROLE_UPDATE_REQUESTED", r.id, snapshot(r, current), p);
-        log.info("role_update_requested tenant={} role={} added={} removed={} approvalId={} by={}",
-            tenantId, r.key, minus(proposed, current), minus(current, proposed), row.id, actor.personId());
+        log.info("role_update_requested tenant={} role={} added={} removed={} cellsAdded={} cellsRemoved={} approvalId={} by={}",
+            tenantId, r.key, minus(proposed, current), minus(current, proposed),
+            minus(proposedCells, currentCells).size(), minus(currentCells, proposedCells).size(), row.id, actor.personId());
         return new RoleDtos.RoleChange(row.id, row.operationType, r.id, row.status);
     }
 
@@ -180,6 +217,9 @@ public class RoleAdminService {
         requireUnassigned(r);
         List<String> current = rbac.permissionKeysForRole(r.id);
         requireHeld(actor, tenantId, new LinkedHashSet<>(current), r.key);
+        List<String> currentCells = menuGrants.cellsForRole(r.id);
+        String cellsPortal = menuGrants.portalOfRole(r.id);
+        if (cellsPortal != null) requireHeldCells(actor, tenantId, cellsPortal, new TreeSet<>(currentCells), r.key);
 
         RoleDtos.RoleProposal p = new RoleDtos.RoleProposal(r.key, r.name, List.of(), r.version);
         ApprovalRequest row = approvals.open(tenantId, ApprovalRequest.OpType.ROLE_DELETE, r.id, actor,
@@ -200,14 +240,22 @@ public class RoleAdminService {
             throw ApiException.conflict("ROLE_KEY_TAKEN", "Role key '%s' was taken meanwhile".formatted(p.key()));
         }
         List<String> keys = requireCatalogKeys(p.permissionKeys());
+        List<String> cells = reapplyCells(approval, p);
+        // the units may have been archived meanwhile: what the checker approves must still hold
+        if (p.branchId() != null) orgUnits.requireActive(OrgUnitService.Kind.BRANCH, approval.tenantId, p.branchId());
+        if (p.departmentId() != null) orgUnits.requireActive(OrgUnitService.Kind.DEPARTMENT, approval.tenantId, p.departmentId());
         Role r = new Role();
         r.id = approval.targetResourceId;
         r.tenantId = approval.tenantId;
         r.key = p.key();
         r.name = p.name();
         r.scope = "TENANT";
+        r.description = p.description();
+        r.branchId = p.branchId();
+        r.departmentId = p.departmentId();
         roles.saveAndFlush(r);
         for (String k : keys) grant(r.id, k);
+        if (!cells.isEmpty()) menuGrants.replace(r.id, p.portal(), cells);
         record(approval.makerId, checker.personId(), approval.tenantId, "ROLE_CREATED", r.id, null, snapshot(r, keys));
         log.info("role_create_applied tenant={} role={} keys={} approvalId={} checker={}",
             approval.tenantId, r.key, keys.size(), approval.id, checker.personId());
@@ -221,12 +269,25 @@ public class RoleAdminService {
         requirePinned(r, p);
         List<String> current = rbac.permissionKeysForRole(r.id);
         List<String> proposed = requireCatalogKeys(p.permissionKeys());
-        for (String k : minus(current, proposed)) rolePermissions.deleteById(new RolePermissionId(r.id, k));
-        for (String k : minus(proposed, current)) grant(r.id, k);
-        // the grant set is part of the role's state: version bumps atomically against the pinned base
-        if (roles.bumpVersion(r.id, p.baseVersion(), p.name()) != 1) {
+        boolean withCells = p.menuCells() != null; // proposals from before menu cells leave them as they are
+        List<String> cells = withCells ? reapplyCells(approval, p) : List.of();
+        if (p.branchId() != null && !p.branchId().equals(r.branchId)) {
+            orgUnits.requireActive(OrgUnitService.Kind.BRANCH, approval.tenantId, p.branchId());
+        }
+        if (p.departmentId() != null && !p.departmentId().equals(r.departmentId)) {
+            orgUnits.requireActive(OrgUnitService.Kind.DEPARTMENT, approval.tenantId, p.departmentId());
+        }
+        // version first: the conditional UPDATE row-locks the role, so a concurrent apply on the
+        // same role waits here and then fails its pin — grant rows are never written by two at once
+        int moved = withCells
+            ? roles.bumpVersionWithDetails(r.id, p.baseVersion(), p.name(), p.description(), p.branchId(), p.departmentId())
+            : roles.bumpVersion(r.id, p.baseVersion(), p.name());
+        if (moved != 1) {
             throw ApiException.conflict("STALE_WRITE", "The role changed while this request was applied; request again");
         }
+        for (String k : minus(current, proposed)) rolePermissions.deleteById(new RolePermissionId(r.id, k));
+        for (String k : minus(proposed, current)) grant(r.id, k);
+        if (withCells) menuGrants.replace(r.id, p.portal(), cells);
         record(approval.makerId, checker.personId(), approval.tenantId, "ROLE_UPDATED", r.id,
             snapshot(r, current), snapshot(r, proposed));
         log.info("role_update_applied tenant={} role={} added={} removed={} approvalId={} checker={}",
@@ -332,6 +393,64 @@ public class RoleAdminService {
         }
     }
 
+    /** No escalation on the menu either: the maker must hold every cell the change grants or revokes. */
+    private void requireHeldCells(Actor actor, UUID tenantId, String portal, Set<String> touched, String roleKey) {
+        if (touched.isEmpty()) return;
+        MenuAccessService.MenuAccess held = menuAccess.forActor(actor, tenantId, portal);
+        List<String> missing = touched.stream().filter(c -> !held.holds(c)).sorted().toList();
+        if (!missing.isEmpty()) {
+            log.warn("role_change_menu_escalation_denied personId={} tenant={} role={} missing={}",
+                actor.personId(), tenantId, roleKey, missing);
+            throw ApiException.forbidden("ROLE_MENU_NOT_ASSIGNABLE",
+                "You can only grant or revoke menu access you hold yourself (missing: %s)".formatted(missing));
+        }
+    }
+
+    /** Cells → normalized wire form, every one on the portal's PUBLISHED menu. */
+    private List<String> requireMenuCells(String portal, List<String> in) {
+        List<String> cells = MenuCell.normalize(in);
+        if (cells.isEmpty()) return cells;
+        if (portal == null) {
+            throw ApiException.conflict("PORTAL_NONE", "This organization signs in to no portal, so it has no menu to grant");
+        }
+        menuAccess.requirePublished(portal, cells);
+        return cells;
+    }
+
+    /** Apply time: the approved cells must still be on the published menu (it may have been re-published). */
+    private List<String> reapplyCells(ApprovalRequest approval, RoleDtos.RoleProposal p) {
+        List<String> cells = MenuCell.normalize(p.menuCells());
+        if (cells.isEmpty()) return cells;
+        try {
+            menuAccess.requirePublished(p.portal(), cells);
+        } catch (ApiException e) {
+            log.warn("role_change_menu_stale approvalId={} portal={} detail={}", approval.id, p.portal(), e.getMessage());
+            throw ApiException.conflict("MENU_CHANGED",
+                "The %s portal's menu changed after this request was made; reject it and request again".formatted(p.portal()));
+        }
+        return cells;
+    }
+
+    /** A role's branch / department: optional only while the organization has none of that kind. */
+    private UUID requireUnit(OrgUnitService.Kind kind, UUID tenantId, UUID id) {
+        if (id == null) {
+            if (orgUnits.hasActive(kind, tenantId)) {
+                String label = kind == OrgUnitService.Kind.BRANCH ? "branch" : "department";
+                throw ApiException.badRequest(kind + "_REQUIRED", "Choose the role's " + label);
+            }
+            return null;
+        }
+        return orgUnits.requireActive(kind, tenantId, id).id;
+    }
+
+    private static String requireDescription(String raw) {
+        String v = raw == null ? "" : raw.trim().replaceAll("\\s+", " ");
+        if (v.length() < 2 || v.length() > 500) {
+            throw ApiException.badRequest("ROLE_DESCRIPTION_INVALID", "Describe the role in 2–500 characters");
+        }
+        return v;
+    }
+
     private List<String> requireCatalogKeys(List<String> in) {
         if (in == null) return List.of();
         TreeSet<String> out = new TreeSet<>();
@@ -370,10 +489,14 @@ public class RoleAdminService {
     }
 
     private RoleDtos.RoleView view(Role r, ApprovalRequest pending) {
+        boolean protectedRole = "PLATFORM".equals(r.scope) || ANCHOR_ROLES.contains(r.key);
+        String portal = menuGrants.portalOfRole(r.id);
         return new RoleDtos.RoleView(r.id, r.tenantId, r.key, r.name, r.scope, "ACTIVE",
-            sorted(rbac.permissionKeysForRole(r.id)), r.version, (int) rbac.countByRoleId(r.id),
-            "PLATFORM".equals(r.scope) || ANCHOR_ROLES.contains(r.key),
-            pending == null ? null : pending.id, pending == null ? null : pending.operationType);
+            sorted(rbac.permissionKeysForRole(r.id)), r.version, (int) rbac.countByRoleId(r.id), protectedRole,
+            pending == null ? null : pending.id, pending == null ? null : pending.operationType,
+            r.description, r.branchId, orgUnits.nameOf(OrgUnitService.Kind.BRANCH, r.branchId),
+            r.departmentId, orgUnits.nameOf(OrgUnitService.Kind.DEPARTMENT, r.departmentId),
+            portal, menuGrants.cellsForRole(r.id), protectedRole);
     }
 
     private RoleDtos.RoleProposal proposal(ApprovalRequest a) {

@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { apiGet, apiPut, readProblem } from '../portals/shared/web-core/api';
 import type { WidgetDef } from '../portals/shared/widgets/core/manifest';
 import { WIDGETS } from '../portals/shared/widgets/registry';
 import { useConnection } from './connection';
-import { registration, requiresText, spansText } from './model';
+import { REGISTRY_ORDERS, registration, requiresText, sortByCreated, spansText } from './model';
+import type { RegistryOrder } from './model';
 
 /** core UiDtos.WidgetView */
 interface ServerWidget {
@@ -19,6 +20,8 @@ interface ServerWidget {
   bundleSha256: string | null;
   status: string;
   updatedAt: string;
+  /** first registration — a re-registration never moves it */
+  createdAt: string | null;
 }
 
 const SERVER_KEY = ['ui', 'widgets', 'server'] as const;
@@ -54,15 +57,32 @@ export function RegistryPage() {
   );
   const [needle, setNeedle] = useState('');
   const [cat, setCat] = useState('all');
+  // the order lives in the URL (?sort=created-desc) so a sorted view can be linked / reloaded
+  const [q, setQ] = useSearchParams();
+  const askedOrder = q.get('sort') as RegistryOrder | null;
+  const order: RegistryOrder = REGISTRY_ORDERS.some((o) => o.value === askedOrder) ? askedOrder! : 'build';
+  const setOrder = (o: RegistryOrder) =>
+    setQ((p) => {
+      const n = new URLSearchParams(p);
+      if (o === 'build') n.delete('sort');
+      else n.set('sort', o);
+      return n;
+    }, { replace: true });
+  const createdOf = (id: string) => onServer.get(id)?.createdAt ?? null;
   const shown = useMemo(() => {
     const n = needle.trim().toLowerCase();
-    return WIDGETS.filter((w) => (cat === 'all' || (w.category ?? '—') === cat)).filter(
+    const filtered = WIDGETS.filter((w) => (cat === 'all' || (w.category ?? '—') === cat)).filter(
       (w) =>
         !n ||
         [w.id, w.label, w.description ?? '', requiresText(w), ...(w.actions ?? []).map((a) => `${a.label} ${a.cell}`)]
           .join(' ').toLowerCase().includes(n),
     );
-  }, [needle, cat]);
+    return sortByCreated(filtered, order, (w) => server.data?.find((s) => s.id === w.id)?.createdAt);
+  }, [needle, cat, order, server.data]);
+  const serverRows = useMemo(
+    () => (server.data ? sortByCreated(server.data, order, (s) => s.createdAt) : undefined),
+    [server.data, order],
+  );
 
   return (
     <>
@@ -83,6 +103,16 @@ export function RegistryPage() {
           <option value="all">All categories</option>
           {categories.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        <select
+          aria-label="Sort widgets"
+          value={order}
+          onChange={(e) => setOrder(e.target.value as RegistryOrder)}
+          title={connected ? 'Creation time = when core first registered the widget' : 'Sign in to sort by creation time (core holds it)'}
+        >
+          {REGISTRY_ORDERS.map((o) => (
+            <option key={o.value} value={o.value} disabled={o.value !== 'build' && !connected}>{o.label}</option>
+          ))}
+        </select>
         <span className="dim small" role="status">
           {shown.length === WIDGETS.length ? 'all' : `${shown.length} of ${WIDGETS.length}`} shown
         </span>
@@ -92,7 +122,7 @@ export function RegistryPage() {
         <thead>
           <tr>
             <th>Widget</th><th>Category</th><th>Portals</th><th>Shows with</th><th>Actions</th><th>Reads / writes</th>
-            <th>Span xs · sm · md · lg</th><th>Registry server</th>
+            <th>Span xs · sm · md · lg</th><th>Created</th><th>Registry server</th>
           </tr>
         </thead>
         <tbody>
@@ -115,6 +145,11 @@ export function RegistryPage() {
                 </td>
                 <td className="mono small">{w.sources?.length ?? 0} sources · {w.commands?.length ?? 0} commands</td>
                 <td className="mono small">{spansText(w)}</td>
+                <td className="small" data-created={createdOf(w.id) ?? ''}>
+                  {createdOf(w.id)
+                    ? new Date(createdOf(w.id)!).toLocaleString()
+                    : <span className="dim">{connected && !onServer.has(w.id) ? 'not registered' : '—'}</span>}
+                </td>
                 <td className="small">
                   {!connected ? (
                     <span className="dim">sign in to compare</span>
@@ -161,25 +196,26 @@ export function RegistryPage() {
           {serverProblem.status === 403 ? `Signed in, but not allowed: ${serverProblem.detail}` : serverProblem.detail}
         </p>
       )}
-      {server.data && (
+      {serverRows && (
         <table>
           <thead>
-            <tr><th>Widget</th><th>Version</th><th>Bundle</th><th>Portals</th><th>Requires</th><th>Updated</th><th>In this build?</th></tr>
+            <tr><th>Widget</th><th>Version</th><th>Bundle</th><th>Portals</th><th>Requires</th><th>Created</th><th>Updated</th><th>In this build?</th></tr>
           </thead>
           <tbody>
-            {server.data.map((s) => (
+            {serverRows.map((s) => (
               <tr key={s.id}>
                 <td>{s.label} <span className="mono dim small">{s.id}</span></td>
                 <td className="mono">{s.version}</td>
                 <td className="mono small">{s.bundle}</td>
                 <td className="small">{s.portals.join(', ')}</td>
                 <td className="mono small">{s.requires.join(', ')}</td>
+                <td className="small">{s.createdAt ? new Date(s.createdAt).toLocaleString() : '—'}</td>
                 <td className="small">{new Date(s.updatedAt).toLocaleString()}</td>
                 <td>{local.has(s.id) ? `yes (${local.get(s.id)})` : <span className="warn">no</span>}</td>
               </tr>
             ))}
-            {server.data.length === 0 && (
-              <tr><td colSpan={7} className="dim">Nothing registered yet.</td></tr>
+            {serverRows.length === 0 && (
+              <tr><td colSpan={8} className="dim">Nothing registered yet.</td></tr>
             )}
           </tbody>
         </table>

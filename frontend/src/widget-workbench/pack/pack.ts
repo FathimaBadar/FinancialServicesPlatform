@@ -88,6 +88,18 @@ const FORBIDDEN: { re: RegExp; why: string }[] = [
   { re: /(className|style)[^\n]*#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/, why: 'hard-coded colour (use design tokens)' },
 ];
 
+/** The FORBIDDEN rules + "/api only in data.ts" for one source file — shared with the agent
+ *  tooling (tools/widget-agent.ts verify) so hand/agent-written widgets meet the pack bar. */
+export function codeRuleIssues(name: string, content: string): PackIssue[] {
+  const code = content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const issues: PackIssue[] = [];
+  for (const rule of FORBIDDEN) if (rule.re.test(code)) issues.push({ file: name, message: `not allowed: ${rule.why}.` });
+  if (name !== 'data.ts' && /['"`]\/api\//.test(code)) {
+    issues.push({ file: name, message: '"/api/..." paths belong in data.ts only — components use logical source names.' });
+  }
+  return issues;
+}
+
 const IMPORT_RE = /(?:^|\n)\s*(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g;
 
 export function folderOf(id: string): { area: string; name: string } {
@@ -307,14 +319,24 @@ export function checkDataModule(
   return issues;
 }
 
+/** Marks catalog rows the LLM proposed (NEEDS BACKEND) — shown apart, never as callable. */
+export const PROPOSED_CONTROLLER = '(proposed)';
+
+/** The skill switches to pack-only output when it sees this line (see .agents/skills/fsp-widget). */
+export const WORKBENCH_MODE_LINE = 'MODE: WORKBENCH-PACK';
+
 /** Renders the live backend API catalog (paths + signatures) as text the LLM can match against. */
 export function backendApiPromptSection(catalog: readonly BackendApi[]): string {
   const lines: string[] = [];
+  const built = catalog.filter((a) => a.controller !== PROPOSED_CONTROLLER);
+  const proposed = catalog.filter((a) => a.controller === PROPOSED_CONTROLLER);
   lines.push('## Backend APIs the system provides right now');
   lines.push(
-    'These are ALL backend endpoints the widget may call (via data.ts sources/commands). Match the requirement to ONE of them:');
+    'These are ALL backend endpoints the widget may call (via data.ts sources/commands). This live list SUPERSEDES',
+    'the skill\'s §8 table. Paths are gateway paths: in data.ts write them with /api/ instead of /v1/.',
+    'Match the requirement to ONE of them:');
   lines.push('');
-  for (const api of catalog) {
+  for (const api of built) {
     const meta = [
       api.operationId ? `op: ${api.operationId}` : null,
       api.permission ? `perm: ${api.permission}` : null,
@@ -328,6 +350,11 @@ export function backendApiPromptSection(catalog: readonly BackendApi[]): string 
     } else {
       lines.push('    · no parameters');
     }
+  }
+  if (proposed.length) {
+    lines.push('');
+    lines.push('### Proposed earlier — NOT built yet (never use these in data.ts; the validator rejects them)');
+    for (const api of proposed) lines.push(`- ${api.httpMethod} ${api.path}${api.title ? ` — ${api.title}` : ''}`);
   }
   lines.push('');
   lines.push('Rule: if an endpoint above can do the job, use it (method + path) in data.ts and answer with the widget pack.');
@@ -427,6 +454,8 @@ export function llmInput(skill: string, requirement: string, catalog?: readonly 
     parts.push('---');
     parts.push('');
   }
+  parts.push(WORKBENCH_MODE_LINE);
+  parts.push('');
   parts.push('# Requirement');
   parts.push('');
   parts.push(requirement.trim());

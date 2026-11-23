@@ -125,7 +125,7 @@ public class UiHarnessController {
     private static UiDtos.WidgetView toView(UiWidget w) {
         return new UiDtos.WidgetView(w.id, w.version, w.label, w.category, w.bundle,
             parse(w.portals), parse(w.requires), w.bundleSha256, w.status, w.registeredBy,
-            w.updatedAt.toString());
+            w.updatedAt.toString(), w.createdAt == null ? null : w.createdAt.toString());
     }
 
     private static UiDtos.LayoutView toView(UiLayout l) {

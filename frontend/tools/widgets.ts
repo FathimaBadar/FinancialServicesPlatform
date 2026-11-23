@@ -208,6 +208,9 @@ export default ${CompName}Widget;
 
 /** --------------------------------------------------------------- register */
 async function registerWidget(id: string, token?: string) {
+  // AGENTS §1: the gateway is the sole public origin and tokens never leave BFF/gateway — this
+  // legacy path PUTs straight to core (:8081) with an optional bearer. Use the BFF-session path.
+  console.warn(`! widgets:register talks to core directly (not FAPI 2.0). Prefer: bun run widgets:register-bff ${id}`);
   const { area, name } = parseWidgetId(id);
   const idx = join(WIDGETS_DIR, area, name, 'index.tsx');
   if (!existsSync(idx)) {

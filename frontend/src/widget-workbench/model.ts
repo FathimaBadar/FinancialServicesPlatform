@@ -81,3 +81,38 @@ export function registration(def: WidgetDef) {
     bundleSha256: null,
   };
 }
+
+/** Registry ordering: as the build lists them, or by when core first registered (created) them. */
+export type RegistryOrder = 'build' | 'created-desc' | 'created-asc';
+export const REGISTRY_ORDERS: readonly { value: RegistryOrder; label: string }[] = [
+  { value: 'build', label: 'Build order' },
+  { value: 'created-desc', label: 'Newest created first' },
+  { value: 'created-asc', label: 'Oldest created first' },
+];
+
+/**
+ * Sorts rows by creation time (core's first registration, `createdAt`). A row core does not
+ * hold yet has no creation time: it is the newest thing there is (just built, registration
+ * pending), so it leads "newest first" and trails "oldest first". Ties keep id order.
+ */
+export function sortByCreated<T extends { id: string }>(
+  rows: readonly T[], order: RegistryOrder, createdOf: (row: T) => string | null | undefined,
+): T[] {
+  if (order === 'build') return [...rows];
+  const dir = order === 'created-desc' ? -1 : 1;
+  const time = (r: T) => {
+    const c = createdOf(r);
+    const t = c ? Date.parse(c) : NaN;
+    return Number.isNaN(t) ? null : t;
+  };
+  return [...rows].sort((a, b) => {
+    const ta = time(a);
+    const tb = time(b);
+    if (ta === null || tb === null) {
+      if (ta === tb) return a.id.localeCompare(b.id);
+      // unregistered = newest: first when newest-first, last when oldest-first
+      return (ta === null ? -1 : 1) * (dir === -1 ? 1 : -1);
+    }
+    return ta === tb ? a.id.localeCompare(b.id) : (ta - tb) * dir;
+  });
+}

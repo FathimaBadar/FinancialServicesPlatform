@@ -79,19 +79,11 @@ Every portal screen is composed of **Widgets** hosted in a responsive grid. The 
 - **Dynamic Layouts:** Screens are NOT hardcoded templates. Screens are widget compositions rendered via `WidgetGrid` and `WidgetHost`.
 
 ### 3.2 The Development Pipeline (How a Requirement becomes UI)
-1. **Controller Scan (`@FspOperation`):** Identify the backend endpoint, permission key, request/response DTOs, and risk level.
-2. **Permission Check:** Verify that the required permission key exists in `frontend/src/portals/shared/widgets/permission-catalogue.ts`.
-3. **Data Mapping:** Add the logical source/command endpoint in `frontend/src/portals/shared/widgets/core/sources.ts`.
-4. **Widget Pack Authoring:** Create `frontend/src/portals/shared/widgets/<area>/<name>/`:
-   - `index.tsx`: `defineWidget({ id, version, label, requires: [...], sources, commands, size, render })`.
-   - `widget.tsx`: Component adhering to `ui-std.md` (atoms, design tokens, skeletons).
-   - `data.ts`: TanStack Query hooks + offline mock fixtures (must render with 0 backend).
-5. **Validation & Registration:**
-   - Run `bun run widgets:check` (validates registry coherence and permission matches).
-   - Core registers widget via `PUT /v1/ui/widgets` (`bun run widgets:register <id>`).
-6. **Layout & Publishing:**
-   - Portal Builder UI (`/widget-workbench/builder`) arranges widgets into grid layouts.
-   - Submit layout (`POST /v1/ui/layouts/{portal}/submit`) -> four-eyes checker approval -> published layout signed via ES256 and served to portals.
+Agents follow **`.agents/skills/fsp-widget/SKILL.md`** (agent mode) — two gated stages driven by `bun run widgets:*` tools:
+1. **Survey, not scan by hand:** `bun run widgets:survey <terms>` lists the code-derived operations (`@FspOperation` + plugin manifests: path, permission, risk, params, DTO types), mapped logical names, permission keys, existing and SME widgets; `bun run widgets:dto <Outer.Name> --ts` prints a response as a TS interface.
+2. **Stage 1 — UI on fixtures:** build `frontend/src/portals/shared/widgets/<area>/<name>/` — `index.tsx` (`defineWidget`), `widget.tsx` (ui-std atoms, tokens, skeletons), `data.ts` (sources/commands named `<id>.<thing>` → `/api/...` paths + fixtures for every op), `model.ts` (types + pure logic), `<name>.test.ts`. Built-in shared names live in `core/sources.ts`; a widget's own mappings live in its `data.ts`. Then `widgets:plan` (REUSE/NEW sheet), `widgets:verify`, `widgets:e2e --lane workbench`, wire the screen, and **register**: `bun run widgets:register-bff <id>` (BFF session, FAPI 2.0). The user reviews; on approval `widgets:accept <id> --by "<who>"` locks UI + contract.
+3. **Stage 2 — backend to the locked contract:** implement every NEW op per `backend/AGENTS.md` + the fapi2-compliance skill, `widgets:skill`, `widgets:verify`, `widgets:e2e --lane all --live`, `widgets:done`.
+4. **Layout & Publishing:** Portal Builder (`/widget-workbench/builder`) arranges widgets into grid layouts → submit → four-eyes approval → ES256-signed bundle served to portals (`make portal-publish` in dev).
 
 ### 3.3 Agent Decision Matrix: When to Add a Menu Item (Implicit Requirements)
 When a user requirement describes a capability (e.g. *"add VAS airtime top-up"*, *"enable dispute management"*, *"inventory tracking for merchants"*), the agent must evaluate whether a new navigation item is required:

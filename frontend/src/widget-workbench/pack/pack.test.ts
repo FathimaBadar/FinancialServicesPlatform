@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { backendApiPromptSection, checkDataModule, llmInput, parseBackendProposal, parsePack } from './pack';
+import { backendApiPromptSection, checkDataModule, llmInput, parseBackendProposal, parsePack, PROPOSED_CONTROLLER, WORKBENCH_MODE_LINE } from './pack';
 import type { BackendApi, Endpoint } from './pack';
 
 const INDEX = `import { defineWidget } from '../../core/manifest';
@@ -121,6 +121,12 @@ describe('llmInput', () => {
     expect(t.indexOf('Show disabled users')).toBeLessThan(t.indexOf('Follow the fsp-widget-author skill'));
   });
 
+  it('carries the workbench mode line so the skill answers with a pack, not files', () => {
+    const t = llmInput('# SKILL\nrules', 'Show disabled users');
+    expect(t).toContain(`${WORKBENCH_MODE_LINE}\n`);
+    expect(t.indexOf(WORKBENCH_MODE_LINE)).toBeLessThan(t.indexOf('# Requirement'));
+  });
+
   it('includes the live backend API catalog between skill and requirement when synced', () => {
     const catalog: BackendApi[] = [
       {
@@ -174,6 +180,23 @@ describe('backendApiPromptSection', () => {
   });
   it('handles empty catalog', () => {
     expect(backendApiPromptSection([])).toContain('## Backend APIs the system provides right now');
+  });
+  it('lists proposed (unbuilt) APIs apart, never as callable', () => {
+    const t = backendApiPromptSection([
+      ...catalog,
+      { controller: PROPOSED_CONTROLLER, method: 'handler', httpMethod: 'GET', path: '/v1/inventory/low-stock',
+        operationId: null, permission: null, component: null, risk: null, title: 'low stock', params: [] },
+    ]);
+    const callable = t.slice(0, t.indexOf('### Proposed earlier'));
+    expect(callable).toContain('GET /v1/x/{id}');
+    expect(callable).not.toContain('/v1/inventory/low-stock');
+    expect(t).toContain('NOT built yet');
+    expect(t).toContain('- GET /v1/inventory/low-stock — low stock');
+  });
+  it('tells the LLM the live list supersedes §8 and to use /api paths', () => {
+    const t = backendApiPromptSection(catalog);
+    expect(t).toContain('SUPERSEDES');
+    expect(t).toContain('/api/ instead of /v1/');
   });
 });
 

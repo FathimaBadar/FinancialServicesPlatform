@@ -22,7 +22,7 @@ public final class UiDtos {
     public record WidgetView(
             String id, String version, String label, String category, String bundle,
             List<String> portals, List<String> requires, String bundleSha256, String status,
-            UUID registeredBy, String updatedAt) {
+            UUID registeredBy, String updatedAt, String createdAt) {
     }
 
     // ---------- portal layouts ----------

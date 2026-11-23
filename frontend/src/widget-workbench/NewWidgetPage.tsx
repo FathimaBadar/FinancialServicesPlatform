@@ -14,7 +14,7 @@ import { apiGet, apiPut, readProblem } from '../portals/shared/web-core/api';
 import { holdWhile } from '../portals/shared/web-core/submit-guard';
 import { WORKBENCH_PORTAL } from '../portals/portal-config';
 import { useConnection } from './connection';
-import { BackendApi, llmInput, parseBackendProposal, parsePack } from './pack/pack';
+import { BackendApi, llmInput, parseBackendProposal, parsePack, PROPOSED_CONTROLLER } from './pack/pack';
 import type { BackendProposal, PackIssue } from './pack/pack';
 
 const BACKEND_CATALOG_KEY = 'fsp.wb.backend-catalog';
@@ -144,7 +144,7 @@ export function NewWidgetPage() {
     const next = [...(catalog ?? [])];
     for (const a of proposal.newApis) {
       next.push({
-        controller: a.controller ?? '(new)',
+        controller: PROPOSED_CONTROLLER,
         method: a.method ?? 'handler',
         httpMethod: a.httpMethod,
         path: a.path,
@@ -361,7 +361,7 @@ export function NewWidgetPage() {
           )}
           {backendProposal.note && <p className="small bad">{backendProposal.note}</p>}
           <button type="button" className="btn primary" onClick={() => void addProposedApisToCatalog(backendProposal)}>
-            Add proposed APIs to catalog (prompt changes — re-copy the LLM input)
+            Note proposed APIs in the prompt as NOT built (re-copy the LLM input)
           </button>
         </>
       )}

@@ -14,10 +14,10 @@ The platform strictly enforces the **FAPI 2.0 Security Profile Final**. Every co
 3. **Core (`:8081`) is the SOLE Policy Decision Point (PDP):** RBAC, permissions, four-eyes approval, and ledger mutations are decided strictly in core. Token claims are advisory; core re-evaluates all policies and domain preconditions against database truth.
 4. **Internal Hop Zero Trust:** Downstream internal calls require verified identity headers (`X-FSP-User-Id`, `X-FSP-Tenant-Id`, `X-FSP-Username`, `X-FSP-Client-Id`) plus a valid internal credential (`X-FSP-Internal-Credential`).
 5. **Zero Token/Secret Leakage:** Never log credentials, passwords, tokens, DPoP proofs, full identity numbers, or raw bank details.
-6. **Mandatory FAPI Skill:** Before touching authentication, authorization, tokens, certificates, or gateway/BFF/IdP security wiring, **LOAD THE PI SKILL**:
+6. **Mandatory FAPI Skill:** Before touching authentication, authorization, tokens, certificates, gateway/BFF/IdP security wiring, or any endpoint a browser calls, **LOAD THE SKILL** (vendored in the repo so every agent and machine has it):
    ```
    /skill:fapi2-compliance
-   (file: ~/.pi/agent/skills/fapi2-compliance/SKILL.md)
+   (file: .agents/skills/fapi2-compliance/SKILL.md — also linked at .claude/skills/fapi2-compliance)
    ```
 
 ---
@@ -47,5 +47,5 @@ Do NOT read all documents upfront. Read ONLY the specific guide matching your im
 | **Build, Run & Local Dev** | When running services, setting up environments, executing tests, or debugging port/container issues | [docs/README-dev.md](docs/README-dev.md) & [docs/setup-guide.md](docs/setup-guide.md) |
 | **Plugin Platform & KYC** | When working on plugin architecture, machine identity plane, client grants, or KYC/KYB workflows | [plans/plugin-platform-plan.md](plans/plugin-platform-plan.md) |
 | **Act-As Tenant ("Sudo")** | When implementing or testing delegated tenant administration, session caps, or permission ceilings | [plans/act-as-tenant-plan.md](plans/act-as-tenant-plan.md) |
-| **Widget Harness & Workbench** | When building or testing portal widgets, layouts, manifests, or deciding on new menu items | [.agents/skills/fsp-widget/SKILL.md](.agents/skills/fsp-widget/SKILL.md) & [docs/widget-workbench.md](docs/widget-workbench.md) |
+| **Widget Harness & Workbench** | When building or testing portal widgets, layouts, manifests, or deciding on new menu items. Agents run the skill's two gated stages (UI on fixtures → registered → user approval → backend → live e2e) with the `widgets:*` tools | [.agents/skills/fsp-widget/SKILL.md](.agents/skills/fsp-widget/SKILL.md) & [docs/widget-workbench.md](docs/widget-workbench.md) |
 | **Code Review & Quality Audit** | When reviewing PRs, checking for deadlocks, race conditions, or standard violations | [.agents/skills/code-reviewer/SKILL.md](.agents/skills/code-reviewer/SKILL.md) |

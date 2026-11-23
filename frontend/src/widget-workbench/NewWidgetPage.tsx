@@ -11,6 +11,7 @@
  */
 import { useState, useEffect } from 'react';
 import { apiGet, apiPut, readProblem } from '../portals/shared/web-core/api';
+import { holdWhile } from '../portals/shared/web-core/submit-guard';
 import { WORKBENCH_PORTAL } from '../portals/portal-config';
 import { useConnection } from './connection';
 import { BackendApi, llmInput, parseBackendProposal, parsePack } from './pack/pack';
@@ -63,7 +64,12 @@ type Phase =
 
 const ENDPOINT = '/__fsp/widget-pack';
 
-async function devCall<T>(path: string, body?: unknown): Promise<T> {
+function devCall<T>(path: string, body?: unknown): Promise<T> {
+  // dev-tool POSTs bypass api(); hold the triggering button until they settle
+  return body === undefined ? devSend<T>(path, body) : holdWhile(devSend<T>(path, body));
+}
+
+async function devSend<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${ENDPOINT}${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: { 'X-FSP-Widget-Pack': '1', ...(body === undefined ? {} : { 'content-type': 'application/json' }) },

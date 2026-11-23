@@ -87,6 +87,57 @@ public class IdpController {
         return parService.createParRequest(request, clientAssertion);
     }
 
+    // ========== Hosted forms: one press = one submission ==========
+
+    /**
+     * Every hosted form consumes a single-use artefact (PAR request_uri, MFA / password-change
+     * ticket, activation token). A double-click would POST twice; the browser abandons the first
+     * navigation and renders the second answer — request_uri_invalid / ticket expired — even
+     * though the first sign-in succeeded. CSP forbids inline script (default-src 'self'), so
+     * the guard is a same-origin file, not an inline handler.
+     */
+    static final String SUBMIT_ONCE_TAG = "<script src=\"/idp/submit-once.js\" defer></script>";
+
+    static final String SUBMIT_ONCE_JS = """
+        (function () {
+          'use strict';
+          document.addEventListener('submit', function (e) {
+            var f = e.target;
+            if (!(f instanceof HTMLFormElement)) return;
+            if (f.getAttribute('data-submitted') === '1') { e.preventDefault(); return; }
+            f.setAttribute('data-submitted', '1');
+            // disable only the buttons: disabled inputs would drop out of the POST body
+            f.querySelectorAll('button, input[type=submit]').forEach(function (b) {
+              b.disabled = true;
+              b.setAttribute('aria-busy', 'true');
+              b.style.opacity = '0.6';
+              b.style.cursor = 'progress';
+            });
+          }, true);
+          // Back/forward cache restores the page as it was left: let the user sign in again
+          window.addEventListener('pageshow', function (e) {
+            if (!e.persisted) return;
+            document.querySelectorAll('form[data-submitted]').forEach(function (f) {
+              f.removeAttribute('data-submitted');
+              f.querySelectorAll('button, input[type=submit]').forEach(function (b) {
+                b.disabled = false;
+                b.removeAttribute('aria-busy');
+                b.style.opacity = '';
+                b.style.cursor = '';
+              });
+            });
+          });
+        })();
+        """;
+
+    @GetMapping(value = "/submit-once.js", produces = "text/javascript")
+    public org.springframework.http.ResponseEntity<String> submitOnceJs() {
+        return org.springframework.http.ResponseEntity.ok()
+            .header("Cache-Control", "public, max-age=3600")
+            .header("X-Content-Type-Options", "nosniff")
+            .body(SUBMIT_ONCE_JS);
+    }
+
     /** Simulated error surface for the hosted (Phase-0) sign-in flows. */
     @GetMapping(value = "/error", produces = MediaType.TEXT_HTML_VALUE)
     @org.springframework.web.bind.annotation.ResponseBody
@@ -170,7 +221,7 @@ public class IdpController {
             </form>
             <p class="hint">Client: %s &middot; Your credentials never leave the Identity Provider.</p>
             </div></body></html>
-            """.formatted(enc, html(clientId));
+            """.formatted(enc, html(clientId)).replace("</head>", SUBMIT_ONCE_TAG + "</head>");
     }
 
     // ========== FAPI 2.0: Authorization Callback (after user consent) ==========
@@ -315,7 +366,7 @@ public class IdpController {
             </form>
             <p class="hint">At least %d characters. Your credentials never leave the Identity Provider.</p>
             </div></body></html>
-            """.formatted(html(ticket), html(error), PW_MIN_LENGTH);
+            """.formatted(html(ticket), html(error), PW_MIN_LENGTH).replace("</head>", SUBMIT_ONCE_TAG + "</head>");
     }
 
     // POST only: the replacement secret travels in the form body, never the URL
@@ -401,7 +452,7 @@ public class IdpController {
             <p class="hint">A code was sent to your registered contact. It works for 5 minutes.
             FSP never gives codes over the phone.</p>
             </div></body></html>
-            """.formatted(html(ticket), html(error));
+            """.formatted(html(ticket), html(error)).replace("</head>", SUBMIT_ONCE_TAG + "</head>");
     }
 
     // POST only: OTP travels in the form body, never the URL
@@ -692,7 +743,7 @@ public class IdpController {
               """;
         return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
             + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-            + "<title>FSP Identity Provider &middot; Activate your account</title>" + ACTIVATION_STYLE
+            + "<title>FSP Identity Provider &middot; Activate your account</title>" + ACTIVATION_STYLE + SUBMIT_ONCE_TAG
             + "</head><body><div class=\"panel\"><p class=\"eyebrow\">FSP Identity Provider</p>"
             + "<h1>Activate your account</h1>"
             + "<form method=\"post\" action=\"/idp/activate\">" + proofFields

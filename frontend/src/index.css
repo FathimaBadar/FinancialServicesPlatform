@@ -148,6 +148,9 @@
   .fsp-btn:hover:not(:disabled) { border-color: #5a5a5a; background: #1d1d1d; }
   .fsp-btn:active:not(:disabled) { transform: translateY(1px); }
   .fsp-btn:disabled { opacity: .42; cursor: not-allowed; }
+  /* submit-guard: the control's action is still in flight */
+  [data-fsp-busy] { cursor: progress; }
+  .fsp-btn[data-fsp-busy] { opacity: .7; }
   .fsp-btn:focus-visible { outline: 2px solid var(--portal-accent); outline-offset: 2px; }
   .fsp-btn-primary {
     background: var(--portal-accent); border-color: var(--portal-accent); color: var(--color-action-primary-ink);

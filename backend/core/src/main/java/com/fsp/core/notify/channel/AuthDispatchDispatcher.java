@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Auth-plane dispatch loop (V30; docs/architecture/12-notifications-and-push.md §12.9).
@@ -39,11 +40,14 @@ public class AuthDispatchDispatcher {
     private final PersonRepository persons;
     private final Map<String, OutboundChannel> channels = new HashMap<>();
     private final TransactionTemplate txWrite;
+    private final com.fsp.core.audit.AuditService audit;
 
     public AuthDispatchDispatcher(AuthDispatchRepository dispatches,
                                   PersonRepository persons,
                                   List<OutboundChannel> channelList,
-                                  TransactionTemplate txWrite) {
+                                  TransactionTemplate txWrite,
+                                  com.fsp.core.audit.AuditService audit) {
+        this.audit = audit;
         this.dispatches = dispatches;
         this.persons = persons;
         this.txWrite = txWrite;
@@ -52,6 +56,20 @@ public class AuthDispatchDispatcher {
 
     private void runWrite(Runnable write) {
         txWrite.executeWithoutResult(status -> write.run());
+    }
+
+    /**
+     * Delivery evidence (AGENTS §2.5): the claim and its audit row commit together. Hash-only:
+     * purpose, channel, outcome — never the message text, the secret it carried, or the contact.
+     */
+    private void claimAudited(AuthDispatch d, String via, String outcome, Runnable claim) {
+        UUID tenantId = persons.findById(d.personId).map(p -> p.tenantId).orElse(null);
+        runWrite(() -> {
+            claim.run();
+            audit.record(null, null, tenantId, null, "AUTH_DISPATCH_" + outcome, "AUTH_DISPATCH", d.id.toString(),
+                null, audit.hashState("person=" + d.personId + ";purpose=" + d.purpose + ";channel=" + d.channel
+                    + ";via=" + via + ";attempts=" + d.attempts), false);
+        });
     }
 
     @Scheduled(fixedDelayString = "${fsp.push.dispatchFixedDelay:2000}",
@@ -67,14 +85,14 @@ public class AuthDispatchDispatcher {
         OutboundChannel channelBean = channels.get(d.channel);
         if (channelBean == null) {
             // channel not credentialled in this deployment — claim ABSENT (§12.2), text purged
-            runWrite(() -> dispatches.claim(d.id, Instant.now(), "NONE"));
+            claimAudited(d, "NONE", "NO_CHANNEL", () -> dispatches.claim(d.id, Instant.now(), "NONE"));
             log.info("auth_dispatch_absent person={} purpose={} reason=no_channel_bean",
                 d.personId, d.purpose);
             return;
         }
         String contact = contactFor(d);
         if (contact == null) {
-            runWrite(() -> dispatches.claim(d.id, Instant.now(), "NONE"));
+            claimAudited(d, "NONE", "NO_CONTACT", () -> dispatches.claim(d.id, Instant.now(), "NONE"));
             log.info("auth_dispatch_absent person={} purpose={} reason=no_profile_contact",
                 d.personId, d.purpose);
             return;
@@ -84,18 +102,19 @@ public class AuthDispatchDispatcher {
             new ChannelWire.Pointer(d.purpose, d.subject, d.text, null));
         switch (outcome) {
             case ChannelWire.SendOutcome.Delivered delivered ->
-                runWrite(() -> dispatches.claim(d.id, Instant.now(), channelBean.deliveryTag()));
+                claimAudited(d, channelBean.deliveryTag(), "DELIVERED",
+                    () -> dispatches.claim(d.id, Instant.now(), channelBean.deliveryTag()));
             case ChannelWire.SendOutcome.Unreachable u -> {
                 if (u.definitive()) {
                     // the contact itself is gone — nothing to flag (no prefs); claim DEAD
-                    runWrite(() -> dispatches.claim(d.id, Instant.now(), "DEAD"));
+                    claimAudited(d, "DEAD", "DEAD", () -> dispatches.claim(d.id, Instant.now(), "DEAD"));
                     log.info("auth_dispatch_dead person={} purpose={} reason={}",
                         d.personId, d.purpose, u.reason());
                 } else {
                     // transient — bounded retry. When the bump crosses the cap in the SAME
                     // short transaction, claim EXHAUSTED so the secret-bearing text is purged
                     // instead of lingering on a row the cursor will never visit again.
-                    runWrite(() -> {
+                    claimAudited(d, "RETRY", "RETRY", () -> {
                         dispatches.bumpAttempts(d.id);
                         dispatches.claimExhausted(d.id, Instant.now(), "EXHAUSTED");
                     });
@@ -104,7 +123,7 @@ public class AuthDispatchDispatcher {
                 }
             }
             case ChannelWire.SendOutcome.Skipped sk -> {
-                runWrite(() -> dispatches.claim(d.id, Instant.now(), "NONE"));
+                claimAudited(d, "NONE", "SKIPPED", () -> dispatches.claim(d.id, Instant.now(), "NONE"));
                 log.warn("auth_dispatch_skipped person={} purpose={} reason={}",
                     d.personId, d.purpose, sk.reason());
             }

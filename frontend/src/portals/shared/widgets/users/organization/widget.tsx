@@ -197,6 +197,9 @@ export function UsersOrganization(props: WidgetRuntimeProps<UsersOrganizationCon
       forceClose();
     });
 
+  const resend = (u: UserRow) =>
+    run({ kind: 'resend', user: u }, () => say('ok', `A new activation was sent to ${u.fullName}. The earlier one no longer works.`));
+
   const reload = () => {
     cmd.reset();
     void list.refetch();
@@ -380,6 +383,7 @@ export function UsersOrganization(props: WidgetRuntimeProps<UsersOrganizationCon
               onDeactivate={() => deactivate(openUser)}
               onActivate={() => activate(openUser)}
               onRemove={() => remove(openUser)}
+              onResend={() => resend(openUser)}
               onReload={reload}
               readOnly={readOnly}
             />

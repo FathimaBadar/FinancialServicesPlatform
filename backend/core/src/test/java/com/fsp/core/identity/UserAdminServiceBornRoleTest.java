@@ -74,7 +74,8 @@ class UserAdminServiceBornRoleTest {
             .thenAnswer(inv -> ADMIN.equals(inv.getArgument(0))
                 ? Optional.of(person(ADMIN, "admin.self"))
                 : Optional.empty());
-        lenient().when(provisioning.createPerson(eq(TENANT), anyString(), anyString(), any(), any(), eq(false), eq(true)))
+        lenient().when(provisioning.createInvitedPerson(eq(TENANT), anyString(), anyString(), any(), any(), any(),
+                eq("PENDING"), eq(false), eq(false)))
             .thenAnswer(inv -> {
                 Person p = new Person();
                 p.id = UUID.randomUUID();
@@ -129,7 +130,7 @@ class UserAdminServiceBornRoleTest {
     void adminMayStageBornCheckerRoleForAnotherPerson() {
         UserDtos.UserView view = svc.create(TENANT, new UserDtos.CreateUser(
             "tulonga.checker", "Tulonga Shipanga", "tulonga@example.na", null,
-            List.of(checkerRole.id), true), admin());
+            List.of(checkerRole.id), true, "EMAIL"), admin());
         assertThat(view.username()).isEqualTo("tulonga.checker");
     }
 
@@ -138,7 +139,7 @@ class UserAdminServiceBornRoleTest {
     void nonBornRoleWithoutHeldKeysStaysDenied() {
         assertThatThrownBy(() -> svc.create(TENANT, new UserDtos.CreateUser(
             "temp.user", "Temp User", "temp@example.na", null,
-            List.of(opsRole.id), false), admin()))
+            List.of(opsRole.id), false, "EMAIL"), admin()))
             .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.getCode()).isEqualTo("ROLE_NOT_ASSIGNABLE"));
     }
 

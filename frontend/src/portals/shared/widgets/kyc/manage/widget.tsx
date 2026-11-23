@@ -37,8 +37,9 @@ export function KycManage() {
   const held = context.permissions;
   // onboarding a child org is core's existing org.onboard_child (the plugin acts on-behalf)
   const next = useNextLevel(port, context.orgId ?? '');
-  // a leaf org (merchant) onboards nothing — core refuses it; don't offer it
-  const canCreate = held.includes('org.onboard_child') && (!next.loaded || next.childSubType !== null);
+  // only the CHILD level (core TenantLadder): offered once that level is known; a leaf org
+  // (merchant) onboards nothing — and never a sibling, while the level is still loading either
+  const canCreate = held.includes('org.onboard_child') && next.loaded && next.childSubType !== null;
 
   // ---- URL state
   const [params, setParams] = useSearchParams();

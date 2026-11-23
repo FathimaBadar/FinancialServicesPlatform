@@ -37,18 +37,25 @@ describe('GAP-3/4 · approvals queue and plugin governance have menu points', ()
 
 describe('ADMIN-MENU · the admin console shows the specified menus and submenus', () => {
   const all = [...new Set(MENU_ITEMS.flatMap((i) => i.perm))];
-  it('sidebar is the spec: User Management → Back Office User, Reset Password, Customer, Organization; Onboarding; Role Management → Component, Sub Component, Branch, Department, Role, Approvals', () => {
+  it('sidebar is the spec: User Management → Back Office User, Reset Password, Customer, Organization; Role Management → Component, Sub Component, Branch, Department, Role, Approvals — no Onboarding menu', () => {
     const nav = navEntries('platform', () => true).map((e) => (e.kind === 'group' ? `#${e.label}` : e.label));
     expect(nav).toEqual(['#User Management', 'Back Office User', 'Reset Password', 'Customer', 'Organization',
-      '#Onboarding', 'Onboarding',
       '#Role Management', 'Component', 'Sub Component', 'Branch', 'Department', 'Role', 'Approvals']);
   });
   it('menu points without a feature yet land on the placeholder and are still gated', () => {
-    for (const label of ['Reset Password', 'Customer', 'Component', 'Sub Component', 'Branch', 'Department']) {
+    for (const label of ['Component', 'Sub Component', 'Branch', 'Department']) {
       const item = menuFor('platform').find((i) => i.label === label);
       expect(item?.widgets).toEqual(['menu.placeholder']);
       expect(item?.perm.length).toBeGreaterThan(0);
     }
+  });
+  it('Customer is the KYC plugin\'s customer widget (register → customer activates → checker activates), on both portals', () => {
+    const platform = menuFor('platform').find((i) => i.label === 'Customer');
+    expect(platform?.widgets).toEqual(['kyc.customers']);
+    expect(platform?.perm).toEqual(['kyc.review']);
+    const org = menuFor('org').find((i) => i.id === 'kyc-customers');
+    expect(org?.widgets).toEqual(['kyc.customers']);
+    expect(org?.group).toBe('KYC');
   });
   it('organization screen is the org directory with KYC status + "New onboarding" (KYC form), gated by its keys', () => {
     const org = menuFor('platform').find((i) => i.label === 'Organization');
@@ -66,6 +73,29 @@ describe('ADMIN-MENU · the admin console shows the specified menus and submenus
     expect(menuFor('org').map((i) => i.link)).toEqual(expect.arrayContaining(
       ['/overview', '/onboarding', '/network', '/users', '/kyc/reviews', '/kyc', '/approvals', '/bank-accounts',
         '/journal', '/audit', '/rbac', '/permissions', '/ledger', '/periods']));
+  });
+});
+
+describe('every org portal (manufacturer / distributor / wholesaler / merchant) has Onboarding, User Management, Role Management + Inventory', () => {
+  const group = (g: string) => menuFor('org').filter((i) => i.group === g);
+  it('Onboarding (filing children through KYC + the network) is an org menu, never an admin one', () => {
+    expect(group('Onboarding').map((i) => i.link)).toEqual(['/onboarding', '/network']);
+    expect(menuFor('platform').some((i) => i.group === 'Onboarding' || i.link === '/onboarding')).toBe(false);
+  });
+  it('Role Management carries roles + the permission catalogue', () => {
+    expect(group('Role Management').map((i) => i.widgets[0])).toEqual(['rbac.matrix', 'permissions.catalogue']);
+  });
+  it('User Management adds users to the signed-in organization (same widget as the admin console)', () => {
+    const users = group('User Management');
+    expect(users.map((i) => i.link)).toEqual(['/users', '/reset-password']);
+    const list = users.find((i) => i.link === '/users');
+    expect(list?.widgets).toEqual(['users.organization']);
+    expect(list?.perm).toEqual(['user.manage']);
+    const admin = menuFor('platform').find((i) => i.group === 'User Management' && i.widgets.includes('users.organization'));
+    expect(admin?.link).toBe('/users');
+  });
+  it('Inventory is its own group, gated by inventory.view', () => {
+    expect(group('Inventory').map((i) => [i.link, i.perm])).toEqual([['/inventory', ['inventory.view']]]);
   });
 });
 

@@ -52,4 +52,24 @@ public class IdpInternalClient {
                 "IDP_CALL_FAILED", "IdP rejected the reset call");
         }
     }
+
+    /**
+     * V36: asks the IdP to (re)send the customer's activation on their primary contact — a
+     * one-time link by email or a one-time code by SMS. Core never sees the token or code.
+     * Called AFTER the onboarding transaction committed (never inside a DB tx, AGENTS §2d).
+     */
+    public void triggerActivation(UUID personId) {
+        try {
+            rest.method(HttpMethod.POST)
+                .uri(base + "/idp/internal/activation/" + personId)
+                .header("X-FSP-Internal-Credential", internalCredential)
+                .retrieve()
+                .toBodilessEntity();
+        } catch (RestClientResponseException e) {
+            HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
+            log.warn("idp_internal_activation_rejected status={} personId={}", e.getStatusCode().value(), personId);
+            throw new ApiException(status != null ? status : HttpStatus.BAD_GATEWAY,
+                "IDP_CALL_FAILED", "IdP rejected the activation call");
+        }
+    }
 }

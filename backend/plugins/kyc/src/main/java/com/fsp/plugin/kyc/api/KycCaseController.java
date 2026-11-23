@@ -27,9 +27,12 @@ public class KycCaseController {
     private final KycCaseService caseService;
     private final KycOnboardingSagaService sagaService;
     private final KycDecisionService decisionService;
+    private final com.fsp.plugin.kyc.service.KycCustomerService customerService;
 
     public KycCaseController(KycCaseService caseService, KycOnboardingSagaService sagaService,
-                             KycDecisionService decisionService) {
+                             KycDecisionService decisionService,
+                             com.fsp.plugin.kyc.service.KycCustomerService customerService) {
+        this.customerService = customerService;
         this.caseService = caseService;
         this.sagaService = sagaService;
         this.decisionService = decisionService;
@@ -43,16 +46,40 @@ public class KycCaseController {
             @RequestParam(value = "q", required = false) String q,
             @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "risk", required = false) String risk,
+            @RequestParam(value = "kind", required = false) String kind,
             @RequestParam(value = "sort", defaultValue = "submittedAt,desc") String sort) {
         var actor = ActorAssertionFilter.actor(request);
-        return caseService.list(actor.tenantId(), page, size, q, status, risk, sort);
+        return caseService.list(actor.tenantId(), page, size, q, status, risk, kind, sort);
     }
 
     /** kyc.case.get — GET /cases/{caseId} */
     @GetMapping("/cases/{caseId}")
     public KycDtos.CaseView get(HttpServletRequest request, @PathVariable("caseId") UUID caseId) {
         var actor = ActorAssertionFilter.actor(request);
+        caseService.find(caseId, actor.tenantId()).ifPresent(c -> customerService.refresh(c, actor.assertion()));
         return caseService.get(caseId, actor.tenantId(), actor.personId());
+    }
+
+    /** kyc.customer.create — POST /customers: Customer Registration (step 1 of 2). No password:
+     *  core creates the person PENDING and the IdP sends the activation to the primary contact. */
+    @PostMapping("/customers")
+    public ResponseEntity<KycDtos.CaseView> createCustomer(HttpServletRequest request,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestBody KycDtos.CreateCustomerRequest req) {
+        var actor = ActorAssertionFilter.actor(request);
+        KycCase c = customerService.onboard(actor.tenantId(), actor.personId(), actor.username(), req,
+            actor.assertion(), idempotencyKey);
+        return ResponseEntity.status(HttpStatus.CREATED).body(caseService.get(c.id, actor.tenantId(), actor.personId()));
+    }
+
+    /** kyc.case.activation — POST /cases/{caseId}/activation: re-send the activation link/code. */
+    @PostMapping("/cases/{caseId}/activation")
+    public KycDtos.ActivationResent resendActivation(HttpServletRequest request,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @PathVariable("caseId") UUID caseId) {
+        var actor = ActorAssertionFilter.actor(request);
+        return customerService.resend(caseId, actor.tenantId(), actor.personId(), actor.username(),
+            actor.assertion(), idempotencyKey);
     }
 
     /** kyc.case.history — GET /cases/{caseId}/history */

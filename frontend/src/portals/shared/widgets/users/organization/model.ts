@@ -7,6 +7,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { ApiError } from '../../../web-core/api';
 import type { WidgetDataPortLike } from '../../core/manifest';
+import { PRIMARY_CONTACTS, contactRefine, toE164 } from '../../kit/contact';
+import type { PrimaryContact } from '../../kit/contact';
 
 /* ------------------------------------------------------------------ wire */
 /** PENDING = staged by a maker, awaiting a checker (USER_CREATE) — cannot sign in, holds no roles. */
@@ -34,7 +36,14 @@ export interface UserRow {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+  /** where the IdP sends the activation; null = a legacy user born with the initial password */
+  primaryContact?: PrimaryContact | null;
+  /** set their own password from the activation (null when there is none to complete) */
+  activated?: boolean | null;
 }
+
+/** Approved, but hasn't set a password from the IdP activation yet — can't sign in. */
+export const awaitingActivation = (u: Pick<UserRow, 'status' | 'activated'>) => u.status === 'ACTIVE' && u.activated === false;
 
 /** One page of an org's users — core's UserDtos.UserPage (AGENTS §2.7 envelope). */
 export interface UserPage {
@@ -90,7 +99,13 @@ export const userFormSchema = z.object({
     .refine((v) => v === '' || /^\+?[0-9][0-9 ()-]{5,19}$/.test(v), 'Enter a valid phone number, e.g. +264 81 123 4567'),
   roleIds: z.array(z.string()),
   checker: z.boolean(),
+  /** create only: where the IdP sends the activation (link by email / code by SMS) */
+  primaryContact: z.enum(PRIMARY_CONTACTS),
 });
+
+/** Adding a user: the primary contact is required and the phone must be international (E.164)
+ *  — the IdP texts the activation code to it. Mirrors core PersonProvisioning.contact. */
+export const userCreateSchema = userFormSchema.superRefine((v, ctx) => contactRefine(v, ctx));
 
 export type UserFormValues = z.infer<typeof userFormSchema>;
 export type UserFormField = keyof UserFormValues;
@@ -102,6 +117,7 @@ export const FIELD_FOR_CODE: Record<string, UserFormField> = {
   FULL_NAME_INVALID: 'fullName',
   EMAIL_INVALID: 'email',
   PHONE_INVALID: 'phone',
+  CONTACT_REQUIRED: 'email',
   ROLE_UNKNOWN: 'roleIds',
   ROLE_NOT_ASSIGNABLE: 'roleIds',
   SELF_ROLE_CHANGE: 'roleIds',
@@ -196,9 +212,23 @@ export type UserCommand =
   | { kind: 'update'; user: UserRow; values: UserFormValues; rolesEditable: boolean }
   | { kind: 'deactivate'; user: UserRow }
   | { kind: 'activate'; user: UserRow }
-  | { kind: 'remove'; user: UserRow };
+  | { kind: 'remove'; user: UserRow }
+  | { kind: 'resend'; user: UserRow };
 
 const blankToEmpty = (v: string) => v.trim();
+
+/** POST body of user.create — contact + channel for the IdP activation; never a password. */
+export function createUserBody(v: UserFormValues) {
+  return {
+    username: v.username,
+    fullName: v.fullName,
+    email: blankToEmpty(v.email).toLowerCase(),
+    phone: toE164(v.phone.trim()) ?? blankToEmpty(v.phone),
+    roleIds: v.roleIds,
+    checker: v.checker,
+    primaryContact: v.primaryContact,
+  };
+}
 
 /**
  * Every user command, never optimistic, never auto-retried; on settle the org's
@@ -211,18 +241,7 @@ export function useUserCommand(port: WidgetDataPortLike, orgId: string) {
       const base = { tenantId: orgId };
       switch (cmd.kind) {
         case 'create':
-          return port.command<UserRow>(
-            'user.create',
-            {
-              username: cmd.values.username,
-              fullName: cmd.values.fullName,
-              email: blankToEmpty(cmd.values.email),
-              phone: blankToEmpty(cmd.values.phone),
-              roleIds: cmd.values.roleIds,
-              checker: cmd.values.checker,
-            },
-            base,
-          );
+          return port.command<UserRow>('user.create', createUserBody(cmd.values), base);
         case 'update':
           return port.command<UserRow>(
             'user.update',
@@ -240,6 +259,9 @@ export function useUserCommand(port: WidgetDataPortLike, orgId: string) {
           return port.command<UserRow>('user.deactivate', { expectedVersion: cmd.user.version }, { ...base, personId: cmd.user.id });
         case 'activate':
           return port.command<UserRow>('user.activate', { expectedVersion: cmd.user.version }, { ...base, personId: cmd.user.id });
+        case 'resend':
+          // acknowledgement only ({personId, channel}) — the list re-sync shows nothing new
+          return port.command<UserRow>('user.activation.resend', {}, { ...base, personId: cmd.user.id });
         case 'remove':
           return port.command<UserRow>('user.remove', undefined, {
             ...base,

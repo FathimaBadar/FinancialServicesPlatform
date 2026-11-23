@@ -41,9 +41,10 @@ class AuthDispatchDispatcherTest {
     private final PersonRepository persons = mock(PersonRepository.class);
     private final OutboundChannel email = mock(OutboundChannel.class);
     private final OutboundChannel sms = mock(OutboundChannel.class);
+    private final com.fsp.core.audit.AuditService audit = mock(com.fsp.core.audit.AuditService.class);
 
     private AuthDispatchDispatcher dispatcher() {
-        return new AuthDispatchDispatcher(dispatches, persons, List.of(email, sms), tx());
+        return new AuthDispatchDispatcher(dispatches, persons, List.of(email, sms), tx(), audit);
     }
 
     private AuthDispatch resetDispatch() {
@@ -108,6 +109,13 @@ class AuthDispatchDispatcherTest {
         ArgumentCaptor<ChannelWire.Pointer> ptr = ArgumentCaptor.forClass(ChannelWire.Pointer.class);
         verify(email).send(any(ChannelWire.Target.class), ptr.capture());
         assertTrue(ptr.getValue().body().contains("one-time link"));
+        // delivery evidence: audited as DELIVERED on the dispatch, from a hash — never the text
+        ArgumentCaptor<Object> state = ArgumentCaptor.forClass(Object.class);
+        verify(audit).hashState(state.capture());
+        assertTrue(state.getValue().toString().contains("via=SMTP"));
+        assertTrue(!state.getValue().toString().contains("one-time link"), "the message text is never audited");
+        verify(audit).record(any(), any(), any(), any(), eq("AUTH_DISPATCH_DELIVERED"), eq("AUTH_DISPATCH"),
+            eq(d.id.toString()), any(), any(), eq(false));
     }
 
     @Test

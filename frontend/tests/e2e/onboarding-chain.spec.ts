@@ -50,12 +50,12 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   /* ── SCENE 2 · KYC plugin registered (four-eyes), manufacturer created, plugin installed ── */
   await ensureKycPlugin(maker, checker);
 
-  // [UI] platform onboarding screen (onboard.psp)
+  // [UI] platform Organization screen (onboard.list: directory + New organization)
   const s = suffix();
   const mfrAdminUsername = `acme.admin.${s}`;
   const mfrCheckerUsername = `acme.checker.${s}`;
   const legalName = `Acme Manufacturers ${s} (Pty) Ltd`;
-  await maker.page.goto('/admin/onboarding');
+  await maker.page.goto('/admin/organizations');
   await maker.page.getByRole('button', { name: 'New organization' }).click();
   await maker.page.getByLabel('Legal name').fill(legalName);
   await maker.page.getByLabel('Administrator username').fill(mfrAdminUsername);
@@ -80,7 +80,7 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
    * PSP's own role keys. */
   // [UI] the checker finds the PSP row (onboard.psp) and starts acting as it
   await clearActAs(checker); // a failed previous run may have left the session acting (by design)
-  await checker.page.goto('/admin/onboarding');
+  await checker.page.goto('/admin/organizations');
   const pspRow = checker.page.locator('li', { hasText: legalName });
   await expect(pspRow).toBeVisible();
   await pspRow.getByRole('button', { name: `Act as ${legalName}` }).click();
@@ -153,7 +153,7 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   const { json: roleOptions } = await api<{ id: string; key: string }[]>(merAdmin, 'GET', `/tenants/${merTenantId}/user-roles`);
   const named = `tulonga.checker.${s}`;
   const staged = await api(merAdmin, 'POST', `/tenants/${merTenantId}/users`, {
-    username: named, fullName: 'Tulonga Shipanga', email: 'tulonga@namibfresh.example',
+    username: named, fullName: 'Tulonga Shipanga', email: `${named}@namibfresh.example`, primaryContact: 'EMAIL',
     roleIds: [roleOptions.find((r) => r.key === 'TENANT_CHECKER')!.id], checker: true,
   });
   expect(staged.status, 'checker user staged').toBe(202);
@@ -307,7 +307,7 @@ test('manufacturer → distributor → merchant onboarding chain', async ({ brow
   const pwdUsername = `pwd.chg.${s}`;
   expect(roleOptions.length, 'merchant tenant offers assignable roles').toBeGreaterThanOrEqual(1);
   const pwdCreate = await api<{ personId: string; username: string }>(merAdmin, 'POST', `/tenants/${merTenantId}/users`, {
-    fullName: 'Password Flow User', username: pwdUsername, roleIds: [roleOptions[0].id],
+    fullName: 'Password Flow User', username: pwdUsername, email: `${pwdUsername}@namibfresh.example`, primaryContact: 'EMAIL', roleIds: [roleOptions[0].id],
   });
   expect(pwdCreate.status, 'password-flow user staged').toBe(202);
   await approveVia(merChecker, merTenantId, 'USER_CREATE', 'password-flow user');

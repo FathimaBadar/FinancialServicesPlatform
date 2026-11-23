@@ -41,7 +41,7 @@ public class IdpController {
     /** Closed set of reasons the hosted error page will render; anything else shows as unknown_error. */
     private static final java.util.Set<String> ERROR_CODES = java.util.Set.of(
         "request_uri_invalid", "authentication_failed", "account_inactive", "tenant_inactive",
-        "federation_pending", "server_error", "unknown_error");
+        "federation_pending", "server_error", "unknown_error", "activation_pending");
 
     private final IdpTokenService tokenService;
     private final ParService parService;
@@ -49,11 +49,14 @@ public class IdpController {
     private final IdpProperties props;
     private final JdbcTemplate jdbc;
     private final PPersonRepository persons;
+    private final IdpActivationService activation;
     private final org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder bcrypt =
         new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
 
     public IdpController(IdpTokenService tokenService, ParService parService, IdpAuthService auth,
-                         IdpProperties props, JdbcTemplate jdbc, PPersonRepository persons) {
+                         IdpProperties props, JdbcTemplate jdbc, PPersonRepository persons,
+                         IdpActivationService activation) {
+        this.activation = activation;
         this.tokenService = tokenService;
         this.parService = parService;
         this.auth = auth;
@@ -235,6 +238,7 @@ public class IdpController {
             String code = switch (e.problem().code()) {
                 case "INVALID_CREDENTIALS", "INVALID_REQUEST" -> "authentication_failed";
                 case "PERSON_INACTIVE" -> "account_inactive";
+                case "ACTIVATION_PENDING" -> "activation_pending";
                 case "MFA_CODE_INVALID", "MFA_CODE_EXPIRED", "MFA_ATTEMPTS_EXHAUSTED" -> "authentication_failed";
                 case "TENANT_INACTIVE", "TENANT_MISSING" -> "tenant_inactive";
                 case "IDP_EXTERNAL_FEDERATION_PENDING" -> "federation_pending";
@@ -439,8 +443,9 @@ public class IdpController {
             try {
                 auth.requestPasswordReset(username.trim());
             } catch (org.springframework.dao.DataIntegrityViolationException e) {
-                // concurrent duplicate lost the partial-unique race — the winner's code is live
-                log.info("idp_reset_duplicate_suppressed");
+                // still 204 (never reveals the account) — but only a unique-key race is benign
+                if (isUniqueViolation(e)) log.info("idp_reset_duplicate_suppressed");
+                else log.warn("idp_reset_failed sqlState={}", sqlState(e));
             }
         }
         return ResponseEntity.noContent().build();
@@ -585,6 +590,131 @@ public class IdpController {
             "grant_types_supported", "authorization_code, password, client_credentials");
     }
 
+    // ========== V36: account activation (hosted at the IdP; reached via the gateway) ==========
+
+    /** Internal hop from core (credential-gated): (re)send the person's activation. Always 204. */
+    @PostMapping(value = "/internal/activation/{personId}")
+    public ResponseEntity<Void> internalActivation(@PathVariable("personId") UUID personId,
+            @RequestHeader(value = "X-FSP-Internal-Credential", required = false) String credential) {
+        if (credential == null || !credential.equals(props.getInternalCredential())) {
+            log.warn("idp_internal_activation_refused reason=credential_invalid");
+            throw new IdpProblemException(new IdpDtos.IdpProblem(
+                "INTERNAL_CREDENTIAL_INVALID", "Internal credential required", 401));
+        }
+        try {
+            activation.send(personId);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            // a concurrent send won the one-live-row race (its link/code is on the way); any
+            // other constraint failure is a real fault and must be visible, never "a duplicate"
+            if (isUniqueViolation(e)) log.info("idp_activation_duplicate_suppressed person={}", personId);
+            else log.warn("idp_activation_failed person={} sqlState={}", personId, sqlState(e));
+        }
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * The activation page. With {@code ?token=} (the emailed link) it asks only for the new
+     * password; without it (SMS) it asks for the phone, the code and the new password.
+     * The token is not consumed by viewing; the page is no-referrer + strict CSP (hardening filter).
+     */
+    @GetMapping(value = "/activate", produces = MediaType.TEXT_HTML_VALUE)
+    @org.springframework.web.bind.annotation.ResponseBody
+    public String activatePage(@RequestParam(value = "token", required = false) String token) {
+        if (token != null && !token.isBlank()) {
+            if (!activation.linkIsLive(token)) {
+                return activationMessage("This link has expired or was already used",
+                    "Ask the person who opened your account to send you a new activation.");
+            }
+            return activationForm(token, "");
+        }
+        return activationForm(null, "");
+    }
+
+    // POST only: the password and the code travel in the form body, never the URL
+    @PostMapping(value = "/activate", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
+        produces = MediaType.TEXT_HTML_VALUE)
+    @org.springframework.web.bind.annotation.ResponseBody
+    public String activateSubmit(@RequestParam(value = "token", required = false) String token,
+                                 @RequestParam(value = "phone", required = false) String phone,
+                                 @RequestParam(value = "code", required = false) String code,
+                                 @RequestParam("new_password") String newPassword,
+                                 @RequestParam("confirm_password") String confirmPassword) {
+        boolean byLink = token != null && !token.isBlank();
+        IdpActivationService.Proof proof = byLink
+            ? new IdpActivationService.Proof.Link(token)
+            : new IdpActivationService.Proof.Code(phone, code);
+        try {
+            var done = activation.complete(proof, newPassword, confirmPassword);
+            return done.signInNow()
+                ? activationMessage("Your account is active",
+                    "Sign in from your portal as " + html(done.username()) + " with the password you just chose.")
+                : activationMessage("Your password is set",
+                    "Your account is being reviewed. You can sign in as " + html(done.username())
+                        + " once it has been approved — we will let you know.");
+        } catch (IdpProblemException e) {
+            log.warn("idp_activation_rejected channel={} problem={}", byLink ? "EMAIL" : "SMS", e.problem().code());
+            if (byLink && "ACTIVATION_INVALID".equals(e.problem().code())) {
+                return activationMessage("This link has expired or was already used",
+                    "Ask the person who opened your account to send you a new activation.");
+            }
+            return activationForm(byLink ? token : null, e.problem().detail());
+        }
+    }
+
+    private static final String ACTIVATION_STYLE = """
+        <style>
+          body { font-family: system-ui, sans-serif; background: #101418; color: #e8edf2;
+                 display: grid; place-items: center; min-height: 100dvh; margin: 0; }
+          .panel { background: #1a2029; border: 1px solid #2a323d; border-radius: 12px;
+                   padding: 2rem; width: min(92vw, 24rem); box-sizing: border-box; }
+          h1 { font-size: 1.05rem; margin: 0 0 .25rem; }
+          p.eyebrow { font-size: .7rem; letter-spacing: .12em; text-transform: uppercase;
+                      color: #f0a10e; margin: 0 0 .75rem; }
+          label { display: block; font-size: .75rem; margin: .75rem 0 .25rem; color: #9fb0c0; }
+          input { width: 100%; box-sizing: border-box; padding: .55rem .7rem; border-radius: 8px;
+                  border: 1px solid #3a4450; background: #101418; color: #e8edf2; font: inherit; }
+          button { margin-top: 1.25rem; width: 100%; padding: .6rem; border: 0; border-radius: 8px;
+                   background: #f0a10e; color: #101418; font-weight: 700; cursor: pointer; }
+          .hint { margin-top: 1rem; font-size: .7rem; color: #7a8a99; line-height: 1.5; }
+          .error { margin-top: 1rem; font-size: .75rem; color: #e5484d; }
+          .error:empty { display: none; }
+          p.body { color: #9fb0c0; line-height: 1.5; }
+        </style>""";
+
+    private String activationForm(String token, String error) {
+        String proofFields = token != null
+            ? "<input type=\"hidden\" name=\"token\" value=\"" + html(token) + "\">"
+            : """
+              <label for="ph">Mobile number</label>
+              <input id="ph" name="phone" type="tel" autocomplete="tel" placeholder="+264 81 123 4567" required autofocus>
+              <label for="code">Activation code from the SMS</label>
+              <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]*" required>
+              """;
+        return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            + "<title>FSP Identity Provider &middot; Activate your account</title>" + ACTIVATION_STYLE
+            + "</head><body><div class=\"panel\"><p class=\"eyebrow\">FSP Identity Provider</p>"
+            + "<h1>Activate your account</h1>"
+            + "<form method=\"post\" action=\"/idp/activate\">" + proofFields
+            + "<label for=\"np\">Choose a password</label>"
+            + "<input id=\"np\" name=\"new_password\" type=\"password\" autocomplete=\"new-password\" required"
+            + (token != null ? " autofocus" : "") + ">"
+            + "<label for=\"npc\">Confirm password</label>"
+            + "<input id=\"npc\" name=\"confirm_password\" type=\"password\" autocomplete=\"new-password\" required>"
+            + "<button type=\"submit\">Activate</button>"
+            + "<p class=\"error\">" + html(error) + "</p></form>"
+            + "<p class=\"hint\">At least " + PW_MIN_LENGTH + " characters. Only you know this password &mdash; "
+            + "FSP staff never see it and will never ask for it.</p></div></body></html>";
+    }
+
+    private static String activationMessage(String title, String bodyHtml) {
+        return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            + "<title>FSP Identity Provider &middot; Activation</title>" + ACTIVATION_STYLE
+            + "</head><body><div class=\"panel\"><p class=\"eyebrow\">FSP Identity Provider</p>"
+            + "<h1>" + html(title) + "</h1><p class=\"body\">" + bodyHtml + "</p></div></body></html>";
+    }
+
     // ========== Internal: OAuth client management (core only) ==========
 
     /** Admin-initiated password reset (internal hop from core, credential-gated).
@@ -665,5 +795,18 @@ public class IdpController {
             List.of("client_credentials"), (String) updated.get("status"),
             UUID.fromString((String) updated.get("owner_tenant_id")),
             ((Number) updated.get("token_ttl_s")).intValue());
+    }
+
+    /** Postgres unique_violation (23505) anywhere in the cause chain. */
+    static boolean isUniqueViolation(Throwable e) {
+        return "23505".equals(sqlState(e));
+    }
+
+    /** The SQLSTATE of the first SQLException in the chain (no data, safe to log), or null. */
+    static String sqlState(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof java.sql.SQLException sql && sql.getSQLState() != null) return sql.getSQLState();
+        }
+        return null;
     }
 }

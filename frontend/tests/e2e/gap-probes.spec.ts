@@ -192,7 +192,7 @@ async function stageUser(prefix: string): Promise<string> {
   expect(role, 'TENANT_CHECKER role option').toBeDefined();
   const username = `${prefix}.${suffix()}`;
   const staged = await api(mfrAdmin, 'POST', `/tenants/${psp.tenantId}/users`, {
-    username, fullName: 'Probe User', roleIds: [role!.id], checker: false,
+    username, fullName: 'Probe User', email: `${username}@probe.example`, primaryContact: 'EMAIL', roleIds: [role!.id], checker: false,
   });
   expect(staged.status, `user staged: ${JSON.stringify(staged.json)}`).toBe(202);
   return username;
@@ -206,7 +206,7 @@ test('USERS-PAGE · the users list is a server page: user #21+ is reachable and 
   const names: string[] = [];
   for (let i = 0; i < 21; i++) {
     const username = `${tag}.${String(i).padStart(2, '0')}`;
-    const r = await api(mfrAdmin, 'POST', `/tenants/${psp.tenantId}/users`, { username, fullName: `Page Probe ${i}`, roleIds: [], checker: false });
+    const r = await api(mfrAdmin, 'POST', `/tenants/${psp.tenantId}/users`, { username, fullName: `Page Probe ${i}`, email: `${username}@probe.example`, primaryContact: 'EMAIL', roleIds: [], checker: false });
     expect(r.status, `user staged: ${JSON.stringify(r.json)}`).toBe(202);
     names.push(username);
   }

@@ -135,13 +135,13 @@ export const suffix = (): string => randomUUID().slice(0, 8);
 
 /** Platform governance setup: KYC plugin REGISTERED (four-eyes) — idempotent across runs. */
 export async function ensureKycPlugin(maker: Session, checker: Session): Promise<void> {
-  const existing = await api<{ status?: string }>(maker, 'GET', '/platform/plugins/kyc/1.0.0');
+  const existing = await api<{ status?: string }>(maker, 'GET', '/platform/plugins/kyc/1.1.0');
   if (existing.status === 200 && existing.json.status === 'REGISTERED') return;
   if (existing.status !== 200) {
     const manifest = readFileSync(MANIFEST_PATH, 'utf-8');
     const manifestHash = createHash('sha256').update(manifest).digest('hex');
     const reg = await api(maker, 'POST', '/platform/plugins', {
-      code: 'kyc', version: '1.0.0', baseUrl: 'http://localhost:8083', manifest, manifestHash,
+      code: 'kyc', version: '1.1.0', baseUrl: 'http://localhost:8083', manifest, manifestHash,
     });
     expect(reg.status, `plugin registration opened: ${JSON.stringify(reg.json)}`).toBe(200);
   }
@@ -162,7 +162,7 @@ export async function createManufacturer(maker: Session, checker: Session): Prom
   });
   expect(created.status, `PSP created: ${JSON.stringify(created.json)}`).toBe(200);
   const tenantId = created.json.tenantId;
-  const install = await api(maker, 'POST', `/tenants/${tenantId}/plugins`, { code: 'kyc', version: '1.0.0', config: null });
+  const install = await api(maker, 'POST', `/tenants/${tenantId}/plugins`, { code: 'kyc', version: '1.1.0', config: null });
   expect(install.status, `plugin install opened: ${JSON.stringify(install.json)}`).toBe(200);
   await approveVia(checker, tenantId, 'PLUGIN_INSTALL', 'kyc plugin install');
   return { tenantId, adminUsername, checkerUsername };
@@ -196,6 +196,9 @@ export function kycApplication(subType: 'DISTRIBUTOR' | 'WHOLESALER' | 'MERCHANT
       branchCode: '481972', accountNumber: `1${digits().slice(0, 8)}`,
       accountType: 'CURRENT',
     }],
+    // V36: the org's people activate by link/code on their primary contact (no shared password)
+    admin: { fullName: 'Ada Admin', email: `admin.${suffix()}@example.na`, phone: null, primaryContact: 'EMAIL' },
+    checker: { fullName: 'Carl Checker', email: `checker.${suffix()}@example.na`, phone: null, primaryContact: 'EMAIL' },
   };
 }
 
@@ -206,7 +209,7 @@ export const NO_ACCESS_WALL = 'No access to this portal';
 
 /**
  * File a KYC application through the REAL filing form — the kyc.manage “New application”
- * drawer: five steps (Company · Business · Addresses · Owners · Bank accounts), validation
+ * drawer: six steps (Company · Business · Addresses · Owners · Bank accounts · Sign-in), validation
  * on Next/Submit, selects fed by the plugin's master values. Equivalent data to kycApplication.
  * Returns the created case id, read off the drawer's ?case= deep link.
  */
@@ -268,6 +271,14 @@ export async function fileKycUi(
   await bank.getByLabel('Branch code').fill('481972');
   await bank.getByLabel('Account number').fill(accountNo);
   await bank.getByLabel('Account type').selectOption({ label: 'Current / cheque' });
+
+  // Sign-in — the administrator and checker each get an activation on their primary contact.
+  await page.getByRole('button', { name: 'Next ›' }).click();
+  for (const [who, name] of [['Administrator', 'Ada Admin'], ['Checker', 'Carl Checker']] as const) {
+    const section = page.locator('section', { hasText: who }).first();
+    await section.getByLabel('Full name').fill(name);
+    await section.getByLabel('Email address').fill(`${who.toLowerCase()}.${suffix()}@example.na`);
+  }
 
   await page.getByRole('button', { name: 'Submit application' }).click();
   await expect(page.getByText(`${legalName} was submitted for review as `)).toBeVisible({ timeout: 10_000 });

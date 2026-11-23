@@ -35,6 +35,15 @@ public class Person {
     /** May resolve four-eyes approvals (docs/checker-flag.md). Checked in ApprovalService. */
     @Column(name = "is_checker", nullable = false)
     public boolean isChecker;
+    /** V36: a KYC-onboarded customer (not staff) — excluded from staff user lists. */
+    @Column(name = "is_customer", nullable = false)
+    public boolean isCustomer;
+    /** V36: EMAIL | PHONE — the channel the activation is sent on (customers only). */
+    @Column(name = "primary_contact")
+    public String primaryContact;
+    /** V36: stamped by the IdP when the customer completed activation on the primary contact. */
+    @Column(name = "contact_verified_at")
+    public Instant contactVerifiedAt;
     @Column(name = "archived_at")
     public Instant archivedAt;
     @Version

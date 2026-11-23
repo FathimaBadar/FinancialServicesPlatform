@@ -88,6 +88,8 @@
 /* ---------------- connection bar */
 .wb .conn { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 8px 12px; border-radius: 10px;
   background: var(--wb-panel); border: 1px solid var(--wb-border); font-size: 13px; }
+.wb .conn { position: sticky; top: 0; z-index: 30; }
+.wb .conn .account { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
 .wb .conn .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--wb-dim); }
 .wb .conn .dot.on { background: var(--wb-ok); }
 

@@ -24,13 +24,14 @@ export const SCENARIO_EXPECT: Record<Scenario, string> = {
 
 const WB_ORG = '00000000-0000-0000-0000-0000000000a1';
 const WB_ROLES: Record<string, string> = { 'org-admin': 'Organization admin', maker: 'Maker', checker: 'Checker' };
-function wbUser(n: string, username: string, fullName: string, status: string, roles: string[]) {
+function wbUser(n: string, username: string, fullName: string, status: string, roles: string[], activated: boolean | null = null) {
   const ts = '2026-11-01T09:00:00Z';
   return {
     id: `00000000-0000-0000-0000-0000000002${n}`, tenantId: WB_ORG, username, fullName,
     email: `${username}@example.com`, phone: null, status, isApplicant: false, checker: false,
     roles: roles.map((k, i) => ({ id: `00000000-0000-0000-0000-0000000003a${i + 1}`, key: k, name: WB_ROLES[k] ?? k })),
     version: 0, createdAt: ts, updatedAt: ts, archivedAt: status === 'ARCHIVED' ? ts : null,
+    primaryContact: activated === null ? null : 'EMAIL', activated,
   };
 }
 
@@ -40,6 +41,7 @@ const WB_USERS = [
   wbUser('d3', 'maria.nghipondoka', 'Maria Nghipondoka', 'DISABLED', ['checker']),
   wbUser('d4', 'peter.amutenya', 'Peter Amutenya', 'ACTIVE', []),
   wbUser('d5', 'old.account', 'Old Account', 'ARCHIVED', []),
+  wbUser('d6', 'ndeshi.amukoto', 'Ndeshi Amukoto', 'ACTIVE', ['maker'], false), // approved, awaiting IdP activation
 ];
 
 type WbUser = ReturnType<typeof wbUser>;

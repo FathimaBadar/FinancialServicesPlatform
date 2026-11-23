@@ -35,9 +35,12 @@ public class KycOnboardingSagaService {
     private final KycUboRepository uboRepository;
     private final ScreeningService screening;
     private final CoreClient coreClient;
+    private final KycCustomerService customers;
 
     public KycOnboardingSagaService(KycCaseService caseService, KycCaseRepository caseRepository,
-                                    KycUboRepository uboRepository, ScreeningService screening, CoreClient coreClient) {
+                                    KycUboRepository uboRepository, ScreeningService screening, CoreClient coreClient,
+                                    KycCustomerService customers) {
+        this.customers = customers;
         this.caseService = caseService;
         this.caseRepository = caseRepository;
         this.uboRepository = uboRepository;
@@ -57,8 +60,31 @@ public class KycOnboardingSagaService {
      * A failure after step 1 leaves the case TENANT_PENDING ("Setting up") and surfaces core's
      * problem to the person; nothing in core activates without a verified verdict.
      */
+    /** Core's answer for the person's org: the one sub-type it may onboard (null = none). */
+    void requireChildLevel(UUID ownerTenantId, String subType, String actorAssertion) {
+        Object allowed = coreClient.getTenant(ownerTenantId, actorAssertion).get("childSubType");
+        requireChildLevel(allowed == null ? null : String.valueOf(allowed), subType);
+    }
+
+    static void requireChildLevel(String allowed, String subType) {
+        if (allowed == null || allowed.isBlank()) {
+            throw new ApiProblemException("CHILD_NOT_ALLOWED",
+                "Your organization is the last level — it can't onboard organizations below it", 409);
+        }
+        String asked = subType == null ? "" : subType.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!allowed.equals(asked)) {
+            throw new ApiProblemException("CHILD_SUBTYPE_NOT_ALLOWED",
+                "Below your organization you can only onboard a " + allowed.toLowerCase(java.util.Locale.ROOT)
+                    + " — not a sibling or a level above", 400);
+        }
+    }
+
     public KycCase onboard(UUID ownerTenantId, UUID makerPersonId, String makerName,
                            KycDtos.CreateCaseRequest req, String actorAssertion, String idempotencyKey) {
+        // 0. the ladder, BEFORE anything persists: an org onboards only its CHILD level (never a
+        //    sibling or anything above). Core decides (TenantLadder) and refuses again at step 2;
+        //    asking first keeps a wrong level from leaving a stalled TENANT_PENDING case behind.
+        requireChildLevel(ownerTenantId, req.subType(), actorAssertion);
         KycCase c = caseService.create(ownerTenantId, makerPersonId, makerName, req, idempotencyKey);
 
         Map<String, Object> tenantBody = new LinkedHashMap<>();
@@ -66,14 +92,24 @@ public class KycOnboardingSagaService {
         tenantBody.put("subType", req.subType());
         tenantBody.put("adminUsername", adminUsername(req.legalName(), c.caseNo));
         tenantBody.put("adminFullName", req.legalName() + " administrator");
+        // V2: the org's administrator and checker activate by link/code on their primary contact
+        tenantBody.put("admin", contact(req.admin()));
+        tenantBody.put("checker", contact(req.checker()));
         Map<String, Object> tenant = coreClient.createChildTenant(ownerTenantId, tenantBody, actorAssertion,
             "kyc-onboard-" + c.id);
         UUID coreTenantId = UUID.fromString(String.valueOf(tenant.get("id")));
         c = caseRepository.findById(c.id).orElseThrow();
         c.subjectTenantId = coreTenantId;
+        if (tenant.get("invitedPersonIds") instanceof List<?> invited && invited.size() == 2) {
+            c.adminPersonId = UUID.fromString(String.valueOf(invited.get(0)));
+            c.subjectCheckerPersonId = UUID.fromString(String.valueOf(invited.get(1)));
+            c.activationSentAt = Instant.now();
+        }
         c.updatedAt = Instant.now();
         c = caseRepository.save(c);
         caseService.event(c, "TENANT_CREATED", makerName, "Organization created in the platform, pending verification");
+        caseService.event(c, "ACTIVATION_SENT", "KYC plugin",
+            "Administrator and checker were sent their activation (link or SMS code) — they sign in after setting a password");
 
         // outcomes are decided by the screening provider from the application — never by the caller
         screening.runIdentity(c.id, ownerTenantId, req.ubos());
@@ -95,6 +131,20 @@ public class KycOnboardingSagaService {
         log.info("kyc_onboarding_submitted caseId={} caseNo={} tenant={} approvalId={} maker={}",
             c.id, c.caseNo, coreTenantId, c.approvalId, makerPersonId);
         return c;
+    }
+
+    /** Org-born person contact (V2) — validated by core; required so nobody is born with a shared password. */
+    private static Map<String, Object> contact(KycDtos.ContactRequest c) {
+        if (c == null) {
+            throw new ApiProblemException("KYC_VALIDATION",
+                "Administrator and checker contacts are required — their activation is sent there", 400);
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("fullName", c.fullName());
+        m.put("email", c.email());
+        m.put("phone", c.phone());
+        m.put("primaryContact", c.primaryContact());
+        return m;
     }
 
     /** Applicant admin username: slug of the legal name + case number suffix (unique, core-valid). */
@@ -183,6 +233,17 @@ public class KycOnboardingSagaService {
                 "Only designated checkers may decide KYC cases", 403);
         }
 
+        boolean customer = KycCase.KIND_CUSTOMER.equals(c.caseKind);
+        if (customer && decision instanceof KycDecision.Approved) {
+            // activation = approval: only once the customer set their own password (contact proven)
+            customers.requireContactVerified(c, actorAssertion);
+            c = caseRepository.findById(caseId).orElseThrow();
+        }
+        if (KycCase.KIND_CUSTOMER.equals(c.caseKind) && decision instanceof KycDecision.RequestInfo) {
+            throw new ApiProblemException("KYC_STATE",
+                "Customer cases are approved or rejected; correct details by rejecting and re-registering", 409);
+        }
+
         String reason = null;
         boolean coreApproved = false;
         if (decision instanceof KycDecision.Approved approved) {
@@ -218,7 +279,17 @@ public class KycOnboardingSagaService {
         // Record tenant verdict with core (machine call) — only for APPROVE/REJECT
         if (coreApproved || decision instanceof KycDecision.Rejected) {
                 String verdictStr = coreApproved ? "VERIFIED" : "REJECTED";
-            try {
+            if (customer) {
+                try {
+                    coreClient.recordCustomerVerification(c.ownerTenantId, c.subjectPersonId, verdictStr,
+                        c.approvalId, KycCustomerService.payloadHash(c));
+                    log.info("kyc_customer_verdict_recorded caseId={} person={} verdict={}", c.id, c.subjectPersonId, verdictStr);
+                    caseService.event(c, coreApproved ? "CUSTOMER_ACTIVATED" : "CUSTOMER_REJECTED", null,
+                        coreApproved ? "Customer activated — they can sign in now" : "Customer rejected");
+                } catch (Exception e) {
+                    log.warn("kyc_customer_verdict_failed caseId={} detail={}", c.id, e.getMessage());
+                }
+            } else try {
                 // Same plugin-attested hash the approval was opened with (core compares them)
                 coreClient.recordVerification(c.subjectTenantId, verdictStr, c.approvalId,
                     sha256(c.caseNo + "|" + c.legalName + "|" + c.registrationNumber + "|" + c.subjectTenantId));

@@ -13,6 +13,11 @@ public final class IdpProperties {
     /** Portal origin the reset mail points at (V30 auth-plane); SPA hosts the reset form. */
     private String resetUrlBase = "http://localhost:5173";
 
+    /** V36: public origin (the gateway) the hosted activation page is reached at. */
+    private String publicBaseUrl = "http://localhost:8090";
+
+    public String getPublicBaseUrl() { return publicBaseUrl; }
+    public void setPublicBaseUrl(String v) { this.publicBaseUrl = v; }
     public String getIssuer() { return issuer; }
     public void setIssuer(String issuer) { this.issuer = issuer; }
     public long getAccessTokenTtlSeconds() { return accessTokenTtlSeconds; }

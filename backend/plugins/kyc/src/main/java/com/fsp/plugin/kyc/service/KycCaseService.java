@@ -67,6 +67,7 @@ public class KycCaseService {
         KycCase.STATUS_DRAFT, KycCase.STATUS_TENANT_PENDING, KycCase.STATUS_SUBMITTED,
         KycCase.STATUS_PENDING_REVIEW, KycCase.STATUS_REQUEST_INFO, KycCase.STATUS_APPROVED,
         KycCase.STATUS_REJECTED, KycCase.STATUS_STALLED);
+    private static final java.util.Set<String> KINDS = java.util.Set.of(KycCase.KIND_ORGANIZATION, KycCase.KIND_CUSTOMER);
     private static final java.util.Set<String> RISKS = java.util.Set.of("LOW", "MEDIUM", "HIGH");
 
     /**
@@ -76,7 +77,7 @@ public class KycCaseService {
      */
     @Transactional(readOnly = true)
     public KycDtos.CaseListResponse list(UUID ownerTenantId, int page, int size,
-                                         String q, String status, String risk, String sort) {
+                                         String q, String status, String risk, String kind, String sort) {
         if (size < 1 || size > 100) throw new ApiProblemException("PAGE_SIZE_INVALID", "size must be 1-100", 400);
         if (page < 0) throw new ApiProblemException("PAGE_INVALID", "page must be ≥ 0", 400);
         String[] sp = (sort == null || sort.isBlank() ? "submittedAt,desc" : sort).split(",");
@@ -94,9 +95,11 @@ public class KycCaseService {
             }
             String like = term.toLowerCase().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
             sql.append(" AND (search_vector @@ plainto_tsquery('english', ?) OR lower(legal_name) LIKE ? ")
-               .append("OR lower(registration_number) LIKE ? OR lower(coalesce(tax_id,'')) LIKE ? OR lower(case_no) LIKE ?)");
+               .append("OR lower(registration_number) LIKE ? OR lower(coalesce(tax_id,'')) LIKE ? OR lower(case_no) LIKE ? OR lower(coalesce(email,'')) LIKE ? OR coalesce(phone,'') LIKE ?)");
             args.add(term);
             args.add("%" + like);
+            args.add(like);
+            args.add(like);
             args.add(like);
             args.add(like);
             args.add(like);
@@ -105,6 +108,11 @@ public class KycCaseService {
         if (!st.isEmpty()) {
             sql.append(" AND status IN (").append("?,".repeat(st.size()).replaceAll(",$", "")).append(")");
             args.addAll(st);
+        }
+        List<String> kd = csv(kind, KINDS, "kind");
+        if (!kd.isEmpty()) {
+            sql.append(" AND case_kind IN (").append("?,".repeat(kd.size()).replaceAll(",$", "")).append(")");
+            args.addAll(kd);
         }
         List<String> rk = csv(risk, RISKS, "risk");
         if (!rk.isEmpty()) {
@@ -146,6 +154,11 @@ public class KycCaseService {
     }
 
     @Transactional(readOnly = true)
+    public java.util.Optional<KycCase> find(UUID caseId, UUID ownerTenantId) {
+        return caseRepository.findByIdAndOwnerTenantId(caseId, ownerTenantId);
+    }
+
+    @Transactional(readOnly = true)
     public KycDtos.CaseView get(UUID caseId, UUID ownerTenantId, UUID viewerPersonId) {
         KycCase c = caseRepository.findByIdAndOwnerTenantId(caseId, ownerTenantId)
             .orElseThrow(() -> new ApiProblemException("KYC_CASE_NOT_FOUND",
@@ -184,7 +197,8 @@ public class KycCaseService {
             c.operationalCity, c.operationalRegion, c.operationalPostal,
             c.riskRating, c.nextReviewDate, c.approvalId, c.approvalRev,
             c.makerPersonId, c.makerName, c.checkerPersonId, c.submittedAt, c.createdAt, c.updatedAt, c.version,
-            isStalled(c), true, canDecide, blockedReason, checks, ubos, banks
+            isStalled(c), true, canDecide, blockedReason, checks, ubos, banks,
+            c.caseKind, customerView(c)
         );
     }
 
@@ -477,8 +491,25 @@ public class KycCaseService {
         return new KycDtos.CaseSummary(
             c.id, c.caseNo, c.subjectTenantId, c.legalName, c.dbaName,
             c.subType, c.registrationNumber, c.status, c.riskRating,
-            c.submittedAt, c.nextReviewDate, c.makerName, c.updatedAt, c.version, isStalled(c)
+            c.submittedAt, c.nextReviewDate, c.makerName, c.updatedAt, c.version, isStalled(c),
+            c.caseKind, c.primaryContact,
+            KycCase.KIND_CUSTOMER.equals(c.caseKind) ? c.contactVerifiedAt != null : null
         );
+    }
+
+    static KycDtos.CustomerView customerView(KycCase c) {
+        if (!KycCase.KIND_CUSTOMER.equals(c.caseKind)) return null;
+        return new KycDtos.CustomerView(c.subjectPersonId, c.firstName, c.lastName, c.gender, c.dateOfBirth,
+            maskEmail(c.email), mask(c.phone), c.primaryContact, c.contactVerifiedAt != null,
+            c.contactVerifiedAt, c.activationSentAt);
+    }
+
+    /** j•••@example.com — enough for staff to recognise, not to harvest. */
+    static String maskEmail(String e) {
+        if (e == null) return null;
+        int at = e.indexOf('@');
+        if (at <= 1) return e;
+        return e.charAt(0) + "•••" + e.substring(at);
     }
 
     /** PII is masked to the last 4 on every read (no PII-read permission exists in core yet). */

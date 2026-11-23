@@ -1,4 +1,4 @@
-.PHONY: help infra-up infra-down infra-init tb-start tb-stop tb-init tb-reset tb-clean backend-core backend-bff frontend-dev frontend-install test-e2e portal-publish clean pki docs-refresh docs-check docs-hook
+.PHONY: plugin-upgrade help infra-up infra-down infra-init tb-start tb-stop tb-init tb-reset tb-clean backend-core backend-bff frontend-dev frontend-install test-e2e portal-publish clean pki docs-refresh docs-check docs-hook
 
 help:
 	@echo "FSP Phase-0 — available commands"
@@ -14,6 +14,7 @@ help:
 	@echo "  make frontend-install — install frontend deps (bun)"
 	@echo "  make test-e2e      — run Playwright E2E tests (gap probes + onboarding chain)"
 	@echo "  make portal-publish — publish a signed portal bundle four-eyes (PORTAL=admin default)"
+	@echo "  make plugin-upgrade — register a plugin's manifest version four-eyes (PLUGIN=kyc default)"
 	@echo "  make docs-refresh  — regenerate architecture doc artifacts (docs/generated)"
 	@echo "  make docs-check    — fail if architecture artifacts are stale (CI gate)"
 	@echo "  make docs-hook     — install pre-commit hook that regenerates docs on every commit"
@@ -49,7 +50,7 @@ tb-start: tb-init
 		echo "TigerBeetle pid $$!; log: infrastructure/tigerbeetle-data/server.log"
 
 tb-stop:
-	@pkill -f "tigerbeetle start" || true
+	@pkill -f "[t]igerbeetle start" || true  # [t]: never matches this recipe's own shell
 	@echo "TigerBeetle stopped"
 
 tb-reset: tb-stop
@@ -103,7 +104,13 @@ test-e2e:
 # Usage: make portal-publish [PORTAL=admin] [FSP_PUBLISH_FORCE=1]. Needs the dev stack up.
 PORTAL ?= admin
 portal-publish:
-	@cd frontend && PORTAL=$(PORTAL) bunx playwright test -c playwright.setup.config.ts
+	@cd frontend && PORTAL=$(PORTAL) bunx playwright test -c playwright.setup.config.ts portal-publish
+
+# Register the plugin's current backend/plugins/<code>/plugin-manifest.json version through the
+# real four-eyes API (platform-admin submits, admin-checker approves). Idempotent.
+PLUGIN ?= kyc
+plugin-upgrade:
+	@cd frontend && PLUGIN=$(PLUGIN) bunx playwright test -c playwright.setup.config.ts plugin-upgrade
 
 frontend-install:
 	@cd frontend && bun install

@@ -30,7 +30,7 @@ public class TenantChildrenService {
     private final PersonProvisioning provisioning;
     private final AuditService audit;
     private final OutboxService outbox;
-    private final com.fsp.core.config.FspProperties props;
+    private final com.fsp.core.config.FspProperties props; // kept for wiring compatibility
     private final com.fsp.core.ledger.LedgerService ledger;
 
     public TenantChildrenService(TenantRepository tenantRepository, PersonProvisioning provisioning,
@@ -45,9 +45,16 @@ public class TenantChildrenService {
         this.ledger = ledger;
     }
 
+    /** V36: who an org-born person is and where their activation goes (primary contact). */
+    public record Invitee(String fullName, String email, String phone, String primaryContact) {}
+
+    /** The created org plus the persons whose activation must be sent once this tx commits. */
+    public record ChildCreated(Tenant tenant, List<UUID> invitedPersonIds) {}
+
     @Transactional
-    public Tenant createChild(UUID parentTenantId, String legalName, String subType,
-                              String adminUsername, String adminFullName, Actor actor) {
+    public ChildCreated createChild(UUID parentTenantId, String legalName, String subType,
+                              String adminUsername, String adminFullName,
+                              Invitee admin, Invitee checker, Actor actor) {
         // Actor must be DELEGATED (person acting through plugin), PERSON, or ACTING (act-as)
         if (actor.type() != Actor.ActorType.DELEGATED && !actor.isHumanPlane()) {
             throw ApiException.forbidden("ACTOR_TYPE_REJECTED",
@@ -84,6 +91,15 @@ public class TenantChildrenService {
                 "Below this organization you can only onboard a " + allowed.toLowerCase());
         }
 
+        // V36: org persons activate through a one-time link/code on their primary contact —
+        // never the shared bootstrap password. Both contacts are validated before anything persists.
+        if (admin == null || checker == null) {
+            throw ApiException.badRequest("CONTACT_REQUIRED",
+                "Administrator and checker contacts are required (their activation goes there)");
+        }
+        PersonProvisioning.contact(admin.email(), admin.phone(), admin.primaryContact());
+        PersonProvisioning.contact(checker.email(), checker.phone(), checker.primaryContact());
+
         Tenant child = new Tenant();
         child.id = UUID.randomUUID();
         child.parentTenantId = parent.id;
@@ -104,12 +120,15 @@ public class TenantChildrenService {
         Role checkerRole = provisioning.ensureRole(child.id, RoleTemplates.CHECKER_ROLE, "Tenant Checker", "TENANT",
             RoleTemplates.checkerKeys(st, true));
 
-        // credentials belong to the IdP; the bootstrap password comes from config (FSP_PERSON_PASSWORD)
-        String defaultPassword = props.getSecurity().getDefaultPersonPassword();
-        var adminPerson = provisioning.createPerson(
-            child.id, adminUsername, adminFullName != null ? adminFullName : adminUsername, null, defaultPassword, true, true);
-        var checkerPerson = provisioning.createPerson(
-            child.id, "checker-" + adminUsername, "Checker for " + adminUsername, null, defaultPassword, true, true);
+        // credentials belong to the IdP: each person sets their own via the activation (V36)
+        String adminName = admin.fullName() != null && !admin.fullName().isBlank() ? admin.fullName()
+            : adminFullName != null ? adminFullName : adminUsername;
+        String checkerName = checker.fullName() != null && !checker.fullName().isBlank() ? checker.fullName()
+            : "Checker for " + adminUsername;
+        var adminPerson = provisioning.createInvitedPerson(child.id, adminUsername, adminName,
+            admin.email(), admin.phone(), admin.primaryContact(), "ACTIVE", true, false);
+        var checkerPerson = provisioning.createInvitedPerson(child.id, "checker-" + adminUsername, checkerName,
+            checker.email(), checker.phone(), checker.primaryContact(), "ACTIVE", true, false);
         provisioning.assignRole(adminPerson.id, adminRole.id);
         provisioning.assignRole(checkerPerson.id, checkerRole.id);
         provisioning.designateChecker(checkerPerson);
@@ -126,6 +145,6 @@ public class TenantChildrenService {
 
         log.info("tenant_child_created tenantId={} parentId={} maker={} subType={}",
             child.id, parentTenantId, actor.personId(), st);
-        return child;
+        return new ChildCreated(child, List.of(adminPerson.id, checkerPerson.id));
     }
 }

@@ -14,6 +14,8 @@ public interface ApprovalRequestRepository extends JpaRepository<ApprovalRequest
     List<ApprovalRequest> findByTenantIdAndOperationTypeAndStatusInOrderByRequestedAtDesc(
         UUID tenantId, String operationType, java.util.Collection<String> statuses);
     List<ApprovalRequest> findByTargetResourceIdAndStatus(UUID targetResourceId, String status);
+    /** Live approvals of one page of targets (bounded by the page size — e.g. the branch list). */
+    List<ApprovalRequest> findByTargetResourceIdInAndStatus(java.util.Collection<UUID> targetResourceIds, String status);
     Optional<ApprovalRequest> findByOperationTypeAndTargetResourceId(String operationType, UUID targetResourceId);
 
     /** A target (e.g. a reused layout draft row) may carry many resolved approvals; ask only about live ones. */

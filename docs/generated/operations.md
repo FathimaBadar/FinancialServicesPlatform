@@ -40,7 +40,11 @@
 | notification.snooze | notification.view | WRITE | `NotificationController.java` |
 | notification.unread-count | notification.view | — | `NotificationController.java` |
 | notification.wake | notification.view | WRITE | `NotificationController.java` |
+| org.branch.create | —(owner-scoped) | — | `OrgUnitController.java` |
+| org.branch.delete | —(owner-scoped) | — | `OrgUnitController.java` |
+| org.branch.get | —(owner-scoped) | — | `OrgUnitController.java` |
 | org.branch.list | —(owner-scoped) | READ | `OrgUnitController.java` |
+| org.branch.update | —(owner-scoped) | — | `OrgUnitController.java` |
 | org.department.list | —(owner-scoped) | READ | `OrgUnitController.java` |
 | person.activation.resend | —(owner-scoped) | — | `CustomerController.java` |
 | plugin.events.ack | —(owner-scoped) | — | `PluginEventsController.java` |

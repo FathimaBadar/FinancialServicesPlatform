@@ -35,6 +35,10 @@ public class ApprovalRequest {
         public static final String ROLE_CREATE = "ROLE_CREATE";
         public static final String ROLE_UPDATE = "ROLE_UPDATE";
         public static final String ROLE_DELETE = "ROLE_DELETE";
+        /** Branch maintenance (BranchService, V39) — checker needs role.manage. */
+        public static final String BRANCH_CREATE = "BRANCH_CREATE";
+        public static final String BRANCH_UPDATE = "BRANCH_UPDATE";
+        public static final String BRANCH_DELETE = "BRANCH_DELETE";
         /** Settlement bank account filing (F-10); checker needs bank.account.approve. */
         public static final String BANK_ACCOUNT_CREATE = "BANK_ACCOUNT_CREATE";
         /** Plugin platform op types pass through via the PLUGIN: prefix (canonicalOpType). */

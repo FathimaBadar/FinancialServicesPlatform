@@ -1,5 +1,5 @@
 {
-  "digest": "904f206e8c057e444d16ee1a50b9dfc9685c945c1e063e7b2d259886ee1fbaaf",
+  "digest": "ca510def8b6171729fcd0ad7737c266cc72e506006b37cf6267b40f5f578f245",
   "endpoints": [
     {
       "id": "approval.queue.read",
@@ -528,6 +528,38 @@
       "permission": "",
       "risk": "READ",
       "title": "List an organization's branches"
+    },
+    {
+      "id": "org.branch.create",
+      "method": "POST",
+      "path": "/api/tenants/{tenantId}/branches",
+      "permission": "role.manage",
+      "risk": "FOUR_EYES",
+      "title": "Request a new branch (four-eyes)"
+    },
+    {
+      "id": "org.branch.delete",
+      "method": "DELETE",
+      "path": "/api/tenants/{tenantId}/branches/{branchId}",
+      "permission": "role.manage",
+      "risk": "FOUR_EYES",
+      "title": "Request a branch deletion (four-eyes)"
+    },
+    {
+      "id": "org.branch.get",
+      "method": "GET",
+      "path": "/api/tenants/{tenantId}/branches/{branchId}",
+      "permission": "role.view",
+      "risk": "READ",
+      "title": "Read one branch"
+    },
+    {
+      "id": "org.branch.update",
+      "method": "PATCH",
+      "path": "/api/tenants/{tenantId}/branches/{branchId}",
+      "permission": "role.manage",
+      "risk": "FOUR_EYES",
+      "title": "Request a branch rename (four-eyes)"
     },
     {
       "id": "tenant.children.read",

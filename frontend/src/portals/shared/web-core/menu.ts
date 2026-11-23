@@ -22,7 +22,7 @@ export type MenuWidget =
   | 'onboard.psp' | 'onboard.list'
   | 'approvals.queue' | 'journal.entry' | 'audit.trail'
   | 'rbac.matrix' | 'permissions.catalogue' | 'plugins.governance'
-  | 'users.organization' | 'users.reset'
+  | 'users.organization' | 'users.reset' | 'org.branches'
   | 'ledger.accounts' | 'period.control' | 'bank.accounts'
   | 'overview.tiles'
   | 'inventory.placeholder'
@@ -57,8 +57,9 @@ export const MENU_ITEMS: MenuItem[] = [
   //   Role Management → Component, Sub Component, Branch, Department, Role
   // plus Approvals (user and role changes are four-eyes and are decided only there). No separate
   // Onboarding menu here: Organization is the org directory AND its "New onboarding" entry.
-  // Component / Sub Component / Branch / Department have no feature
+  // Component / Sub Component / Department have no feature
   // behind them yet: they land on menu.placeholder, gated by the key their feature will need.
+  // Branch is org.branches (four-eyes create / rename / delete; rbac.matrix scopes roles by branch).
   { id: 'back-office-users', label: 'Back Office User', icon: '☰', link: '/users',
     perm: ['user.manage'], portals: ['platform'], group: 'User Management', widgets: ['users.organization'] },
   { id: 'reset-password', label: 'Reset Password', icon: '⚷', link: '/reset-password',
@@ -78,7 +79,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: 'sub-components', label: 'Sub Component', icon: '▤', link: '/sub-components',
     perm: ['role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['menu.placeholder'] },
   { id: 'branches', label: 'Branch', icon: '⌂', link: '/branches',
-    perm: ['role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['menu.placeholder'] },
+    perm: ['role.view', 'role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['org.branches'] },
   { id: 'departments', label: 'Department', icon: '⊞', link: '/departments',
     perm: ['role.manage'], portals: ['platform'], group: 'Role Management', widgets: ['menu.placeholder'] },
   { id: 'roles', label: 'Role', icon: '⚿', link: '/rbac',

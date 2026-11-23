@@ -34,6 +34,7 @@ timeline
     V36 : customer activation
     V37 : auth channel width
     V38 : notification snooze resolve
+    V39 : branch maintenance
 
-**Next free migration number: V39.**
+**Next free migration number: V40.**
 ```

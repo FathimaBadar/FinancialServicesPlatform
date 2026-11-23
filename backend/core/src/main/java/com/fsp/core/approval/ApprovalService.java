@@ -204,7 +204,10 @@ public class ApprovalService {
                  ApprovalRequest.OpType.PLUGIN_INSTALL -> "plugin.manage";
             case ApprovalRequest.OpType.ROLE_CREATE,
                  ApprovalRequest.OpType.ROLE_UPDATE,
-                 ApprovalRequest.OpType.ROLE_DELETE -> "role.manage";
+                 ApprovalRequest.OpType.ROLE_DELETE,
+                 ApprovalRequest.OpType.BRANCH_CREATE,
+                 ApprovalRequest.OpType.BRANCH_UPDATE,
+                 ApprovalRequest.OpType.BRANCH_DELETE -> "role.manage";
             case ApprovalRequest.OpType.BANK_ACCOUNT_CREATE -> "bank.account.approve";
             default -> "user.manage";
         };
@@ -226,7 +229,9 @@ public class ApprovalService {
             case ApprovalRequest.OpType.UI_LAYOUT_PUBLISH -> "ui.layout.manage";
             case ApprovalRequest.OpType.PLUGIN_REGISTER, ApprovalRequest.OpType.PLUGIN_INSTALL -> "plugin.manage";
             case ApprovalRequest.OpType.ROLE_CREATE, ApprovalRequest.OpType.ROLE_UPDATE,
-                 ApprovalRequest.OpType.ROLE_DELETE -> "role.manage";
+                 ApprovalRequest.OpType.ROLE_DELETE,
+                 ApprovalRequest.OpType.BRANCH_CREATE, ApprovalRequest.OpType.BRANCH_UPDATE,
+                 ApprovalRequest.OpType.BRANCH_DELETE -> "role.manage";
             case ApprovalRequest.OpType.BANK_ACCOUNT_CREATE -> "bank.account.approve";
             default -> "user.manage";
         };
@@ -398,6 +403,7 @@ public class ApprovalService {
         // payload only for core-owned rows the checker needs to JUDGE: person/role changes and
         // the UI layout/menu snapshot (what the checker is approving); plugin rows hold a hash, never data
         String payload = r.operationType.startsWith("USER_") || r.operationType.startsWith("ROLE_")
+            || r.operationType.startsWith("BRANCH_")
             || ApprovalRequest.OpType.UI_LAYOUT_PUBLISH.equals(r.operationType) ? r.payload : null;
         return new ApprovalDtos.QueueView(r.id, r.tenantId, r.operationType, r.targetResourceId, r.status,
             r.makerId, nameOf(r.makerId, names), r.checkerId, nameOf(r.checkerId, names), r.reason,
@@ -430,6 +436,9 @@ public class ApprovalService {
             case ApprovalRequest.OpType.ROLE_CREATE -> ApprovalRequest.OpType.ROLE_CREATE;
             case ApprovalRequest.OpType.ROLE_UPDATE -> ApprovalRequest.OpType.ROLE_UPDATE;
             case ApprovalRequest.OpType.ROLE_DELETE -> ApprovalRequest.OpType.ROLE_DELETE;
+            case ApprovalRequest.OpType.BRANCH_CREATE -> ApprovalRequest.OpType.BRANCH_CREATE;
+            case ApprovalRequest.OpType.BRANCH_UPDATE -> ApprovalRequest.OpType.BRANCH_UPDATE;
+            case ApprovalRequest.OpType.BRANCH_DELETE -> ApprovalRequest.OpType.BRANCH_DELETE;
             case ApprovalRequest.OpType.BANK_ACCOUNT_CREATE -> ApprovalRequest.OpType.BANK_ACCOUNT_CREATE;
             default -> ApprovalRequest.OpType.GENERIC;
         };

@@ -43,11 +43,17 @@ describe('ADMIN-MENU · the admin console shows the specified menus and submenus
       '#Role Management', 'Component', 'Sub Component', 'Branch', 'Department', 'Role', 'Approvals']);
   });
   it('menu points without a feature yet land on the placeholder and are still gated', () => {
-    for (const label of ['Component', 'Sub Component', 'Branch', 'Department']) {
+    for (const label of ['Component', 'Sub Component', 'Department']) {
       const item = menuFor('platform').find((i) => i.label === label);
       expect(item?.widgets).toEqual(['menu.placeholder']);
       expect(item?.perm.length).toBeGreaterThan(0);
     }
+  });
+  it('Branch is the branches widget (four-eyes create / rename / delete), gated like Role', () => {
+    const item = menuFor('platform').find((i) => i.label === 'Branch');
+    expect(item?.widgets).toEqual(['org.branches']);
+    expect(item?.perm).toEqual(['role.view', 'role.manage']);
+    expect(item?.link).toBe('/branches');
   });
   it('Customer is the KYC plugin\'s customer widget (register → customer activates → checker activates), on both portals', () => {
     const platform = menuFor('platform').find((i) => i.label === 'Customer');

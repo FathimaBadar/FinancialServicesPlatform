@@ -163,6 +163,64 @@ class ApprovalServiceGovernanceTest {
         assertThat(v.canDecide()).isTrue();
     }
 
+    /** V39 branches: a BRANCH_* decision needs role.manage and applies atomically with the approval row. */
+    @Test
+    void branchChangeNeedsRoleManageAndResolvesAtomically() {
+        PlatformTransactionManager txm = mock(PlatformTransactionManager.class);
+        List<Boolean> applied = new java.util.ArrayList<>();
+        ApprovalHandler branch = new ApprovalHandler() {
+            @Override public String operationType() { return ApprovalRequest.OpType.BRANCH_CREATE; }
+            @Override public void apply(ApprovalRequest a, boolean ok, Actor c, String r) { applied.add(ok); }
+            @Override public boolean atomicWithResolution() { return true; }
+        };
+        ApprovalService withBranch = new ApprovalService(repo, permissions, new KeyLocks(), mock(AuditService.class),
+            mock(OutboxService.class), List.of(branch), persons, mock(PluginTypeRepository.class), txm,
+            mock(com.fsp.core.notify.NotificationService.class));
+        ApprovalRequest row = row(ApprovalRequest.OpType.BRANCH_CREATE);
+        when(repo.findById(row.id)).thenReturn(Optional.of(row));
+        Actor checker = new Actor(CHECKER_ID, "checker", TENANT);
+
+        withBranch.resolve(row.id, true, checker, null);
+
+        verify(permissions).require(checker, "role.manage", TENANT);
+        verify(txm).getTransaction(any());
+        assertThat(applied).containsExactly(true);
+        assertThat(row.status).isEqualTo(ApprovalRequest.Status.APPROVED);
+    }
+
+    /** Four-eyes at person_id: the maker of a branch change can never decide it — nothing applies. */
+    @Test
+    void branchMakerCannotApproveOwnRequest() {
+        List<Boolean> applied = new java.util.ArrayList<>();
+        ApprovalHandler branch = new ApprovalHandler() {
+            @Override public String operationType() { return ApprovalRequest.OpType.BRANCH_DELETE; }
+            @Override public void apply(ApprovalRequest a, boolean ok, Actor c, String r) { applied.add(ok); }
+            @Override public boolean atomicWithResolution() { return true; }
+        };
+        ApprovalService withBranch = new ApprovalService(repo, permissions, new KeyLocks(), mock(AuditService.class),
+            mock(OutboxService.class), List.of(branch), persons, mock(PluginTypeRepository.class),
+            mock(PlatformTransactionManager.class), mock(com.fsp.core.notify.NotificationService.class));
+        ApprovalRequest row = row(ApprovalRequest.OpType.BRANCH_DELETE);
+        when(repo.findById(row.id)).thenReturn(Optional.of(row));
+        Actor maker = new Actor(MAKER_ID, "maker", TENANT);
+        org.mockito.Mockito.doThrow(ApiException.forbidden("MAKER_CANNOT_APPROVE", "four-eyes"))
+            .when(permissions).requireDistinctPerson(maker, MAKER_ID);
+
+        assertThatThrownBy(() -> withBranch.resolve(row.id, true, maker, null))
+            .isInstanceOf(ApiException.class)
+            .satisfies(e -> assertThat(((ApiException) e).getCode()).isEqualTo("MAKER_CANNOT_APPROVE"));
+        assertThat(applied).isEmpty();
+        assertThat(row.status).isEqualTo(ApprovalRequest.Status.PENDING_CHECKER);
+    }
+
+    @Test
+    void branchRowsShowTheirProposalToTheChecker() {
+        ApprovalDtos.QueueView v = svc.view(row(ApprovalRequest.OpType.BRANCH_UPDATE), new Actor(CHECKER_ID, "checker", TENANT));
+        assertThat(v.checkerPermission()).isEqualTo("role.manage");
+        assertThat(v.payload()).isEqualTo("{\"k\":1}");
+        assertThat(v.canDecide()).isTrue();
+    }
+
     @Test
     void queueOpensForAnyCheckerPermission() {
         assertThat(ApprovalService.CHECKER_PERMISSIONS)

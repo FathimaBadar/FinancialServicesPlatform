@@ -12,6 +12,7 @@ import { layoutNavEntries, useMenuAccess, useSignedLayout } from '../../signed/s
 import { getWidget } from '../widgets/registry';
 import { useState, useEffect } from 'react';
 import { onUnread } from './push-core';
+import { NotificationBell } from './notifications/NotificationBell';
 
 export function AppShell({
   portal,
@@ -57,6 +58,7 @@ export function AppShell({
             </span>
           </Link>
           <div className="flex items-center gap-3">
+            <NotificationBell pending={unread} userId={user?.userId} orgId={actAs?.targetTenantId ?? user?.tenantId ?? ''} />
             {user && (
               <div className="text-right leading-tight">
                 <div className="text-xs font-semibold">{user.fullName}</div>

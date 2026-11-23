@@ -134,6 +134,35 @@ class ApprovalServiceGovernanceTest {
         verify(txm).getTransaction(any());
     }
 
+    /** V38: once anyone decides, no checker is still asked to act — every pointer is resolved. */
+    @Test
+    void decisionResolvesEveryCheckersNotification() {
+        com.fsp.core.notify.NotificationService notifications = mock(com.fsp.core.notify.NotificationService.class);
+        ApprovalService withNotify = new ApprovalService(repo, permissions, new KeyLocks(), mock(AuditService.class),
+            mock(OutboxService.class), List.of(), persons, mock(PluginTypeRepository.class),
+            mock(PlatformTransactionManager.class), notifications);
+        ApprovalRequest row = row(ApprovalRequest.OpType.USER_UPDATE);
+        when(repo.findById(row.id)).thenReturn(Optional.of(row));
+
+        withNotify.resolve(row.id, false, new Actor(CHECKER_ID, "checker", TENANT), "not now");
+
+        verify(notifications).resolveApproval(row.id);
+    }
+
+    /** The bell opens the approval it points at — same checker gate as the queue, in the ROW's tenant. */
+    @Test
+    void singleApprovalReadUsesTheQueueGateInTheRowsTenant() {
+        ApprovalRequest row = row(ApprovalRequest.OpType.USER_UPDATE);
+        when(repo.findById(row.id)).thenReturn(Optional.of(row));
+        Actor checker = new Actor(CHECKER_ID, "checker", TENANT);
+
+        ApprovalDtos.QueueView v = svc.viewById(row.id, checker);
+
+        verify(permissions).requireAny(checker, ApprovalService.CHECKER_PERMISSIONS, TENANT);
+        assertThat(v.id()).isEqualTo(row.id);
+        assertThat(v.canDecide()).isTrue();
+    }
+
     @Test
     void queueOpensForAnyCheckerPermission() {
         assertThat(ApprovalService.CHECKER_PERMISSIONS)

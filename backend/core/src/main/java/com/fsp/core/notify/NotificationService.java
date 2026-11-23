@@ -192,10 +192,34 @@ public class NotificationService {
 
     /** Inbox page record (§2f-compliant shape). */
     public record NotificationPage(List<NotificationView> items, int page, int size,
-                                   long totalElements, int totalPages, boolean hasNext, long unread) {}
+                                   long totalElements, int totalPages, boolean hasNext, long unread,
+                                   long pending) {}
 
+    /** {@code actionable}: the person acts on the record itself (approve/reject) — it cannot be
+     *  dismissed, only decided or snoozed. {@code resourceId} is an id the caller's own
+     *  permissions are re-checked against when followed; it grants nothing. */
     public record NotificationView(UUID id, String type, String opType, String title, String body,
-                                   String link, boolean unread, String createdAt) {}
+                                   String link, boolean unread, String createdAt,
+                                   String resourceType, UUID resourceId, boolean actionable,
+                                   String snoozedUntil, String resolvedAt) {}
+
+    /** Inbox lens (V38): pending = not acted upon and awake; snoozed = parked for later. */
+    public enum InboxState { PENDING, SNOOZED, ALL }
+
+    static InboxState parseState(String raw) {
+        if (raw == null || raw.isBlank()) return InboxState.ALL;
+        return switch (raw.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "pending" -> InboxState.PENDING;
+            case "snoozed" -> InboxState.SNOOZED;
+            case "all" -> InboxState.ALL;
+            default -> throw ApiException.badRequest("STATE_INVALID", "state must be pending, snoozed or all");
+        };
+    }
+
+    /** Types the person resolves by acting on the target record, never by dismissing the pointer. */
+    static boolean isActionable(String type) {
+        return TYPE_APPROVAL_OPEN.equals(type);
+    }
 
     /** Sort safelist: wire field → entity property; anything else is refused (§2f). */
     private static final Map<String, String> SORT_FIELDS = Map.of(
@@ -228,10 +252,18 @@ public class NotificationService {
 
     /** Server-side filters only — the person scope is FIXED to the actor (never from the wire). */
     static org.springframework.data.jpa.domain.Specification<Notification> inboxSpec(
-            UUID personId, String like, Boolean unread) {
+            UUID personId, String like, Boolean unread, InboxState state, java.time.Instant now) {
         return (root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> where = new ArrayList<>();
             where.add(cb.equal(root.get("personId"), personId));
+            if (state == InboxState.PENDING) {
+                where.add(cb.isNull(root.get("resolvedAt")));
+                where.add(cb.or(cb.isNull(root.get("snoozedUntil")),
+                    cb.lessThanOrEqualTo(root.<java.time.Instant>get("snoozedUntil"), now)));
+            } else if (state == InboxState.SNOOZED) {
+                where.add(cb.isNull(root.get("resolvedAt")));
+                where.add(cb.greaterThan(root.<java.time.Instant>get("snoozedUntil"), now));
+            }
             if (like != null) {
                 where.add(cb.or(
                     cb.like(cb.lower(root.<String>get("title")), like, '\\'),
@@ -246,22 +278,101 @@ public class NotificationService {
     }
 
     public NotificationPage listPage(UUID personId, Integer page, Integer size,
-                                     String q, Boolean unread, String sort, long unreadCount) {
+                                     String q, Boolean unread, String state, String sort) {
         int pageNum = page == null || page < 0 ? 0 : page;
         int pageSize = size == null || size < 1 ? 20 : Math.min(size, 100);
         String like = likePattern(q);
-        var rows = repository.findAll(inboxSpec(personId, like, unread),
+        InboxState lens = parseState(state);
+        java.time.Instant now = java.time.Instant.now();
+        var rows = repository.findAll(inboxSpec(personId, like, unread, lens, now),
             PageRequest.of(pageNum, pageSize, parseSort(sort)));
-        List<NotificationView> items = rows.getContent().stream()
-            .map(n -> new NotificationView(n.id, n.type, n.opType, n.title, n.body, n.link,
-                n.readAt == null, String.valueOf(n.createdAt)))
-            .toList();
+        List<NotificationView> items = rows.getContent().stream().map(NotificationService::view).toList();
         return new NotificationPage(items, pageNum, pageSize, rows.getTotalElements(),
-            rows.getTotalPages(), rows.hasNext(), unreadCount);
+            rows.getTotalPages(), rows.hasNext(), unreadCount(personId), pendingCount(personId));
+    }
+
+    static NotificationView view(Notification n) {
+        return new NotificationView(n.id, n.type, n.opType, n.title, n.body, n.link,
+            n.readAt == null, String.valueOf(n.createdAt), n.resourceType, n.resourceId,
+            isActionable(n.type),
+            n.snoozedUntil == null ? null : n.snoozedUntil.toString(),
+            n.resolvedAt == null ? null : n.resolvedAt.toString());
     }
 
     public long unreadCount(UUID personId) {
         return repository.countUnread(personId);
+    }
+
+    /** The bell badge: not acted upon and not snoozed right now. */
+    public long pendingCount(UUID personId) {
+        return repository.countPending(personId, java.time.Instant.now());
+    }
+
+    // ---------- per-notification actions (owner-scoped; another person's id is a 404) ----------
+
+    /** Shortest/longest park: under a minute is noise, over 30 days is "dismiss" in disguise. */
+    static final java.time.Duration SNOOZE_MIN = java.time.Duration.ofMinutes(1);
+    static final java.time.Duration SNOOZE_MAX = java.time.Duration.ofDays(30);
+
+    @Transactional
+    public NotificationView snooze(UUID personId, UUID id, java.time.Instant until) {
+        java.time.Instant now = java.time.Instant.now();
+        if (until == null) throw ApiException.badRequest("SNOOZE_UNTIL_REQUIRED", "until is required");
+        if (until.isBefore(now.plus(SNOOZE_MIN)) || until.isAfter(now.plus(SNOOZE_MAX))) {
+            throw ApiException.badRequest("SNOOZE_RANGE", "Snooze for between 1 minute and 30 days");
+        }
+        Notification n = own(personId, id);
+        if (n.resolvedAt != null) throw ApiException.conflict("NOTIFICATION_RESOLVED", "This notification was already acted upon");
+        // atomic precondition (resolved_at IS NULL): a decision landing between read and write wins
+        if (repository.snooze(id, personId, until) == 0) {
+            throw ApiException.conflict("NOTIFICATION_RESOLVED", "This notification was already acted upon");
+        }
+        log.info("notification_snoozed id={} personId={} until={}", id, personId, until);
+        n.snoozedUntil = until;
+        return view(n);
+    }
+
+    @Transactional
+    public NotificationView wake(UUID personId, UUID id) {
+        Notification n = own(personId, id);
+        if (n.resolvedAt == null) repository.snooze(id, personId, null);
+        n.snoozedUntil = null;
+        return view(n);
+    }
+
+    /** Informational notices only — an approval pointer is resolved by deciding the approval. */
+    @Transactional
+    public void dismiss(UUID personId, UUID id) {
+        Notification n = own(personId, id);
+        if (isActionable(n.type)) {
+            throw ApiException.conflict("NOTIFICATION_ACTIONABLE",
+                "Approve or reject the request to clear this notification, or snooze it");
+        }
+        repository.dismiss(id, personId, java.time.Instant.now());
+        log.info("notification_dismissed id={} personId={}", id, personId);
+    }
+
+    @Transactional
+    public void markRead(UUID personId, UUID id) {
+        own(personId, id);
+        repository.markRead(id, personId, java.time.Instant.now());
+    }
+
+    private Notification own(UUID personId, UUID id) {
+        return repository.findByIdAndPersonId(id, personId)
+            .orElseThrow(() -> ApiException.notFound("NOTIFICATION_NOT_FOUND", "Notification not found"));
+    }
+
+    /**
+     * The approval was decided (by whichever checker): every checker's pointer at it stops being
+     * pending. Joins the caller's transaction when one is open, so a rolled-back decision leaves
+     * the pointers pending.
+     */
+    @Transactional
+    public int resolveApproval(UUID approvalId) {
+        int n = repository.resolveForResource("ApprovalRequest", approvalId, java.time.Instant.now());
+        if (n > 0) log.info("notifications_resolved resourceType=ApprovalRequest resourceId={} count={}", approvalId, n);
+        return n;
     }
 
     @Transactional

@@ -325,6 +325,8 @@ public class ApprovalService {
             audit.hashState("status=" + row.status + ";type=" + row.operationType), false);
         outbox.record("ApprovalRequest", row.id, "Approval.Resolved",
             "{\"approvalId\":\"%s\",\"type\":\"%s\",\"status\":\"%s\"}".formatted(row.id, row.operationType, row.status));
+        // V38: nobody needs to act any more — every checker's pointer leaves their pending inbox
+        notifications.resolveApproval(row.id);
         log.info("approval_resolved approvalId={} type={} status={} checker={}",
             row.id, row.operationType, row.status, row.checkerId);
     }
@@ -361,6 +363,18 @@ public class ApprovalService {
             && persons.findById(actor.personId()).map(p -> p.isChecker).orElse(false);
         Map<UUID, String> names = new HashMap<>();
         return rows.stream().map(r -> view(r, actor, held, flagged, names)).toList();
+    }
+
+    /**
+     * One request for the caller (the notification bell opens the approval it points at). Same
+     * gate as the queue, evaluated in the ROW's tenant — a person without a checker permission
+     * there gets 403, and a tenant they cannot see is indistinguishable from a missing row.
+     */
+    public ApprovalDtos.QueueView viewById(UUID approvalId, Actor actor) {
+        ApprovalRequest row = repository.findById(approvalId)
+            .orElseThrow(() -> ApiException.notFound("APPROVAL_NOT_FOUND", "Approval request not found"));
+        permissions.requireAny(actor, CHECKER_PERMISSIONS, row.tenantId);
+        return view(row, actor);
     }
 
     /** Single-row view for the caller (used by the open endpoint). */

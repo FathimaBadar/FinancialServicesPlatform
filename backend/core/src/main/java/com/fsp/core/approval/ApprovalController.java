@@ -41,6 +41,13 @@ public class ApprovalController {
             .stream().limit(size).toList();
     }
 
+    /** GET /v1/approvals/{id} — one request, with this caller's canDecide/blockedReason. */
+    @FspOperation(id = "approval.read", component = "approval", title = "View one approval request")
+    @GetMapping("/v1/approvals/{id}")
+    public ApprovalDtos.QueueView one(jakarta.servlet.http.HttpServletRequest request, @PathVariable UUID id) {
+        return approvalService.viewById(id, actor(request));
+    }
+
     /** POST /v1/approvals — open a GENERIC evidence request (domain flows open their own typed rows). */
     @FspOperation(id = "approval.open", component = "approval",
         risk = FspOperation.OperationRisk.WRITE, title = "Open approval request")

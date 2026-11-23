@@ -557,7 +557,8 @@ async function e2e(id: string, args: string[]): Promise<void> {
   if (lanes.includes('portal') && !(await reachable(`${SPA}/bff/session`))) die('portal lane needs the BFF + gateway + core + idp up (make stack-up / make backend-*)');
   if (live && state.ops.some((o) => o.status === 'NEW')) die(`--live but NEW operations remain: ${state.ops.filter((o) => o.status === 'NEW').map((o) => o.name).join(', ')}`);
 
-  const r = await run(['bunx', '--bun', 'playwright', 'test', relative(FRONTEND, spec), '--reporter=line'], {
+  // forward slashes: playwright reads the argument as a regex, and Windows' `\e`, `\w` … are escapes
+  const r = await run(['bunx', '--bun', 'playwright', 'test', relative(FRONTEND, spec).replace(/\\/g, '/'), '--reporter=line'], {
     FSP_WIDGET_LANES: lanes.join(','), FSP_WIDGET_LIVE: live ? '1' : '0',
   });
   const log = logTo(id, `e2e-${lanes.join('-')}${live ? '-live' : ''}`, r.out);

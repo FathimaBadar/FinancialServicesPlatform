@@ -26,8 +26,12 @@ export interface CallRecord {
 
 type Recorder = (r: CallRecord) => void;
 
+/** null, [], or the platform's paged collection envelope with no items (AGENTS §2.7 `{ items: [], … }`). */
 function isEmpty(v: unknown): boolean {
-  return v === null || v === undefined || (Array.isArray(v) && v.length === 0);
+  if (v === null || v === undefined) return true;
+  if (Array.isArray(v)) return v.length === 0;
+  const items = typeof v === 'object' ? (v as { items?: unknown }).items : undefined;
+  return Array.isArray(items) && items.length === 0;
 }
 
 function statusOf(err: unknown): CallRecord['status'] {

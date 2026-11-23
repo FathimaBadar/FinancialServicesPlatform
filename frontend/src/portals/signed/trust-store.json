@@ -3,6 +3,7 @@
   "pinnedAt": "2026-11-19",
   "keys": [
     { "kid": "ui-builder-dev-1", "alg": "ES256", "kty": "EC", "crv": "P-256",
-      "x": "MJi3pzThsVBJdxWCLO0pAFUj_8Vw5uDqizLRVVhoDcs", "y": "bUzeh7hRcpCVAeKknapWXik5Cg0iL_NURP8snTL1Rs8" }
+      "x": "6dwGcHYnalC8EaFcaL1zvBkM1Voiwya0mbkoXPLAOHY",
+      "y": "zW605SpZMq_Lk0lbHuztV5ng4BcCAJgqHVLR5yJ-YWI" }
   ]
 }

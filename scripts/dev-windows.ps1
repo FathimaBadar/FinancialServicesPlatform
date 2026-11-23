@@ -43,7 +43,7 @@ $CLI = Resolve-CLI
 # Engine-VM sizing that leaves the HOST enough RAM to also run the five JVM services.
 #   <= 9  GB total  ->  2 GB / 2 vCPU   (8 GB laptops: only postgres + tigerbeetle in the VM,
 #                                        run services natively with scripts\dev-windows.ps1 dev)
-#   <= 17 GB total  ->  5 GB / 2 vCPU   (16 GB laptops — comfortable, 'stack-up' fits)
+#   <= 17 GB total  ->  5 GB / 2 vCPU   (16 GB laptops - comfortable, 'stack-up' fits)
 #   >  17 GB total  ->  6 GB / 3 vCPU   (workstation)
 function Get-FspSizing {
     $total = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
@@ -65,9 +65,19 @@ function Invoke-Compose {
     }
 }
 
+# Windows PowerShell 5.1: under $ErrorActionPreference='Stop', ANY stderr line from a
+# native exe (even with 2>$null) is a terminating error. Run native calls whose stderr
+# is expected noise (TB's "cluster id 0" warning, "no such container") with Continue.
+function Invoke-NativeQuiet {
+    param([scriptblock] $Block)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Block 2>$null } finally { $ErrorActionPreference = $prev }
+}
+
 switch ($Command) {
     'help' {
-        Write-Host "FSP dev on Windows — make-equivalents (engine: $CLI)" -ForegroundColor Magenta
+        Write-Host "FSP dev on Windows - make-equivalents (engine: $CLI)" -ForegroundColor Magenta
         Write-Host @"
   status          engine + port overview
   infra-up        start PostgreSQL (container)
@@ -91,7 +101,7 @@ switch ($Command) {
 
     'status' {
         Write-Host "engine: $CLI $(( & $CLI --version | Select-Object -First 1 ))" -ForegroundColor Cyan
-        & $CLI ps -a --filter "name=fsp-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>$null
+        Invoke-NativeQuiet { & $CLI ps -a --filter "name=fsp-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" }
         foreach ($p in 5432, 3000, 8081, 8082, 8090, 8080, 8083, 5173) {
             $busy = (Test-NetConnection -ComputerName 127.0.0.1 -Port $p -WarningAction SilentlyContinue).TcpTestSucceeded
             Write-Host ("port {0,-5} {1}" -f $p, $(if ($busy) { 'OPEN' } else { 'closed' }))
@@ -111,18 +121,20 @@ switch ($Command) {
     'infra-init' { New-Item -ItemType Directory -Force -Path $TB_DATA | Out-Null; break }
 
     'tb-init' {
-        & $CLI run --rm --user 0:0 `
-            --security-opt seccomp=unconfined `
-            -v "${TB_DATA}:/data" `
-            --entrypoint /tigerbeetle $TB_IMAGE `
-            format --cluster=0 --replica=0 --replica-count=1 /data/0_0.tigerbeetle 2>$null
-        if ($LASTEXITCODE -ne 0) { Write-Host "[warn] format skipped/failed (exit $LASTEXITCODE) — usually 'already formatted'" -ForegroundColor DarkYellow }
+        Invoke-NativeQuiet {
+            & $CLI run --rm --user 0:0 `
+                --security-opt seccomp=unconfined `
+                -v "${TB_DATA}:/data" `
+                --entrypoint /tigerbeetle $TB_IMAGE `
+                format --cluster=0 --replica=0 --replica-count=1 /data/0_0.tigerbeetle
+        }
+        if ($LASTEXITCODE -ne 0) { Write-Host "[warn] format skipped/failed (exit $LASTEXITCODE) - usually 'already formatted'" -ForegroundColor DarkYellow }
         break
     }
 
     'tb-start' {
         & $PSScriptRoot\dev-windows.ps1 tb-init | Out-Null
-        $existing = & $CLI ps -a --filter "name=$TB_NAME" --format "{{.ID}}" 2>$null
+        $existing = Invoke-NativeQuiet { & $CLI ps -a --filter "name=$TB_NAME" --format "{{.ID}}" }
         if ($existing) {
             $state = (& $CLI ps -a --filter "name=$TB_NAME" --format "{{.State}}" | Select-Object -First 1)
             if ($state -eq 'Running') { Write-Host "[ ok  ] TigerBeetle already running"; break }
@@ -140,8 +152,8 @@ switch ($Command) {
     }
 
     'tb-stop' {
-        & $CLI stop $TB_NAME 2>$null | Out-Null
-        & $CLI rm $TB_NAME 2>$null | Out-Null
+        Invoke-NativeQuiet { & $CLI stop $TB_NAME } | Out-Null
+        Invoke-NativeQuiet { & $CLI rm $TB_NAME } | Out-Null
         Write-Host "[ ok  ] TigerBeetle stopped/removed"
         break
     }
@@ -151,7 +163,7 @@ switch ($Command) {
         Remove-Item $TB_DATA -Recurse -Force -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force -Path $TB_DATA | Out-Null
         & $PSScriptRoot\dev-windows.ps1 tb-init
-        Write-Host "[ ok  ] TigerBeetle data reset — run dev-windows.ps1 tb-start"
+        Write-Host "[ ok  ] TigerBeetle data reset - run dev-windows.ps1 tb-start"
         break
     }
 
@@ -164,7 +176,7 @@ switch ($Command) {
 
     'pki' {
         $bashExe = "${env:ProgramFiles}\Git\bin\bash.exe"
-        if (-not (Test-Path $bashExe)) { throw "Git Bash not found — install Git for Windows (scripts\windows-setup.ps1 does it)." }
+        if (-not (Test-Path $bashExe)) { throw "Git Bash not found - install Git for Windows (scripts\windows-setup.ps1 does it)." }
         & $bashExe -lc "cd '$ROOT' && bash infrastructure/pki/dev-pki.sh"
         Write-Host "[ ok  ] dev PKI regenerated (gitignored)"
         break
@@ -197,10 +209,10 @@ switch ($Command) {
                 $json = Get-Content $rd -Raw | ConvertFrom-Json
                 $json | Add-Member -NotePropertyName 'virtualMachine' -NotePropertyValue @{ memoryInGB = [math]::Ceiling($size.MB / 1024.0); numberCPUs = $size.Cpu } -Force
                 $json | ConvertTo-Json -Depth 10 | Set-Content $rd -Encoding utf8
-                Write-Host "[ ok  ] wrote $($size.MB) MB / $($size.Cpu) vCPU to settings.json — RESTART Rancher Desktop to apply"
+                Write-Host "[ ok  ] wrote $($size.MB) MB / $($size.Cpu) vCPU to settings.json - RESTART Rancher Desktop to apply"
                 Write-Host "         (or use its UI: Preferences > Virtual Machine > Memory (GB) / Number CPUs)"
             } else {
-                Write-Warning "Rancher settings.json not found — use the UI: Preferences > Virtual Machine"
+                Write-Warning "Rancher settings.json not found - use the UI: Preferences > Virtual Machine"
             }
         }
         break
@@ -236,10 +248,10 @@ switch ($Command) {
     }
 
     'stop' {
-        # Reverse of 'dev' — gradle daemons, SPA dev server, TB, postgres.
-        # One gradlew for the whole backend (see Makefile: cd backend/<svc> && ../gradlew) —
+        # Reverse of 'dev' - gradle daemons, SPA dev server, TB, postgres.
+        # One gradlew for the whole backend (see Makefile: cd backend/<svc> && ../gradlew) -
         # `gradlew --stop` stops all daemons of this gradle installation.
-        & (Join-Path $ROOT 'backend\gradlew.bat') --stop 2>$null | Out-Null
+        Invoke-NativeQuiet { & (Join-Path $ROOT 'backend\gradlew.bat') --stop } | Out-Null
         # SPA: find the vite dev server on :5173 and stop the owning process tree
         $vite = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($vite) { Stop-Process -Id $vite.OwningProcess -Force -ErrorAction SilentlyContinue; Write-Host "[down] SPA (vite) stopped" }
@@ -250,7 +262,7 @@ switch ($Command) {
         }
         & $PSScriptRoot\dev-windows.ps1 tb-stop
         & $PSScriptRoot\dev-windows.ps1 infra-down
-        Write-Host "[ ok  ] everything stopped — scripts\dev-windows.ps1 dev to bring it all back"
+        Write-Host "[ ok  ] everything stopped - scripts\dev-windows.ps1 dev to bring it all back"
         break
     }
 }

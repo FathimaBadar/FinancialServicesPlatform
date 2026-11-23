@@ -5,7 +5,7 @@
 .DESCRIPTION
     Installs and configures a container engine for FSP development on Windows:
 
-      -Engine podman   (DEFAULT — recommended)  Podman Desktop + WSL2 machine +
+      -Engine podman   (DEFAULT - recommended)  Podman Desktop + WSL2 machine +
                                                 docker-compose wrapper so
                                                 "podman compose" just works.
       -Engine rancher                            Rancher Desktop (moby/dockerd
@@ -18,7 +18,7 @@
     With -InstallToolchain additionally installs Temurin JDK 25 and Bun.
 
     Idempotent: safe to re-run; every step checks for existing state first.
-    After a feature-enable step a REBOOT may be required — the script tells you.
+    After a feature-enable step a REBOOT may be required - the script tells you.
 
 .USAGE
     # recommended (run in an elevated PowerShell)
@@ -68,7 +68,7 @@ function Winget-Install {
     winget install --id $Id --silent --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) {
         # app source may be msstore/winget-only or already installed; report but continue
-        Warn "winget reported an issue installing $Name (exit $LASTEXITCODE). Continuing — check manually later."
+        Warn "winget reported an issue installing $Name (exit $LASTEXITCODE). Continuing - check manually later."
     } else {
         Good "$Name installed"
     }
@@ -76,14 +76,14 @@ function Winget-Install {
 
 # ---------------------------------------------------------------- checks
 Write-Host ""
-Write-Host "=== FSP Windows setup — engine: $Engine ===" -ForegroundColor Magenta
+Write-Host "=== FSP Windows setup - engine: $Engine ===" -ForegroundColor Magenta
 Write-Host ""
 
 $os = [System.Environment]::OSVersion.Version
 if ($os.Build -lt 19044) {
     throw "Windows 10 build 19044+ (21H2) or Windows 11 is required (WSL2 + modern podman). Build is $($os.Build)."
 }
-Good "Windows build $($os.Build) — WSL2-capable"
+Good "Windows build $($os.Build) - WSL2-capable"
 
 $arch = $env:PROCESSOR_ARCHITECTURE
 if ($arch -ne 'AMD64') { throw "x64 required; found $arch" }
@@ -91,7 +91,7 @@ Good "x64 architecture"
 
 # Virtualization must be available (Hyper-V/WSL2 needs it even on podman/lima VMs)
 if ((Get-CimInstance Win32_ComputerSystem).HypervisorPresent) {
-    Good "Hypervisor present — WSL2 will work"
+    Good "Hypervisor present - WSL2 will work"
 } else {
     Warn "Hypervisor not detected. If steps fail later, enable Intel VT-x/AMD-V in BIOS."
 }
@@ -151,8 +151,8 @@ if ($Engine -eq 'podman') {
     $podman = Find-Podman
     if (-not $podman) {
         Warn "podman CLI not found after install. Podman Desktop bundles it:"
-        Info "Open Podman Desktop once (Start Menu > Podman Desktop) — its setup wizard installs the podman CLI + machine."
-        Info "Then re-run this script — the machine init below will be skipped if you did it in the UI."
+        Info "Open Podman Desktop once (Start Menu > Podman Desktop) - its setup wizard installs the podman CLI + machine."
+        Info "Then re-run this script - the machine init below will be skipped if you did it in the UI."
     } else {
         & $podman --version
         # add bundled CLI to user PATH if found there but not on PATH
@@ -168,11 +168,11 @@ if ($Engine -eq 'podman') {
             if ($running) { Good "podman machine '$($running.Name)' already running" }
             else { & $podman machine start | Out-Host; Good "podman machine started" }
         } else {
-            # FSP sizing (auto from this laptop's RAM — leaves the HOST room to also run the
+            # FSP sizing (auto from this laptop's RAM - leaves the HOST room to also run the
             # five JVM services natively):
             #   <= 9  GB total -> 2 GB / 2 vCPU  (8 GB laptops: postgres + tigerbeetle only;
             #                                     use scripts\dev-windows.ps1 dev, not stack-up)
-            #   <= 17 GB total -> 5 GB / 2 vCPU  (16 GB laptops — 'stack-up' fits)
+            #   <= 17 GB total -> 5 GB / 2 vCPU  (16 GB laptops - 'stack-up' fits)
             #   >  17 GB total -> 6 GB / 3 vCPU
             # Resize anytime: scripts\dev-windows.ps1 tune [-MemoryMB n -Cpus n]
             $totalGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
@@ -181,14 +181,14 @@ if ($Engine -eq 'podman') {
             else { $vmMB = 6144; $vmCpu = 3 }
             & $podman machine init --memory $vmMB --cpus $vmCpu --now | Out-Host
             if ($LASTEXITCODE -eq 0) {
-                Good "podman machine created ($vmMB MB / $vmCpu vCPU — laptop has ~$totalGB GB) + started"
+                Good "podman machine created ($vmMB MB / $vmCpu vCPU - laptop has ~$totalGB GB) + started"
                 if ($totalGB -le 9) {
                     Info "8 GB laptop detected: the VM holds ONLY postgres + tigerbeetle. Run the five"
                     Info "backend services natively with: powershell -File scripts\dev-windows.ps1 dev"
                     Info "and do NOT use 'stack-up' (five JVM containers will not fit in 2 GB)."
                 }
             }
-            else { Warn "podman machine init failed (exit $LASTEXITCODE). Usually a missing reboot (WSL2) — reboot and re-run." }
+            else { Warn "podman machine init failed (exit $LASTEXITCODE). Usually a missing reboot (WSL2) - reboot and re-run." }
         }
     }
 
@@ -208,7 +208,7 @@ if ($Engine -eq 'podman') {
                 [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ";$fspBin", 'User')
                 Good "added $fspBin to user PATH (new terminals required)"
             }
-        } catch { Warn "docker compose download failed: $_  — you can still use 'podman-compose' (pip install podman-compose)" }
+        } catch { Warn "docker compose download failed: $_  - you can still use 'podman-compose' (pip install podman-compose)" }
     }
 } else {
     Step "Installing Rancher Desktop ($Engine engine selected)..."
@@ -233,9 +233,9 @@ if ($Engine -eq 'podman') {
             $json | Add-Member -NotePropertyName 'virtualMachine' -NotePropertyValue @{ memoryInGB = $vmMemGB; numberCPUs = $vmCpu } -Force
             $json | ConvertTo-Json -Depth 10 | Set-Content $rd -Encoding utf8
             Good "settings preconfigured (moby engine => real docker/docker compose CLI, $vmMemGB GB / $vmCpu vCPU)"
-        } catch { Warn "could not rewrite settings.json ($_) — configure in Preferences (see docs/windows-dev.md, Rancher section)" }
+        } catch { Warn "could not rewrite settings.json ($_) - configure in Preferences (see docs/windows-dev.md, Rancher section)" }
     } else {
-        Info "No settings.json yet — start Rancher Desktop once and pick:"
+        Info "No settings.json yet - start Rancher Desktop once and pick:"
         Info "  Container Engine: dockerd (moby)   Virtual Machine: WSL2   Kubernetes: OFF"
     }
 }
@@ -262,7 +262,7 @@ if ($Engine -eq 'podman') {
     if ($podman) {
         & $podman machine list | Write-Host
         & $podman compose version 2>$null | Write-Host
-        if (Get-Command docker-compose -ErrorAction SilentlyContinue) { Good "docker-compose on PATH — podman compose will use it" }
+        if (Get-Command docker-compose -ErrorAction SilentlyContinue) { Good "docker-compose on PATH - podman compose will use it" }
         Good "Try: podman run --rm hello-world"
     }
 } else {

@@ -1,9 +1,9 @@
 # Frontend & UI Development Rules
 
 **Scope:** `frontend/` SPA, widgets, portals, and UI components.
-**Parent Rule:** [AGENTS.md](file:///home/arun/FinancialServicesPlatform/AGENTS.md) (Universal Invariants & FAPI 2.0 Compliance).
-**Normative Standard:** [ui-std.md](file:///home/arun/FinancialServicesPlatform/ui-std.md) (Complete Design System & React Guide).
-**Architecture Reference:** [docs/architecture/09-frontend-portals.md](file:///home/arun/FinancialServicesPlatform/docs/architecture/09-frontend-portals.md).
+**Parent Rule:** [AGENTS.md](../AGENTS.md) (Universal Invariants & FAPI 2.0 Compliance).
+**Normative Standard:** [ui-std.md](../ui-std.md) (Complete Design System & React Guide).
+**Architecture Reference:** [docs/architecture/09-frontend-portals.md](../docs/architecture/09-frontend-portals.md).
 
 ---
 

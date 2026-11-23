@@ -69,7 +69,7 @@ Inspect the code against the [Concurrency & Deadlock Playbook](./references/conc
 
 ## Phase 3: Universal FSP & FAPI 2.0 Invariants
 
-Verify against [AGENTS.md](file:///home/arun/FinancialServicesPlatform/AGENTS.md):
+Verify against [AGENTS.md](../../../AGENTS.md):
 1. **Tokens Never Enter Browser:** Only HttpOnly, SameSite=Lax BFF session cookies.
 2. **Gateway Route Admission:** Every endpoint annotated with `@FspOperation` and registered in `OperationCatalog`.
 3. **Core is the Sole PDP:** Gateway strips client identity headers; Core authoritatively re-evaluates permissions.
@@ -82,7 +82,7 @@ Verify against [AGENTS.md](file:///home/arun/FinancialServicesPlatform/AGENTS.md
 
 ## Phase 4: REST Standards & Performance
 
-Inspect against [Architecture Chapter 8](file:///home/arun/FinancialServicesPlatform/docs/architecture/08-rest-query-standards.md):
+Inspect against [Architecture Chapter 8](../../../docs/architecture/08-rest-query-standards.md):
 1. **Pagination:** Does the collection endpoint require `page` (default 0) and `size` (default 20, max 100)?
 2. **Sorting:** Is the `sort` field checked against a strict domain whitelist to prevent SQL injection or leaking internal persistence structure?
 3. **Search Push-down:** Are free-text search `q` and domain filters executed in SQL `WHERE` queries rather than in-memory Java streams?

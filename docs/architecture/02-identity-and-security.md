@@ -1,6 +1,6 @@
 # Architecture Chapter 2 — Identity & Security Model
 
-**Parent Document:** [docs/architecture.md](file:///home/arun/FinancialServicesPlatform/docs/architecture.md)
+**Parent Document:** [docs/architecture.md](../architecture.md)
 
 ---
 

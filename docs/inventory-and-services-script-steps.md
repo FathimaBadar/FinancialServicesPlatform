@@ -3,7 +3,7 @@
 **What this is:** A plain-text, step-by-step operational screenplay and technical test specification
 for what comes after organization onboarding: **Product & Inventory Onboarding** (Physical Goods / SKUs)
 and **Digital Value & Omnichannel Services Onboarding** (Airtime Top-up, Electricity Vouchers, Online Bill Payment across Web, Mobile App, USSD, SMS, POS).
-It follows the exact structure, personas, and rigor established in [`docs/onboarding-script-steps.md`](file:///home/arun/FinancialServicesPlatform/docs/onboarding-script-steps.md).
+It follows the exact structure, personas, and rigor established in [`docs/onboarding-script-steps.md`](onboarding-script-steps.md).
 
 **The stories in one line:**
 - **Part I (Physical SKU & Inventory):** The Manufacturer registers catalog SKUs and uploads physical stock batches; the Distributor orders wholesale stock using credit/wallet drawdown; the Merchant replenishes and sells to an end-customer at POS, driving balanced TigerBeetle double-entry journals at each step.
@@ -45,7 +45,7 @@ All actors ride the hierarchy established during onboarding:
 
 ## ARCHITECTURAL BOUNDARIES & INVARIANTS
 
-Before running either story, enforce the non-negotiable rules from [`vision.md`](file:///home/arun/FinancialServicesPlatform/vision.md#L35) and [`AGENTS.md`](file:///home/arun/FinancialServicesPlatform/AGENTS.md):
+Before running either story, enforce the non-negotiable rules from [`vision.md`](../vision.md#L35) and [`AGENTS.md`](../AGENTS.md):
 
 1. **Core Ignorance:** FSP Core **never** stores SKUs, barcodes, warehouse aisles, mobile numbers, meter numbers, or voucher PINs. All inventory and digital services data live inside plugin schemas (`fsp-plugin-inventory` and `fsp-plugin-digital-services`).
 2. **Channel-Agnostic Core:** Core never knows about USSD menus, SMS keywords, or app push notifications. Channels are normalized at the edge via **Channel Ingress Adapters** into typed internal requests.
@@ -315,7 +315,7 @@ sequenceDiagram
 
 ### SCENE D3 — COMMISSION & REVENUE-SHARE MATRIX CONFIGURATION
 
-**Goal:** Configure the multi-tier fee matrix per [`vision.md §3.4`](file:///home/arun/FinancialServicesPlatform/vision.md#L148-L151).
+**Goal:** Configure the multi-tier fee matrix per [`vision.md §3.4`](../vision.md#L148-L151).
 For every **NAD 100.00 Airtime Sold**:
 - Telco (Product Provider): **NAD 94.00** (94%)
 - Platform Root: **NAD 1.00** (1% Platform technology fee)

@@ -1,7 +1,7 @@
 # Architecture Chapter 11 — Operations, Tests & Live Document Maintenance
 
-**Parent Document:** [docs/architecture.md](file:///home/arun/FinancialServicesPlatform/docs/architecture.md)  
-**Dev Quickstart:** [docs/README-dev.md](file:///home/arun/FinancialServicesPlatform/docs/README-dev.md) · **Full Setup Guide:** [docs/setup-guide.md](file:///home/arun/FinancialServicesPlatform/docs/setup-guide.md)
+**Parent Document:** [docs/architecture.md](../architecture.md)  
+**Dev Quickstart:** [docs/README-dev.md](../README-dev.md) · **Full Setup Guide:** [docs/setup-guide.md](../setup-guide.md)
 
 ---
 

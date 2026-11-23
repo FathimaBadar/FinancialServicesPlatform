@@ -1,7 +1,7 @@
 # Architecture Chapter 9 — Frontend, Portals & Widget Harness
 
-**Parent Document:** [docs/architecture.md](file:///home/arun/FinancialServicesPlatform/docs/architecture.md)  
-**Normative Standard:** [ui-std.md](file:///home/arun/FinancialServicesPlatform/ui-std.md) · **Workbench Guide:** [docs/widget-workbench.md](file:///home/arun/FinancialServicesPlatform/docs/widget-workbench.md)
+**Parent Document:** [docs/architecture.md](../architecture.md)  
+**Normative Standard:** [ui-std.md](../ui-std.md) · **Workbench Guide:** [docs/widget-workbench.md](../widget-workbench.md)
 
 ---
 

@@ -1,7 +1,7 @@
 # Bank Connectors, Bill Payments, PSP & EMI Services — Architecture Plan
 
 **Status:** APPROVED-ARCHITECTURE v2 · 2026-11-19 · Owner: platform engineering
-**Normative chapter:** [docs/architecture/13-money-movement-and-rails.md](file:///home/arun/FinancialServicesPlatform/docs/architecture/13-money-movement-and-rails.md) (open questions §12 resolved — Namibia PSD-1 / PSD-3 / VAA 10-2023 grounding).
+**Normative chapter:** [docs/architecture/13-money-movement-and-rails.md](../docs/architecture/13-money-movement-and-rails.md) (open questions §12 resolved — Namibia PSD-1 / PSD-3 / VAA 10-2023 grounding).
 **Depends on:** `docs/architecture/01-runtime-topology.md`, `12-notifications-and-push.md` (§12.9 auth-plane pattern), `plans/plugin-platform-plan.md` (isolation rules), AGENTS.md (FAPI 2.0, four-eyes, minor units, double-entry, outbox, schema isolation).
 
 ---

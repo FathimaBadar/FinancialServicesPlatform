@@ -39,15 +39,15 @@
 ## 2. Build all bootJars
 
 ```bash
-# Linux
-cd /home/arun/FinancialServicesPlatform/backend
+# Linux (run from the FSP project root)
+cd backend
 JAVA_HOME=~/.sdkman/candidates/java/25.0.5.0+8-tem ./gradlew clean bootJar --parallel
 # artifacts: <module>/build/libs/<module>-0.0.1-SNAPSHOT.jar  (bff, core, emi, gateway, idp, psp, recon)
 ```
 
 ```powershell
-# Windows
-cd C:\Users\Baskar\Music\SME-React\FinancialServicesPlatform\backend
+# Windows (run from the FSP project root)
+cd backend
 .\gradlew.bat clean bootJar --parallel
 ```
 
@@ -84,7 +84,7 @@ the vars that aren't theirs.
 
 ```bash
 # 0) infra (skip if already running)
-cd /home/arun/FinancialServicesPlatform
+# run from the FSP project root
 make infra-up                 # PostgreSQL in Docker
 make tb-start                 # TigerBeetle on :3000
 
@@ -122,7 +122,8 @@ nohup $J -jar gateway/build/libs/gateway-0.0.1-SNAPSHOT.jar   --spring.profiles.
 ## 5. Windows quick start (PowerShell) — same sequence
 
 ```powershell
-cd C:\Users\Baskar\Music\SME-React\FinancialServicesPlatform\backend
+# run from the FSP project root
+cd backend
 
 # envs (same names, same dev value; do this in the SAME shell as the java calls)
 $env:FSP_INTERNAL_CREDENTIAL       = "dev-internal-credential"
@@ -153,7 +154,8 @@ Profiles recap: core/idp/bff/gateway `demo` · emi `demo-emi` · psp `demo-psp -
 ## 6. UI
 
 ```bash
-cd /home/arun/FinancialServicesPlatform/frontend
+# run from the FSP project root
+cd frontend
 bun install                 # once, or after lockfile change
 bun run dev                 # vite :5173 — proxies /api → :8080 (BFF) and /bff → :8080
 # prod build + serve
@@ -217,7 +219,8 @@ for s in core idp emi psp bff recon gateway; do echo "$s: $(grep -c 'level=ERROR
 ## 10. One-liners for restarting a single service (Linux)
 
 ```bash
-cd /home/arun/FinancialServicesPlatform/backend
+# run from the FSP project root
+cd backend
 J=~/.sdkman/candidates/java/25.0.5.0+8-tem/bin/java
 export FSP_INTERNAL_CREDENTIAL=dev-internal-credential FSP_INTERNAL_CREDENTIAL_CORE=$FSP_INTERNAL_CREDENTIAL FSP_INTERNAL_CREDENTIAL_EMI=$FSP_INTERNAL_CREDENTIAL FSP_INTERNAL_CREDENTIAL_PSP=$FSP_INTERNAL_CREDENTIAL FSP_INTERNAL_CREDENTIAL_IDP=$FSP_INTERNAL_CREDENTIAL
 

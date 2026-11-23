@@ -1,7 +1,7 @@
 # Architecture Chapter 7 — Plugin Platform & Process/Schema Isolation
 
-**Parent Document:** [docs/architecture.md](file:///home/arun/FinancialServicesPlatform/docs/architecture.md)  
-**Detailed Implementation Plan:** [plans/plugin-platform-plan.md](file:///home/arun/FinancialServicesPlatform/plans/plugin-platform-plan.md)
+**Parent Document:** [docs/architecture.md](../architecture.md)  
+**Detailed Implementation Plan:** [plans/plugin-platform-plan.md](../../plans/plugin-platform-plan.md)
 
 ---
 

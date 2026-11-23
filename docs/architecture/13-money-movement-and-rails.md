@@ -1,7 +1,7 @@
 # Architecture Chapter 13 — Money Movement, Bank Connectors, Bill Payments (PSP & EMI)
 
-**Parent Document:** [docs/architecture.md](file:///home/arun/FinancialServicesPlatform/docs/architecture.md)
-**Detailed Plan:** [plans/bank-connectors-bill-payments-plan.md](file:///home/arun/FinancialServicesPlatform/plans/bank-connectors-bill-payments-plan.md)
+**Parent Document:** [docs/architecture.md](../architecture.md)
+**Detailed Plan:** [plans/bank-connectors-bill-payments-plan.md](../../plans/bank-connectors-bill-payments-plan.md)
 
 ---
 

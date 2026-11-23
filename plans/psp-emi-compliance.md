@@ -8,8 +8,8 @@
 > the **determinations govern** (e.g. NAD-only wallets, PSD-3 §9.1.1 replaces EMD2
 > denomination freedom; PSD-1 §12/§13 replaces PSD2 safeguarding categories). The full
 > resolved regulatory mapping lives in
-> [plans/bank-connectors-bill-payments-plan.md §12](file:///home/arun/FinancialServicesPlatform/plans/bank-connectors-bill-payments-plan.md)
-> and [architecture chapter 13](file:///home/arun/FinancialServicesPlatform/docs/architecture/13-money-movement-and-rails.md)
+> [plans/bank-connectors-bill-payments-plan.md §12](bank-connectors-bill-payments-plan.md)
+> and [architecture chapter 13](../docs/architecture/13-money-movement-and-rails.md)
 > (§12.7 traceability table). EU sections are retained below as reference only.
 
 ## Document Information

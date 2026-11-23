@@ -1,8 +1,8 @@
 # Backend Development Rules & Mandates
 
 **Scope:** `backend/` services (`core`, `bff`, `idp`, `gateway`, `plugins/*`, `shared`).
-**Parent Rule:** [AGENTS.md](file:///home/arun/FinancialServicesPlatform/AGENTS.md) (Universal Invariants & FAPI 2.0 Compliance).
-**Guides:** [FSP-Spring-Boot-FAPI2-Implementation-Guide (1).md](file:///home/arun/FinancialServicesPlatform/FSP-Spring-Boot-FAPI2-Implementation-Guide%20%281%29.md) · [vision.md](file:///home/arun/FinancialServicesPlatform/vision.md).
+**Parent Rule:** [AGENTS.md](../AGENTS.md) (Universal Invariants & FAPI 2.0 Compliance).
+**Guides:** [FSP-Spring-Boot-FAPI2-Implementation-Guide (1).md](../FSP-Spring-Boot-FAPI2-Implementation-Guide (1).md) · [vision.md](../vision.md).
 
 ---
 
